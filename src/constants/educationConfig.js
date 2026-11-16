@@ -31,6 +31,37 @@ export const AUTH_METHODS = {
   BOTH: 'Google SSO & Username / NISN (Keduanya)',
 };
 
+export const EXAM_SESSION_GROUPS = [
+  'Asesmen Tengah Semester (ATS)',
+  'Asesmen Akhir Semester (AAS)',
+  'Asesmen Sumatif Akhir Jenjang (ASAJ)',
+  'Penilaian Harian (PH)',
+  'Simulasi & Try Out',
+  'Ujian Praktik / Keterampilan',
+  'Lainnya',
+];
+
+export const POPULAR_SUBJECTS = [
+  'Matematika Wajib',
+  'Matematika Peminatan',
+  'Fisika',
+  'Kimia',
+  'Biologi',
+  'Bahasa Indonesia',
+  'Bahasa Inggris',
+  'Informatika',
+  'Pendidikan Pancasila / PKn',
+  'Sejarah',
+  'Ekonomi',
+  'Geografi',
+  'Sosiologi',
+  'Pendidikan Agama',
+  'Seni Budaya',
+  'Pendidikan Jasmani (PJOK)',
+  'Ilmu Pengetahuan Alam (IPA)',
+  'Ilmu Pengetahuan Sosial (IPS)',
+];
+
 export const ATTEMPT_STATUS = {
   IN_PROGRESS: {
     code: 'IN_PROGRESS',
@@ -118,4 +149,25 @@ export function getGradeLabel(gradeNumber) {
   if (g === 0) return 'Tingkat Umum / Pelatihan';
   return `Kelas ${g} (Tingkat ${g})`;
 }
+
+/**
+ * Standar Token Ujian ExamGuard: Tepat 6 digit huruf besar / alphanumeric kapital
+ */
+export function generateRandomToken6() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let token = '';
+  for (let i = 0; i < 6; i++) {
+    token += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return token;
+}
+
+export function formatExamToken(raw) {
+  if (!raw) return generateRandomToken6();
+  const cleaned = String(raw).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+  if (cleaned.length === 6) return cleaned;
+  const padding = generateRandomToken6();
+  return (cleaned + padding).slice(0, 6);
+}
+
 

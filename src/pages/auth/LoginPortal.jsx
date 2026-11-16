@@ -34,10 +34,15 @@ export default function LoginPortal({ institution, onLoginSuccess }) {
       setUsername('admin');
       setPassword('admin');
       setIsCaptchaVerified(true);
+    } else if (type === 'proctor') {
+      setActiveTab('admin');
+      setUsername('proktor');
+      setPassword('proktor');
+      setIsCaptchaVerified(true);
     } else {
       setActiveTab('student');
-      setUsername('0058291021');
-      setPassword('0058291021');
+      setUsername('0068291033'); // Contoh akun siswa: Bambang Pamungkas (Non-SSO)
+      setPassword('23101'); // Password default NIS siswa
       setIsCaptchaVerified(true);
     }
   };
@@ -68,8 +73,30 @@ export default function LoginPortal({ institution, onLoginSuccess }) {
 
     const user = storageService.getUserByUsername(trimmedUser);
 
-    if (!user || user.password !== password) {
-      setErrorMsg('Kombinasi Pengguna / NISN dan Password tidak cocok.');
+    if (!user) {
+      setErrorMsg(
+        activeTab === 'student'
+          ? 'Data NISN tidak ditemukan di sistem sekolah. Pastikan nomor NISN benar atau hubungi Admin/Pengawas.'
+          : 'Nama Pengguna Administrator tidak ditemukan.'
+      );
+      return;
+    }
+
+    // ATURAN WAJIB SSO: Jika Google OAuth aktif dan sudah terhubung Google SSO, siswa WAJIB login via Google SSO
+    const isGoogleOAuthActive = institution?.google_oauth_enabled !== false;
+    if (isGoogleOAuthActive && user.role === 'student' && user.google_linked && user.google_id) {
+      setErrorMsg(
+        `Akun Anda (${user.nama}) telah terhubung ke Google SSO (${user.google_email || user.email}). Anda WAJIB masuk menggunakan tombol "Masuk dengan Google SSO Siswa" di bawah. Jika akses Google hilang, silakan lapor Admin/Proktor untuk Reset SSO.`
+      );
+      return;
+    }
+
+    if (user.password !== password) {
+      setErrorMsg(
+        activeTab === 'student'
+          ? 'Password salah. Password default adalah nomor NIS siswa. Jika lupa, silakan lapor ke Admin/Proktor untuk Reset Password.'
+          : 'Kombinasi Pengguna / Administrator dan Password tidak cocok.'
+      );
       return;
     }
 
@@ -156,9 +183,14 @@ export default function LoginPortal({ institution, onLoginSuccess }) {
     onLoginSuccess(user);
   };
 
-  const showSsoOption = institution?.auth_method === 'SSO_ONLY' || institution?.auth_method === 'BOTH';
+  const isGoogleOAuthActive = institution?.google_oauth_enabled !== false;
+  const showSsoOption =
+    isGoogleOAuthActive &&
+    (institution?.auth_method === 'SSO_ONLY' || institution?.auth_method === 'BOTH');
   const showCredentialsOption =
-    institution?.auth_method === 'CREDENTIALS_ONLY' || institution?.auth_method === 'BOTH';
+    !isGoogleOAuthActive ||
+    institution?.auth_method === 'CREDENTIALS_ONLY' ||
+    institution?.auth_method === 'BOTH';
 
   return (
     <div className="min-h-screen bg-zinc-50 flex flex-col justify-between items-center p-4 sm:p-6 selection:bg-zinc-900 selection:text-white">
@@ -180,7 +212,9 @@ export default function LoginPortal({ institution, onLoginSuccess }) {
         </h1>
         <div className="inline-flex items-center gap-1.5 mt-1 text-xs text-zinc-500 font-medium">
           <School className="w-3.5 h-3.5" />
-          <span>Jenjang {institution?.education_level || 'SMA'} &bull; Sistem Terproteksi</span>
+          <span>
+            {institution?.npsn ? `NPSN: ${institution.npsn} • ` : ''}Jenjang {institution?.education_level || 'SMA'} &bull; Sistem Terproteksi
+          </span>
         </div>
       </header>
 
@@ -193,8 +227,8 @@ export default function LoginPortal({ institution, onLoginSuccess }) {
             onClick={() => {
               setActiveTab('admin');
               setErrorMsg('');
-              if (username === '0058291021') setUsername('admin');
-              if (password === '0058291021') setPassword('admin');
+              if (username === '0058291021' || username === '0068291033') setUsername('admin');
+              if (password === '22101' || password === '23101' || password === '0058291021') setPassword('admin');
             }}
             className={`py-2 rounded-lg transition-all duration-200 ${
               activeTab === 'admin' ? 'bg-white text-zinc-900 shadow-xs font-semibold' : 'text-zinc-500 hover:text-zinc-800'
@@ -207,8 +241,8 @@ export default function LoginPortal({ institution, onLoginSuccess }) {
             onClick={() => {
               setActiveTab('student');
               setErrorMsg('');
-              if (username === 'admin') setUsername('0058291021');
-              if (password === 'admin') setPassword('0058291021');
+              if (username === 'admin') setUsername('0068291033');
+              if (password === 'admin') setPassword('23101');
             }}
             className={`py-2 rounded-lg transition-all duration-200 ${
               activeTab === 'student' ? 'bg-white text-zinc-900 shadow-xs font-semibold' : 'text-zinc-500 hover:text-zinc-800'
@@ -280,8 +314,9 @@ export default function LoginPortal({ institution, onLoginSuccess }) {
                 />
               </div>
               {activeTab === 'student' && (
-                <p className="mt-1 text-[11px] text-zinc-500">
-                  Password awal siswa adalah nomor NISN masing-masing.
+                <p className="mt-1 text-[11px] text-zinc-500 flex items-center justify-between">
+                  <span>Username: <strong>NISN</strong> &bull; Password: <strong>NIS Siswa</strong></span>
+                  <span className="text-zinc-400">Reset lapor proktor</span>
                 </p>
               )}
             </div>
@@ -348,6 +383,12 @@ export default function LoginPortal({ institution, onLoginSuccess }) {
               <span>{activeTab === 'student' ? 'Masuk ke Portal Ujian' : 'Masuk Dashboard Admin'}</span>
               <ArrowRight className="w-4 h-4" />
             </button>
+
+            {activeTab === 'student' && (
+              <p className="text-[11px] text-zinc-500 text-center pt-1 leading-normal">
+                Lupa kata sandi atau butuh reset SSO? <strong className="text-zinc-700">Wajib lapor ke Admin/Proktor</strong> untuk reset akun.
+              </p>
+            )}
 
             {/* Opsi SSO jika BOTH di tab siswa */}
             {activeTab === 'student' && showSsoOption && (
@@ -492,22 +533,30 @@ export default function LoginPortal({ institution, onLoginSuccess }) {
       <footer className="w-full max-w-md py-4 text-center">
         <div className="p-3 bg-zinc-100/90 rounded-xl border border-zinc-200/80 text-[11px] text-zinc-600 mb-2 shadow-2xs">
           <p className="font-semibold text-zinc-800 mb-1.5">Klik Cepat Akun Demo Pengujian:</p>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-1.5">
             <button
               type="button"
               onClick={() => handleFillDemo('admin')}
               className="py-1.5 px-2 bg-white hover:bg-zinc-50 border border-zinc-300 rounded-lg text-left transition-all hover:border-zinc-400 cursor-pointer"
             >
-              <div className="text-[10px] text-zinc-500 font-medium">Masuk Administrator:</div>
-              <div className="font-mono font-bold text-zinc-900 text-[11px]">admin / admin</div>
+              <div className="text-[9.5px] text-zinc-500 font-medium">Super Admin:</div>
+              <div className="font-mono font-bold text-zinc-900 text-[10.5px]">admin</div>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleFillDemo('proctor')}
+              className="py-1.5 px-2 bg-white hover:bg-zinc-50 border border-emerald-300 bg-emerald-50/30 rounded-lg text-left transition-all hover:border-emerald-400 cursor-pointer"
+            >
+              <div className="text-[9.5px] text-emerald-700 font-medium">Proktor:</div>
+              <div className="font-mono font-bold text-zinc-900 text-[10.5px]">proktor</div>
             </button>
             <button
               type="button"
               onClick={() => handleFillDemo('student')}
               className="py-1.5 px-2 bg-white hover:bg-zinc-50 border border-zinc-300 rounded-lg text-left transition-all hover:border-zinc-400 cursor-pointer"
             >
-              <div className="text-[10px] text-zinc-500 font-medium">Masuk Siswa (XII):</div>
-              <div className="font-mono font-bold text-zinc-900 text-[11px]">0058291021</div>
+              <div className="text-[9.5px] text-zinc-500 font-medium">Siswa:</div>
+              <div className="font-mono font-bold text-zinc-900 text-[10.5px]">0068291033</div>
             </button>
           </div>
         </div>

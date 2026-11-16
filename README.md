@@ -1,55 +1,88 @@
-# ExamGuard - GForm Proctoring WebApp
+# 🛡️ ExamGuard - GForm Proctoring WebApp
 
-**ExamGuard** adalah sistem pengawasan ujian (*proctoring system*) berbasis web modern dan terintegrasi untuk formulir **Google Form**. Aplikasi ini dirancang khusus untuk institusi pendidikan (SD, SMP, SMA/SMK, hingga Perguruan Tinggi/Umum) dengan arsitektur yang 100% siap dipublikasikan ke **Shared Hosting cPanel (Apache / LiteSpeed)** maupun dijalankan di lingkungan lokal pengembang.
+<div align="center">
+
+![React](https://img.shields.io/badge/React-19.0-61dafb?style=for-the-badge&logo=react&logoColor=black)
+![Vite](https://img.shields.io/badge/Vite-6.2-646cff?style=for-the-badge&logo=vite&logoColor=white)
+![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-v4.0-38bdf8?style=for-the-badge&logo=tailwindcss&logoColor=white)
+![Leaflet](https://img.shields.io/badge/Leaflet-1.9.4-199900?style=for-the-badge&logo=leaflet&logoColor=white)
+![cPanel Ready](https://img.shields.io/badge/cPanel-100%25_Ready-ff6c2c?style=for-the-badge&logo=cpanel&logoColor=white)
+![License](https://img.shields.io/badge/License-MIT-emerald?style=for-the-badge)
+
+**Sistem Pengawasan Ujian Berbasis Web Modern untuk Google Form dengan Proteksi Anti-Curang, GPS Geofencing, Google SSO, dan Dua Tingkat Peran Pengawas.**
+
+[Fitur Utama](#-fitur-utama) • [Prasyarat](#-prasyarat-sistem) • [Instalasi Lokal](#-panduan-instalasi-lokal-mode-pengembang) • [Deploy cPanel](#-panduan-instalasi--deployment-ke-cpanel) • [Kredensial Demo](#-kredensial-akun-demo-pengujian) • [Troubleshooting](#-pemecahan-masalah-troubleshooting)
+
+</div>
 
 ---
 
-## Daftar Isi
-1. [Fitur Utama](#fitur-utama)
-2. [Prasyarat Sistem (Prerequisites)](#prasyarat-sistem-prerequisites)
-3. [Panduan Menjalankan dalam Mode Developer](#panduan-menjalankan-dalam-mode-developer)
-4. [Kredensial Akun Demo Pengujian](#kredensial-akun-demo-pengujian)
-5. [Alur Kerja & Panduan Fitur Pengujian](#alur-kerja--panduan-fitur-pengujian)
-6. [Struktur Folder Proyek](#struktur-folder-proyek)
-7. [Build Produksi Siap cPanel](#build-produksi-siap-cpanel)
-8. [Pemecahan Masalah (Troubleshooting)](#pemecahan-masalah-troubleshooting)
+## 📋 Daftar Isi
+
+1. [Tentang ExamGuard](#-tentang-examguard)
+2. [Fitur Utama](#-fitur-utama)
+3. [Prasyarat Sistem](#-prasyarat-sistem)
+4. [Panduan Instalasi Lokal (Mode Pengembang)](#-panduan-instalasi-lokal-mode-pengembang)
+5. [Panduan Instalasi & Deployment ke cPanel](#-panduan-instalasi--deployment-ke-cpanel)
+6. [Kredensial Akun Demo Pengujian](#-kredensial-akun-demo-pengujian)
+7. [Alur & Hak Akses Administrator](#-alur--hak-akses-administrator)
+8. [Struktur Folder Proyek](#-struktur-folder-proyek)
+9. [Konfigurasi Tambahan (OAuth, reCAPTCHA, GPS)](#-konfigurasi-tambahan)
+10. [Pemecahan Masalah (Troubleshooting)](#-pemecahan-masalah-troubleshooting)
+11. [Lisensi](#-lisensi)
 
 ---
 
-## Fitur Utama
+## 💡 Tentang ExamGuard
 
-- **Modern Minimalist UI/UX (Anti-AI Slop):** Menggunakan Tailwind CSS v4, font Inter & JetBrains Mono, border halus, ambient shadow, dan tabular numbers untuk timer.
-- **Pre-Flight Permission Check:** Validasi izin Geolocation GPS (Haversine Formula), Third-Party Cookies, Fullscreen, sensor Kamera/Mikrofon, serta Pembersih Papan Klip (Clipboard Sanitizer).
-- **Proctoring Engine Anti-Curang:**
+**ExamGuard** adalah aplikasi *proctoring web* (pengawasan ujian) ringan, modern, dan mandiri yang membungkus formulir **Google Form** dalam lingkungan ujian yang aman dan terpantau. Dirancang khusus untuk sekolah (SD, SMP, SMA/SMK) maupun perguruan tinggi yang membutuhkan sistem ujian digital berstandar tinggi tanpa perlu infrastruktur server rumit.
+
+Aplikasi ini **100% Client-Side Ready** dan telah dioptimalkan untuk berjalan mulus di **Shared Hosting cPanel (Apache / LiteSpeed)** hanya dengan mengunggah paket build `.zip`.
+
+---
+
+## ✨ Fitur Utama
+
+- **🎨 Modern Minimalist Design:** Antarmuka bersih (*anti-AI slop*) menggunakan Tailwind CSS v4, tipografi Inter & JetBrains Mono, border halus, serta modal konfirmasi khusus (tanpa popup bawaan browser).
+- **🔒 Anti-Curang Proctoring Engine:**
   - Deteksi perpindahan tab browser (`visibilitychange`).
   - Deteksi hilangnya fokus jendela (`window.blur`).
-  - Deteksi keluar dari mode Layar Penuh (Fullscreen).
-  - Layar **Auto-Lock** seketika saat terjadi pelanggaran dengan pencatatan counter pelanggaran.
-  - Pemblokiran klik kanan (*anti-context menu*), pemblokiran kombinasi tombol (`Ctrl+C`, `Ctrl+V`, `Ctrl+U`, `F12`, `Alt+Tab`), serta penonaktifan penerjemahan otomatis (*anti-translate*).
-- **Sticky Header Ujian:** Dilengkapi hitung mundur timer pengerjaan, chip token soal dengan tombol sekali-salin, dan konfirmasi penyelesaian ujian.
-- **Papan Kontrol Pengawas (Live Proctoring):** Pemantauan status pengerjaan secara real-time (`IN_PROGRESS`, `LOCKED`, `COMPLETED`, `RESET_BY_PROCTOR`), waktu aktual, dan dilengkapi **3 Tombol Aksi Pengawas**:
-  1. **Reset Login:** Menghapus `active_device_id` siswa agar dapat login di perangkat lain.
-  2. **Unlock:** Membuka kunci siswa yang berstatus `LOCKED`.
-  3. **Reset Jawaban:** Mengubah status `COMPLETED` menjadi `RESET_BY_PROCTOR` agar soal yang tersembunyi muncul kembali di portal siswa jika respons Google Sheets belum terisi.
-- **Manajemen Tingkat Kelas & Jenjang:** Otomatis menyesuaikan rentang kelas berdasarkan jenjang:
-  - `SD` $\rightarrow$ Kelas 1–6
-  - `SMP` $\rightarrow$ Kelas 7–9
-  - `SMA` $\rightarrow$ Kelas 10–12
-  - `LAINNYA` $\rightarrow$ Tingkat 0 (Umum/Pelatihan)
-- **Import Siswa (CSV/Excel):** Format `nama, nisn, nis, kelas, tingkat, email`. Username dan password awal otomatis diset ke nomor **NISN**.
-- **Sensor Auto-Logout:** Logout otomatis jika siswa tidak melakukan interaksi selama batas waktu `idle_timeout_minutes`.
+  - Deteksi keluar dari mode Fullscreen.
+  - **Auto-Lock Screen** seketika saat terjadi pelanggaran dengan counter pelanggaran tercatat.
+  - Pemblokiran klik kanan, inspect element (`F12`), `Ctrl+C`, `Ctrl+V`, `Ctrl+U`, `Alt+Tab`, serta *anti-translate*.
+- **📍 GPS Geofencing Interaktif (Leaflet & OpenStreetMap):**
+  - Preview peta interaktif gratis tanpa Google Maps API berbayar.
+  - Pengaturan radius toleransi ujian (50m, 100m, 200m, 500m, dst).
+  - Fitur pencarian lokasi langsung (*live search Nominatim*) dan input tautan Google Maps langsung.
+- **🔐 Dua Tingkat Akses Administrator (RBAC):**
+  - **Super Admin:** Akses mutlak ke semua fitur, termasuk *Pengaturan Instansi* dan *Kelola Akun Administrator*.
+  - **Proktor Ujian:** Khusus operasional lapangan (*Ringkasan & Metrik*, *Sesi Ujian*, *Kontrol Pengawas Live*, dan *Manajemen Siswa*). Menu sensitif otomatis disembunyikan.
+- **⚡ Kontrol Pengawas Real-Time:**
+  - **Unlock:** Membuka kembali siswa yang terkunci tanpa reload.
+  - **Reset Login:** Melepas ikatan *Device ID* siswa jika ganti perangkat.
+  - **Reset Jawaban:** Mengembalikan status `COMPLETED` menjadi `RESET_BY_PROCTOR`.
+  - **Reset Password & Reset SSO:** Reset password instan ke default NIS dan pencabutan koneksi Google SSO per siswa.
+- **🏷️ Sticky Header Ujian:** Timer hitung mundur pengerjaan, chip token soal sekali-klik salin (*click-to-copy*), dan konfirmasi submit ujian.
+- **🌐 Google Workspace SSO & reCAPTCHA v2:** Dukungan integrasi OAuth login sekolah dan verifikasi bot reCAPTCHA v2 dengan kontrol toggle on/off.
+- **🏫 Identitas Sekolah & NPSN Resmi:** Konfigurasi nama sekolah, jenjang pendidikan, serta input validasi **NPSN 8 digit angka numerik** yang tersimpan di basis data sistem dan tampil pada header aplikasi.
+- **💾 Backup & Restore Terenkripsi (AES-256-GCM):** Fasilitas pencadangan dan pemulihan data instansi, link bank soal, basis data siswa, serta riwayat ujian dengan **enkripsi militer AES-256-GCM** otomatis untuk password dan kunci rahasia Google.
+- **ℹ️ Menu Informasi & Repositori (About):** Halaman identitas resmi aplikasi, spesifikasi teknologi, tim pengembang, lisensi MIT, serta tombol resmi repositori GitHub.
 
 ---
 
-## Prasyarat Sistem (Prerequisites)
+## 💻 Prasyarat Sistem
 
-Sebelum menjalankan aplikasi, pastikan perangkat komputer Anda telah terpasang:
-- **Node.js**: Versi `18.x`, `20.x`, atau versi LTS yang lebih baru (disarankan Node v20+).
-- **NPM**: Versi 9.x atau 10.x+ (bawaan dari instalasi Node.js).
-- **Web Browser Modern**: Google Chrome, Microsoft Edge, Mozilla Firefox, atau Brave (direkomendasikan Chrome/Edge untuk kompatibilitas penuh API Fullscreen dan Geolocation).
-- **Git** (Opsional).
+Sebelum memulai instalasi, pastikan sistem komputer Anda telah memenuhi prasyarat berikut:
 
-Untuk memeriksa versi yang terpasang di komputer Anda, jalankan perintah:
+| Komponen | Kebutuhan Minimum | Rekomendasi |
+| :--- | :--- | :--- |
+| **Node.js** | Versi 18.x LTS | **Versi 20.x atau 22.x LTS** |
+| **NPM** | Versi 9.x | **Versi 10.x+** (bawaan Node.js) |
+| **Browser** | Google Chrome 100+ / Edge 100+ | **Google Chrome Terbaru** (Dukungan API Sensor Terbaik) |
+| **Koneksi Internet** | Diperlukan saat `npm install` dan memuat peta OpenStreetMap |
+| **Hosting Target** | Apache / LiteSpeed dengan dukungan `.htaccess` & SSL (HTTPS) |
+
+Periksa versi Node.js & NPM Anda melalui terminal:
 ```bash
 node -v
 npm -v
@@ -57,180 +90,232 @@ npm -v
 
 ---
 
-## Panduan Menjalankan dalam Mode Developer
+## 🚀 Panduan Instalasi Lokal (Mode Pengembang)
 
-Ikuti langkah-langkah berikut secara berurutan:
+Ikuti langkah-langkah di bawah ini untuk menjalankan ExamGuard di komputer lokal Anda:
 
-### 1. Buka Terminal di Direktori Proyek
-Buka terminal favorit Anda (PowerShell, Command Prompt, Git Bash, atau Terminal VS Code / Antigravity IDE), lalu navigasikan ke folder proyek:
+### 1. Kloning Repository atau Unduh Sumber Kode
+Jika menggunakan Git:
 ```bash
-cd d:\laragon\www\examguard
+git clone https://github.com/username/examguard.git
+cd examguard
 ```
+Atau jika menggunakan Laragon / XAMPP, letakkan folder proyek di direktori web server Anda (misal `d:\laragon\www\examguard`).
 
-### 2. Instal Seluruh Dependensi
-Jika Anda baru pertama kali mengkloning atau membuka proyek ini, jalankan instalasi paket dependensi:
+### 2. Instalasi Paket Dependensi
+Jalankan perintah instalasi paket modul Node:
 ```bash
 npm install
 ```
-> **Catatan Windows PowerShell:** Jika muncul peringatan keamanan eksekusi skrip (`PSSecurityException`), gunakan `npm.cmd install`.
 
-### 3. Jalankan Vite Development Server
-Jalankan server pengembang lokal dengan perintah:
+> [!TIP]
+> **Pengguna Windows PowerShell:** Jika muncul error eksekusi skrip (*PSSecurityException*), gunakan perintah `npm.cmd install` atau jalankan `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned` di PowerShell Administrator.
+
+### 3. Menjalankan Local Development Server
+Jalankan server pengembangan berbasis Vite:
 ```bash
 npm run dev
 ```
 
-Agar aplikasi dapat diakses dari perangkat lain dalam satu jaringan WiFi/LAN (misalnya smartphone atau laptop pengawas):
+Agar aplikasi dapat diakses oleh perangkat lain dalam satu jaringan WiFi/LAN yang sama (misalnya untuk uji coba dari HP siswa):
 ```bash
 npm run dev -- --host 0.0.0.0
 ```
 
 ### 4. Buka Aplikasi di Browser
-Setelah server berjalan, output di terminal akan menampilkan alamat akses:
-```text
-  VITE v6.x.x  ready in 1200 ms
+Buka peramban web dan arahkan ke alamat yang tampil di terminal:
+- Akses Lokal: **[http://localhost:5173](http://localhost:5173)**
+- Akses Jaringan LAN: `http://[IP-Komputer-Anda]:5173`
 
-  ➜  Local:   http://localhost:5173/
-  ➜  Network: http://192.168.x.x:5173/
+---
+
+## 🌐 Panduan Instalasi & Deployment ke cPanel
+
+ExamGuard telah dirancang dengan arsitektur **cPanel-Ready** (menggunakan *relative path* `./` dan file `.htaccess` bawaan untuk mengatasi masalah refresh 404 pada Single Page Application).
+
+```mermaid
+flowchart LR
+    A["npm run build"] --> B["Folder dist/"]
+    B --> C["Kompres ke .ZIP"]
+    C --> D["Upload File Manager cPanel"]
+    D --> E["Extract di public_html"]
+    E --> F["Aktifkan SSL / HTTPS"]
 ```
-Buka browser Anda dan akses: **[http://localhost:5173](http://localhost:5173)**
+
+### Langkah 1: Buat Bundel Produksi (Build)
+Jalankan perintah build pada terminal proyek Anda:
+```bash
+npm run build
+```
+Vite akan mengompilasi kode sumber ke dalam folder `dist/` dalam hitungan detik.
+
+### Langkah 2: Siapkan File Arsip (.ZIP)
+Kompres seluruh isi di dalam folder `dist/` menjadi file ZIP (misal: `examguard-cpanel-ready.zip`).
+
+> [!IMPORTANT]
+> Pastikan file `.htaccess` yang ada di dalam `dist/` ikut terkompres ke dalam file ZIP.
+
+### Langkah 3: Unggah ke cPanel File Manager
+1. Masuk ke dashboard **cPanel** hosting sekolah Anda.
+2. Buka menu **File Manager**.
+3. Masuk ke direktori target:
+   - Jika untuk domain utama: buka folder `public_html/`.
+   - Jika untuk subdomain (misal `ujian.sekolah.sch.id`): buka folder document root subdomain tersebut (contoh: `public_html/ujian/`).
+4. Klik tombol **Upload** di menu atas cPanel, lalu pilih file `examguard-cpanel-ready.zip`.
+
+### Langkah 4: Ekstrak File ZIP di Server
+1. Klik kanan pada file ZIP yang baru diunggah di File Manager cPanel, lalu pilih **Extract** (Ekstrak di direktori aktif).
+2. Hapus file ZIP setelah diekstrak untuk menghemat ruang penyimpanan hosting.
+3. Pastikan struktur file terlihat seperti ini di folder root domain Anda:
+   ```text
+   public_html/ (atau folder subdomain)
+   ├── assets/
+   │   ├── index-[hash].css
+   │   └── index-[hash].js
+   ├── .htaccess
+   ├── favicon.ico
+   └── index.html
+   ```
+
+> [!TIP]
+> **Jika file `.htaccess` tidak terlihat di File Manager cPanel:**  
+> Klik tombol **Settings** di pojok kanan atas File Manager cPanel, lalu centang opsi **"Show Hidden Files (dotfiles)"** dan klik **Save**.
+
+### Langkah 5: Pastikan SSL (HTTPS) Aktif
+Fitur **Geolocation GPS**, **Fullscreen API**, dan **Pembersih Clipboard** mewajibkan protokol aman **HTTPS**:
+1. Pastikan fitur **AutoSSL / Let's Encrypt** telah berstatus aktif di cPanel untuk domain/subdomain ujian.
+2. File `.htaccess` ExamGuard sudah secara otomatis mengalihkan seluruh lalu lintas HTTP ke HTTPS (*Force HTTPS*).
 
 ---
 
-## Kredensial Akun Demo Pengujian
+## 🔑 Kredensial Akun Demo Pengujian
 
-Aplikasi telah dilengkapi dengan data *seed* awal untuk memudahkan pengujian semua alur:
+Aplikasi telah terisi dengan data bawaan (*seed database*) untuk memudahkan pengujian seluruh fitur dan skenario:
 
-| Peran (Role) | Username / NISN | Password | Keterangan, Status & Tautan Google |
+| Peran (Role) | Username / NISN | Password Default | Keterangan & Hak Akses |
 | :--- | :--- | :--- | :--- |
-| **Administrator** | `admin` | `admin` | Akses penuh dashboard, bank soal, pengaturan instansi |
-| **Pengawas (Proctor)** | `pengawas1` | `pengawas1` | Akses live monitoring & tombol aksi pengawas |
-| **Siswa 1** | `0058291021` | `0058291021` | Ahmad Fauzi Ridwan (XII MIPA 1) &bull; **Terverifikasi**, **Aktif**, **Google SSO Tertaut** |
-| **Siswa 2** | `0058291022` | `0058291022` | Siti Rahmawati Putri (XII MIPA 2) &bull; **Belum Verifikasi**, **Terkunci**, **Belum Taut Google** |
-| **Siswa 3** | `0068291033` | `0068291033` | Bambang Pamungkas (XI IPS 1) &bull; **Terverifikasi**, **Aktif**, **Belum Taut Google** |
+| **Super Admin** | `admin` | `admin` | **Akses Penuh:** Kelola Instansi, Akun Admin, Bank Soal, Sesi Ujian, & Monitoring |
+| **Proktor Ujian** | `proktor` | `proktor` | **Operasional Ujian:** Monitoring Siswa Live, Bank Sesi, Reset Password/SSO Siswa |
+| **Siswa 1** | `0058291021` | `22101` (NIS) | Ahmad Fauzi Ridwan (XII MIPA 1) • **Terverifikasi**, **SSO Google On** |
+| **Siswa 2** | `0058291022` | `22102` (NIS) | Siti Rahmawati Putri (XII MIPA 2) • **Terverifikasi**, **SSO Google Off** |
+| **Siswa 3** | `0068291033` | `23101` (NIS) | Bambang Pamungkas (XI IPS 1) • **Terverifikasi**, **SSO Google Off** |
+
+> [!NOTE]
+> - **Aturan Default Kredensial Siswa:** `Username` = **NISN**, `Password` = **NIS**.
+> - Jika akun siswa telah terhubung dengan **Google SSO**, siswa wajib masuk menggunakan tombol **Masuk dengan Google**. Siswa dapat meminta reset SSO ke Super Admin/Proktor jika ingin kembali menggunakan login NISN/NIS biasa.
 
 ---
 
-## Alur Kerja & Panduan Fitur Pengujian
+## 👥 Alur & Hak Akses Administrator
 
-### A. Pengujian Sisi Siswa (Student Portal)
-1. **Login Siswa:** Masuk menggunakan NISN `0058291021` dan password `0058291021`.
-2. **Pemeriksaan Pre-Flight:**
-   - Sistem akan memeriksa Cookies, Fullscreen, Media, dan GPS Haversine.
-   - *Tips Pengujian:* Jika Anda menguji di luar koordinat sekolah atau di lingkungan offline, klik tautan **"Mode Simulasi Pengawas"** di bagian bawah checklist untuk menyimulasikan GPS dalam radius (15m).
-   - Klik **"Izin Terpenuhi &bull; Lanjutkan ke Beranda Ujian"**.
-3. **Beranda Siswa:**
-   - Periksa sapaan ramah (*"Halo, Ahmad Fauzi! Yuk cek jadwal ujianmu hari ini"*).
-   - Periksa daftar ujian. Ujian yang tampil hanya ujian yang sesuai dengan tingkat kelas siswa (Tingkat 12).
-4. **Mulai Ujian:**
-   - Klik **"Mulai Ujian"** pada sesi soal.
-   - Baca petunjuk di modal himbauan, centang pernyataan tata tertib, lalu klik **"Buka Soal & Fullscreen"**.
-5. **Laman Ujian & Simulasi Pelanggaran (Auto-Lock):**
-   - Layar akan otomatis masuk ke mode Fullscreen.
-   - Timer hitung mundur akan berjalan di sticky header.
-   - **Coba Pindah Tab:** Buka tab baru atau minimalkan jendela browser. Layar akan langsung terkunci (**LAYAR UJIAN TERKUNCI**) dengan status `LOCKED`.
-6. **Selesaikan Ujian:**
-   - Klik tombol **"Selesaikan Ujian"** di pojok kanan atas.
-   - Konfirmasi dialog. Setelah diselesaikan, status berubah menjadi `COMPLETED` dan soal akan **otomatis disembunyikan** dari beranda siswa.
+ExamGuard membedakan wewenang administrator menjadi dua tingkatan:
 
-### B. Pengujian Sisi Administrator & Pengawas (Admin Dashboard)
-1. Buka browser baru (atau jendela *Incognito / Private Window*), lalu login dengan akun `admin` / `admin`.
-2. **Papan Kontrol Pengawas (Tab 'Kontrol Pengawas'):**
-   - Siswa yang tadi terkunci akan tampil dengan status `LOCKED` berwarna merah dan jumlah pelanggarannya.
-   - Uji coba **Tombol Aksi Pengawas**:
-     - Klik **"Unlock"** $\rightarrow$ Kembali ke jendela siswa, layar ujian siswa akan otomatis terbuka kembali tanpa perlu refresh.
-     - Klik **"Reset Login"** $\rightarrow$ Kunci ID perangkat siswa akan dihapus.
-     - Klik **"Reset Jawaban"** $\rightarrow$ Status siswa yang sudah `COMPLETED` diubah menjadi `RESET_BY_PROCTOR`, sehingga soal kembali muncul di beranda siswa.
-3. **Pengaturan Instansi (Tab 'Pengaturan Instansi'):**
-   - Coba ubah jenjang ke `SMP` atau `SD` $\rightarrow$ perhatikan rentang tingkat kelas otomatis berubah.
-   - Atur batas radius toleransi GPS atau klik **"Gunakan Posisi Saya"** untuk mengisi koordinat saat ini.
-4. **Manajemen Siswa (Tab 'Manajemen Siswa'):**
-   - **Tombol Tambah Peserta Manual:** Klik tombol **"+ Tambah Peserta"** untuk menginput data siswa baru secara manual (Nama, NISN, NIS, Kelas, Tingkat, Email, serta opsi verifikasi langsung). Status SSO awal siswa baru otomatis berstatus OFF.
-   - **Tombol Import Siswa (CSV/Excel):** Klik **"Import Siswa (CSV/Excel)"**, klik **"Salin Contoh"**, lalu klik **"Proses Import Siswa"**. Siswa baru akan langsung tersimpan dan password awal otomatis diset ke nomor NISN.
-   - **Kolom Nomor Urut (No):** Seluruh data siswa memiliki penomoran urut rapi dari nomor 1.
-   - **Aturan Verifikasi Wajib:** Siswa berstatus `Belum Verifikasi` memiliki status akun terkunci (`Terkunci (Belum Verif)`) dan **tidak dapat diaktifkan** sebelum panitia melakukan verifikasi. Jika verifikasi siswa dicabut, status akun siswa otomatis dinonaktifkan demi kepatuhan ujian.
-   - **Kolom Status SSO Google (Otomatis & Read-Only):**
-     - **Centang Hijau (`SSO On`):** Tampil otomatis jika siswa telah pernah login menggunakan email terdaftar dan menyimpan ID akun Google unik.
-     - **Centang Off (`SSO Off`):** Tampil jika siswa belum pernah menggunakan Google SSO untuk login ke sistem.
-     - **Proteksi Admin:** Admin tidak dapat mengubah status ini secara manual karena murni merupakan hasil autentikasi SSO siswa.
-   - **Kolom Aksi (Edit & Hapus):**
-     - Klik ikon **Edit** untuk memperbarui nama, NISN, NIS, kelas, tingkat, atau email siswa.
-     - **Aturan Reset Email:** Jika email di-update dan berbeda dari email sebelumnya, status Google SSO otomatis **OFF** dan ID Google tersimpan dihapus, sehingga siswa wajib melakukan login ulang melalui Google SSO dengan email barunya.
-     - Klik ikon **Hapus** untuk menghapus peserta dari database.
+```text
+┌─────────────────────────────────────────────────────────────┐
+│                       SUPER ADMIN                           │
+│  (Akses Penuh: Pengaturan Instansi, GForm, Akun, Database)   │
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+               ┌───────────────┴───────────────┐
+               ▼                               ▼
+     [Pengaturan Instansi &          [Operasional Pengawasan]
+      Akun Administrator]                      │
+      (Khusus Super Admin)                     ▼
+                               ┌──────────────────────────────┐
+                               │        PROKTOR UJIAN         │
+                               │ • Ringkasan & Metrik         │
+                               │ • Bank Sesi Ujian GForm      │
+                               │ • Papan Kontrol Pengawas Live│
+                               │ • Basis Data Siswa & Reset   │
+                               └──────────────────────────────┘
+```
+
+1. **Super Admin:**
+   - Mengatur identitas instansi (nama sekolah, jenjang SD/SMP/SMA, logo).
+   - Mengatur koordinat GPS Geofencing, radius toleransi, dan peta interaktif.
+   - Mengatur integrasi Google Workspace SSO Client ID dan Google reCAPTCHA v2.
+   - Mengubah kata sandi Super Admin dan akun Proktor Ujian.
+2. **Proktor Ujian:**
+   - Memantau aktivitas pengerjaan siswa secara langsung (*Live Monitoring*).
+   - Melakukan aksi *Unlock* siswa terkunci akibat pelanggaran.
+   - Melakukan *Reset Login* perangkat siswa.
+   - Mereset password akun siswa ke default NIS dan mereset status Google SSO jika siswa mengalami kendala akun.
+   - Menu *Pengaturan Instansi* dan *Akun Administrator* otomatis **disembunyikan** dari sidebar Proktor.
 
 ---
 
-## Struktur Folder Proyek
+## 📁 Struktur Folder Proyek
 
 ```text
 examguard/
-├── dist/                          # Hasil build produksi siap cPanel
-│   ├── assets/                    # File JavaScript & CSS yang telah di-bundle & hash
-│   ├── .htaccess                  # Konfigurasi Apache (SPA Routing & Force HTTPS)
-│   └── index.html                 # Entry point HTML produksi (relatif path ./)
+├── dist/                              # Output build siap hosting cPanel
+│   ├── assets/                        # Bundle JS & CSS ter-hash
+│   ├── .htaccess                      # Aturan SPA routing & Force HTTPS
+│   └── index.html                     # Entry point HTML produksi
 ├── public/
-│   └── .htaccess                  # File .htaccess asli untuk disalin Vite ke dist/
+│   ├── .htaccess                      # Konfigurasi Apache bawaan
+│   └── favicon.ico                    # Favicon aplikasi
 ├── src/
 │   ├── components/
-│   │   └── admin/
-│   │       └── AdminSidebar.jsx   # Komponen sidebar admin minimalis monokrom
+│   │   ├── admin/
+│   │   │   └── AdminSidebar.jsx       # Navigasi panel admin dengan filter role
+│   │   └── common/
+│   │       ├── ConfirmModal.jsx       # Modal konfirmasi kustom modern
+│   │       └── NotificationToast.jsx  # Toast notifikasi kustom modern
 │   ├── constants/
-│   │   └── educationConfig.js     # Jenjang pendidikan, Haversine formula, UUID v4
+│   │   └── educationConfig.js         # Konfigurasi jenjang, Haversine GPS, helper
 │   ├── pages/
 │   │   ├── admin/
-│   │   │   └── AdminDashboard.jsx # Dashboard admin, kontrol proctor, import CSV
+│   │   │   └── AdminDashboard.jsx     # Dashboard terpadu Super Admin & Proktor
 │   │   ├── auth/
-│   │   │   └── LoginPortal.jsx    # Portal login siswa, admin, Google SSO, reCAPTCHA
+│   │   │   └── LoginPortal.jsx        # Gerbang login multi-peran & SSO
 │   │   └── student/
-│   │       └── StudentPortal.jsx  # Pre-flight check, beranda, laman ujian GForm
+│   │       └── StudentPortal.jsx      # Pre-flight check, beranda, & ujian GForm
 │   ├── services/
-│   │   └── storageService.js      # Arsitektur database terpusat (localStorage + API adapter)
-│   ├── App.jsx                    # Root router & session manager
-│   ├── index.css                  # Tailwind CSS v4 directives & font styling
-│   └── main.jsx                   # React DOM render entry point
-├── index.html                     # HTML Template Vite
-├── package.json                   # Dependensi & script proyek
-├── vite.config.js                 # Konfigurasi Vite (base: './', port 5173, outDir: 'dist')
-├── examguard-cpanel-ready.zip     # Arsip ZIP produksi siap unggah ke cPanel
-└── README.md                      # Dokumentasi & panduan developer ini
+│   │   └── storageService.js          # Arsitektur penyimpanan terpusat (LocalStorage)
+│   ├── App.jsx                        # Komponen root aplikasi & router
+│   ├── index.css                      # Konfigurasi Tailwind CSS v4 & styling font
+│   └── main.jsx                       # Entry point React DOM
+├── examguard-cpanel-ready.zip         # Arsip siap deploy ke cPanel
+├── package.json                       # Konfigurasi dependensi dan skrip npm
+├── vite.config.js                     # Konfigurasi Vite (relative base './')
+└── README.md                          # Panduan dokumentasi lengkap ini
 ```
 
 ---
 
-## Build Produksi Siap cPanel
+## ⚙️ Konfigurasi Tambahan
 
-Aplikasi ini telah dirancang dengan aturan konfigurasi khusus agar dapat berjalan di cPanel (*root* `public_html`, subdomain, maupun subfolder):
+### 1. Konfigurasi Google Workspace SSO (Opsional)
+Untuk mengaktifkan autentikasi akun Google sekolah (@sekolah.sch.id):
+1. Buka [Google Cloud Console](https://console.cloud.google.com/).
+2. Buat proyek baru $\rightarrow$ Buka menu **APIs & Services** $\rightarrow$ **Credentials**.
+3. Buat **OAuth 2.0 Client IDs** (Web Application).
+4. Tambahkan domain sekolah Anda ke dalam **Authorized JavaScript origins** (misal: `https://ujian.sekolah.sch.id`).
+5. Salin **Client ID** yang diperoleh, lalu masuk ke ExamGuard sebagai Super Admin $\rightarrow$ Tab **Pengaturan Instansi** $\rightarrow$ Masukkan Client ID pada formulir Google OAuth.
+6. Aktifkan toggle switch Google OAuth.
 
-1. **Jalankan Build Produksi:**
-   ```bash
-   npm run build
-   ```
-2. **Karakteristik Hasil Build:**
-   - Menggunakan path relatif (`base: './'`) sehingga bebas dari masalah *blank screen* atau aset tidak terpanggil.
-   - `build.sourcemap: false` untuk menjaga keamanan kode sumber.
-   - File `public/.htaccess` otomatis disalin ke dalam folder `dist/`.
-3. **Langkah Publikasi ke cPanel:**
-   - Kompres seluruh isi folder `dist/` menjadi file ZIP (atau gunakan file yang telah kami sediakan: `examguard-cpanel-ready.zip`).
-   - Masuk ke cPanel $\rightarrow$ Buka **File Manager** $\rightarrow$ Masuk ke folder target (contoh: `public_html` atau `public_html/ujian`).
-   - Klik **Upload** dan unggah file ZIP tersebut, lalu klik **Extract Here**.
-   - Pastikan opsi *"Show Hidden Files (dotfiles)"* aktif di Settings File Manager cPanel agar file `.htaccess` terbaca oleh Apache / LiteSpeed.
-   - Pastikan **SSL (HTTPS)** telah aktif pada domain/subdomain Anda.
+### 2. Konfigurasi Google reCAPTCHA v2 (Opsional)
+1. Buka [Google reCAPTCHA Admin Console](https://www.google.com/recaptcha/admin).
+2. Daftarkan domain sekolah dengan memilih tipe **reCAPTCHA v2 ("I'm not a robot" Checkbox)**.
+3. Masukkan **Site Key** ke tab **Pengaturan Instansi** di ExamGuard dan aktifkan proteksi reCAPTCHA.
 
 ---
 
-## Pemecahan Masalah (Troubleshooting)
+## 🛠️ Pemecahan Masalah (Troubleshooting)
 
-| Gejala Masalah | Penyebab | Solusi |
+| Gejala Masalah | Kemungkinan Penyebab | Langkah Solusi |
 | :--- | :--- | :--- |
-| **Port 5173 already in use** | Port 5173 sedang dipakai oleh proses lain | Jalankan dengan port lain: `npm run dev -- --port 5174` |
-| **Izin Lokasi (GPS) Ditolak** | Browser memblokir akses lokasi | Klik ikon gembok/setelan situs di address bar browser, ubah izin *Location* ke *Allow*, lalu muat ulang halaman. |
-| **Mode Layar Penuh Ditolak** | Browser membutuhkan interaksi klik pengguna | Pastikan Anda mengklik tombol "Buka Soal & Fullscreen" (browser memblokir fullscreen yang dipicu otomatis tanpa interaksi). |
-| **Perangkat Terkunci di Akun Siswa** | Siswa sebelumnya login di perangkat atau peramban lain | Login ke panel Admin $\rightarrow$ Tab *Kontrol Pengawas* atau *Manajemen Siswa* $\rightarrow$ Klik **Reset Login** pada siswa tersebut. |
-| **PSSecurityException di PowerShell** | Kebijakan eksekusi skrip Windows memblokir file `.ps1` | Gunakan perintah `npm.cmd run dev` atau jalankan `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned`. |
+| **Port 5173 already in use** | Port 5173 sedang dipakai oleh aplikasi lain | Jalankan Vite pada port alternatif: `npm run dev -- --port 5174` |
+| **Error 404 saat Refresh di cPanel** | File `.htaccess` belum terunggah atau `mod_rewrite` nonaktif | Pastikan file `.htaccess` berada di folder yang sama dengan `index.html` dan opsi *Show Hidden Files* aktif di cPanel. |
+| **Izin Geolocation / GPS Gagal** | Situs dibuka tanpa protokol HTTPS | Akses situs melalui `https://` bukan `http://`. Browser memblokir API sensor pada koneksi non-HTTPS. |
+| **Mode Layar Penuh Ditolak** | Pemicuan Fullscreen tanpa interaksi klik | Pastikan siswa mengklik tombol "Buka Soal & Fullscreen". Browser modern melarang otomatisasi fullscreen tanpa klik pengguna. |
+| **Peta Leaflet Tidak Muncul / Abu-abu** | Koneksi internet lambat atau kontainer peta belum render | Pastikan perangkat terhubung ke internet untuk memuat tile OpenStreetMap. Peta akan otomatis menyesuaikan ukuran kontainer. |
+| **Siswa Terkunci di Perangkat Lama** | Siswa berpindah HP/Laptop tanpa logout | Minta Proktor membuka menu *Kontrol Pengawas* atau *Manajemen Siswa*, lalu klik tombol **Reset Login** pada siswa tersebut. |
+| **PSSecurityException di Windows** | PowerShell membatasi eksekusi skrip lokal | Gunakan `npm.cmd [perintah]` atau jalankan perintah PowerShell: `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned`. |
 
 ---
 
-## Lisensi & Kontributor
+## 📄 Lisensi
 
-Dikembangkan dengan standar arsitektur tingkat tinggi untuk sistem pengawasan ujian Google Form mandiri. Bebas digunakan dan disesuaikan untuk kebutuhan instansi pendidikan Anda.
-
+ExamGuard dirilis di bawah lisensi [MIT](LICENSE). Bebas digunakan, dimodifikasi, dan didistribusikan untuk keperluan instansi pendidikan, sekolah, maupun pelatihan mandiri.
