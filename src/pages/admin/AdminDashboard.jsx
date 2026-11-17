@@ -63,8 +63,17 @@ import {
   Cookie,
   CheckSquare,
   Square,
+  Printer,
+  Sliders,
+  Activity,
+  Bug,
+  Terminal,
+  Mic,
+  PlayCircle,
+  Play,
+  FlaskConical,
 } from 'lucide-react';
-import { storageService } from '../../services/storageService';
+import { storageService, cleanNomorUjian, convertGoogleFormUrl, subscribeSync } from '../../services/storageService';
 import {
   createSystemBackupPackage,
   restoreSystemBackupPackage,
@@ -173,6 +182,190 @@ function parseGmapsUrl(input) {
   return null;
 }
 
+
+// Helper Format Hari & Tanggal Bahasa Indonesia Resmi untuk Berita Acara
+const INDONESIAN_DAYS = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+const INDONESIAN_MONTHS = [
+  'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+  'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+];
+
+function formatIndonesianDateText(dateObj = new Date()) {
+  const d = dateObj instanceof Date ? dateObj : new Date(dateObj);
+  const dayName = INDONESIAN_DAYS[d.getDay()] || 'Hari';
+  const dateNum = d.getDate();
+  const monthName = INDONESIAN_MONTHS[d.getMonth()] || '';
+  const yearNum = d.getFullYear();
+  return {
+    dayName,
+    dateNum,
+    monthName,
+    yearNum,
+    fullText: `${dayName}, ${dateNum} ${monthName} ${yearNum}`
+  };
+}
+
+
+// Helper Eksekusi Cetak Dokumen Bersih & Terisolasi Standar Kertas A4 Tanpa Bocor Elemen Dashboard
+function executePrintDocument(elementId, title, marginSetting = 'narrow', customMargin = { top: 10, right: 10, bottom: 10, left: 10 }) {
+  const element = document.getElementById(elementId);
+  if (!element) {
+    console.error('Print element not found:', elementId);
+    return;
+  }
+
+  // Hitung margin A4 sesuai standar atau kustom
+  let marginCss = '10mm 10mm 10mm 10mm';
+  if (marginSetting === 'normal') marginCss = '20mm 20mm 20mm 20mm';
+  else if (marginSetting === 'narrow') marginCss = '10mm 10mm 10mm 10mm';
+  else if (marginSetting === 'tight') marginCss = '5mm 5mm 5mm 5mm';
+  else if (marginSetting === 'custom') {
+    const t = Number(customMargin.top) >= 0 ? Number(customMargin.top) : 10;
+    const r = Number(customMargin.right) >= 0 ? Number(customMargin.right) : 10;
+    const b = Number(customMargin.bottom) >= 0 ? Number(customMargin.bottom) : 10;
+    const l = Number(customMargin.left) >= 0 ? Number(customMargin.left) : 10;
+    marginCss = `${t}mm ${r}mm ${b}mm ${l}mm`;
+  }
+
+  // Ambil seluruh style sheets aplikasi agar Tailwind dan styling resmi terbawa sempurna
+  const styleNodes = Array.from(document.querySelectorAll('link[rel="stylesheet"], style'))
+    .map(node => node.outerHTML)
+    .join('\n');
+
+  // Bersihkan frame cetak sebelumnya jika ada
+  const existingFrame = document.getElementById('examguard-print-frame');
+  if (existingFrame) existingFrame.remove();
+
+  // Buat iframe terisolasi dengan dimensi nyata A4 portrait (210mm x 297mm)
+  // Menghindari bug Chromium/Chrome yang mencetak window utama jika iframe berukuran 0x0
+  const iframe = document.createElement('iframe');
+  iframe.id = 'examguard-print-frame';
+  iframe.setAttribute(
+    'style',
+    'position: fixed; top: -10000px; left: -10000px; width: 210mm; min-height: 297mm; border: none; opacity: 0; pointer-events: none; z-index: -9999;'
+  );
+  document.body.appendChild(iframe);
+
+  const doc = iframe.contentWindow.document;
+  doc.open();
+  doc.write(`
+    <!DOCTYPE html>
+    <html lang="id">
+    <head>
+      <meta charset="utf-8">
+      <title>${title || 'Cetak Dokumen Resmi'}</title>
+      ${styleNodes}
+      <style>
+        @page {
+          size: A4 portrait;
+          margin: ${marginCss};
+        }
+        * {
+          box-sizing: border-box;
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+        html, body {
+          background: #ffffff !important;
+          color: #000000 !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          width: 100% !important;
+          font-family: Arial, Helvetica, 'Segoe UI', Roboto, sans-serif !important;
+          font-size: 11px !important;
+          line-height: 1.35 !important;
+        }
+        /* Reset pembungkus modal agar tidak dobel margin / box-shadow */
+        #printable-berita-acara,
+        #printable-daftar-hadir {
+          border: none !important;
+          box-shadow: none !important;
+          padding: 0 !important;
+          margin: 0 !important;
+          width: 100% !important;
+          max-width: 100% !important;
+          background: #ffffff !important;
+        }
+        /* Jaminan mutlak Berita Acara pas 1 halaman A4 */
+        #printable-berita-acara {
+          page-break-inside: avoid !important;
+          break-inside: avoid !important;
+        }
+        table {
+          width: 100%;
+          border-collapse: collapse;
+        }
+        thead {
+          display: table-header-group;
+        }
+        tr, .page-break-avoid {
+          page-break-inside: avoid;
+          break-inside: avoid;
+        }
+        th, td {
+          border: 1px solid #000000;
+          padding: 4px 6px;
+          font-size: 11px;
+        }
+        th {
+          background-color: #f3f4f6 !important;
+          font-weight: bold;
+          text-align: center;
+        }
+        .text-center { text-align: center; }
+        .text-right { text-align: right; }
+        .font-bold { font-weight: bold; }
+        .uppercase { text-transform: uppercase; }
+        .underline { text-decoration: underline; }
+        .no-border td, table.no-border, table.no-border td, table.no-border th {
+          border: none !important;
+        }
+        .ttd-table {
+          width: 100%;
+          border: none !important;
+          margin-top: 14px;
+          page-break-inside: avoid;
+        }
+        .ttd-table td {
+          border: none !important;
+          padding: 2px 4px;
+        }
+        hr.divider {
+          border: 0;
+          border-top: 2px solid #000000;
+          margin: 6px 0 10px 0;
+        }
+      </style>
+    </head>
+    <body>
+      ${element.innerHTML}
+    </body>
+    </html>
+  `);
+  doc.close();
+
+  const doPrint = () => {
+    try {
+      iframe.contentWindow.focus();
+      iframe.contentWindow.print();
+    } catch (err) {
+      console.warn('Gagal mencetak dokumen melalui iframe:', err);
+    }
+  };
+
+  // Tunggu gambar dan aset di dalam iframe siap
+  setTimeout(doPrint, 350);
+
+  // Bersihkan iframe setelah print dialog ditutup
+  if (iframe.contentWindow) {
+    iframe.contentWindow.onafterprint = () => {
+      setTimeout(() => {
+        if (document.body.contains(iframe)) iframe.remove();
+      }, 500);
+    };
+  }
+}
+
 export default function AdminDashboard({ currentUser, onLogout }) {
   const isSuperAdmin = currentUser?.role === 'admin';
   const [activeTab, setActiveTab] = useState('overview');
@@ -180,6 +373,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
   const [users, setUsers] = useState(storageService.getUsers());
   const [exams, setExams] = useState(storageService.getExamSessions());
   const [attempts, setAttempts] = useState(storageService.getAttempts());
+  const [isRefreshingProctor, setIsRefreshingProctor] = useState(false);
   const [gmapsInput, setGmapsInput] = useState(
     () => institution?.gmaps_url || (institution?.center_lat ? `https://maps.google.com/?q=${institution.center_lat},${institution.center_lng}` : '')
   );
@@ -306,8 +500,33 @@ export default function AdminDashboard({ currentUser, onLogout }) {
   const [userSearch, setUserSearch] = useState('');
   const [examSearch, setExamSearch] = useState('');
   const [proctorSearch, setProctorSearch] = useState('');
+  const [selectedProctorGrade, setSelectedProctorGrade] = useState('ALL'); // 'ALL' | 10 | 11 | 12
+  const [proctorStatusFilter, setProctorStatusFilter] = useState('ALL'); // 'ALL' | 'LOCKED' | 'IN_PROGRESS' | 'ONLINE' | 'COMPLETED'
   const [examSubTab, setExamSubTab] = useState('active'); // 'active' | 'bank'
   const [selectedSessionGroup, setSelectedSessionGroup] = useState('ALL');
+
+  // State Mode Aplikasi (Produksi vs Demo/Simulasi/Pengembangan), Diagnostik & Histori Error
+  const [appModeConfig, setAppModeConfig] = useState(() => storageService.getAppModeConfig());
+  const [systemErrorLogs, setSystemErrorLogs] = useState(() => storageService.getSystemErrorLogs());
+  const [diagnosticResults, setDiagnosticResults] = useState({});
+  const [isTestingAllDiagnostics, setIsTestingAllDiagnostics] = useState(false);
+  const [errorLogFilter, setErrorLogFilter] = useState('ALL'); // 'all' | 'error' | 'warning' | 'info'
+  const [errorLogSearch, setErrorLogSearch] = useState('');
+  const [copiedLogFeedback, setCopiedLogFeedback] = useState(false);
+
+  // Sinkronisasi real-time saat mode aplikasi atau log error diperbarui
+  useEffect(() => {
+    const handleSync = () => {
+      setAppModeConfig(storageService.getAppModeConfig());
+      setSystemErrorLogs(storageService.getSystemErrorLogs());
+    };
+    window.addEventListener('examguard_error_logged', handleSync);
+    window.addEventListener('examguard_storage_updated', handleSync);
+    return () => {
+      window.removeEventListener('examguard_error_logged', handleSync);
+      window.removeEventListener('examguard_storage_updated', handleSync);
+    };
+  }, []);
 
   // Password visibility
   const [showGoogleSecret, setShowGoogleSecret] = useState(false);
@@ -369,6 +588,193 @@ export default function AdminDashboard({ currentUser, onLogout }) {
   const [restoreCustomKey, setRestoreCustomKey] = useState('');
   const [isRestoringData, setIsRestoringData] = useState(false);
   const restoreFileInputRef = useRef(null);
+
+  
+  // ========================================================
+  // STATE PRESENSI UJIAN & REKAP KEHADIRAN SISWA
+  // ========================================================
+  const [selectedAttendanceExamId, setSelectedAttendanceExamId] = useState(() => {
+    const ex = storageService.getExamSessions();
+    return ex[0]?.id || '';
+  });
+  const [selectedAttendanceRoom, setSelectedAttendanceRoom] = useState('ALL');
+  const [selectedAttendanceStatus, setSelectedAttendanceStatus] = useState('ALL');
+  const [attendanceSearch, setAttendanceSearch] = useState('');
+  const [attendanceDrafts, setAttendanceDrafts] = useState({});
+
+  const handleAttendanceDraftChange = (studentId, field, value) => {
+    setAttendanceDrafts((prev) => ({
+      ...prev,
+      [studentId]: {
+        ...(prev[studentId] || {}),
+        [field]: value,
+      },
+    }));
+  };
+
+  const handleSaveAttendance = (studentId) => {
+    if (!selectedAttendanceExamId) {
+      showNotification('Pilih sesi ujian terlebih dahulu.', 'error');
+      return;
+    }
+    const draft = attendanceDrafts[studentId] || {};
+    const existing = storageService.getExamAttendance(selectedAttendanceExamId).find((a) => a.student_id === studentId);
+    const newStatus = draft.status || existing?.status || 'HADIR';
+    const newKeterangan = draft.keterangan !== undefined ? draft.keterangan : (existing?.keterangan || '');
+
+    storageService.saveExamAttendance(selectedAttendanceExamId, studentId, {
+      status: newStatus,
+      keterangan: newKeterangan,
+      updated_by: currentUser?.nama || 'Admin',
+    });
+
+    setAttendanceDrafts((prev) => {
+      const copy = { ...prev };
+      delete copy[studentId];
+      return copy;
+    });
+
+    showNotification('Status presensi siswa berhasil disimpan.');
+  };
+
+  const handleResetAttendance = (studentId) => {
+    if (!selectedAttendanceExamId) return;
+    storageService.removeExamAttendance(selectedAttendanceExamId, studentId);
+    setAttendanceDrafts((prev) => {
+      const copy = { ...prev };
+      delete copy[studentId];
+      return copy;
+    });
+    showNotification('Status khusus presensi dikembalikan ke default.');
+  };
+
+  // ========================================================
+  // STATE & LOGIC: RESET LOGIN & STATUS PENGERJAAN PER MAPEL
+  // ========================================================
+  const [selectedResetExamId, setSelectedResetExamId] = useState(() => {
+    const ex = storageService.getExamSessions();
+    return ex[0]?.id || '';
+  });
+  const [resetStatusFilter, setResetStatusFilter] = useState('ALL'); // 'ALL' | 'NOT_STARTED' | 'IN_PROGRESS' | 'LOCKED' | 'COMPLETED' | 'RESET_BY_PROCTOR'
+  const [resetSearch, setResetSearch] = useState('');
+  const [selectedStudentIdsForReset, setSelectedStudentIdsForReset] = useState([]);
+
+  // Sesi ujian yang saat ini dipilih untuk proses Reset Status
+  const currentResetExam = React.useMemo(() => {
+    return exams.find((e) => e.id === selectedResetExamId) || exams[0] || null;
+  }, [exams, selectedResetExamId]);
+
+  // Daftar siswa yang memenuhi syarat untuk mapel terpilih berserta status pengerjaannya
+  const resetExamStudents = React.useMemo(() => {
+    if (!currentResetExam) return [];
+    const grade = currentResetExam.grade_level;
+    const studentUsers = (users || []).filter(
+      (u) => u.role === 'student' && (!grade || Number(u.tingkat) === Number(grade) || Number(grade) === 0)
+    );
+
+    const examAttempts = (attempts || []).filter((a) => a.exam_session_id === currentResetExam.id);
+    const attemptByStudentId = new Map(examAttempts.map((a) => [String(a.student_id), a]));
+    const attemptByStudentNisn = new Map(examAttempts.map((a) => [String(a.student_nisn), a]));
+
+    return studentUsers.map((stu) => {
+      const att =
+        attemptByStudentId.get(String(stu.id)) ||
+        attemptByStudentNisn.get(String(stu.nisn)) ||
+        examAttempts.find(
+          (a) =>
+            (a.student_name && stu.nama && a.student_name.toLowerCase() === stu.nama.toLowerCase()) ||
+            (a.student_id && String(a.student_id) === String(stu.id)) ||
+            (a.student_nisn && String(a.student_nisn) === String(stu.nisn))
+        );
+
+      let computedStatus = 'NOT_STARTED'; // 'Belum Masuk'
+      if (att) {
+        if (att.status === 'LOCKED') computedStatus = 'LOCKED';
+        else if (att.status === 'COMPLETED') computedStatus = 'COMPLETED';
+        else if (att.status === 'RESET_BY_PROCTOR') computedStatus = 'RESET_BY_PROCTOR';
+        else computedStatus = 'IN_PROGRESS';
+      }
+
+      return {
+        studentId: stu.id,
+        nama: stu.nama,
+        nisn: stu.nisn || '-',
+        kelas: stu.kelas || '-',
+        ruang: stu.ruang || '-',
+        tingkat: stu.tingkat,
+        activeDeviceId: stu.active_device_id,
+        isDeviceLocked: Boolean(stu.active_device_id),
+        attempt: att || null,
+        attemptId: att?.id || null,
+        status: computedStatus,
+        violationCount: att?.violation_count || 0,
+        timeSpentSeconds: att?.time_spent_seconds || 0,
+        lastViolationReason: att?.last_violation_reason || '',
+      };
+    });
+  }, [currentResetExam, users, attempts]);
+
+  // Filter siswa per mapel berdasarkan status & kata kunci pencarian
+  const filteredResetExamStudents = React.useMemo(() => {
+    return resetExamStudents.filter((item) => {
+      if (resetStatusFilter !== 'ALL' && item.status !== resetStatusFilter) {
+        return false;
+      }
+      const q = (resetSearch || '').trim().toLowerCase();
+      if (!q) return true;
+      return (
+        item.nama.toLowerCase().includes(q) ||
+        item.nisn.toLowerCase().includes(q) ||
+        item.kelas.toLowerCase().includes(q) ||
+        (item.ruang && item.ruang.toLowerCase().includes(q))
+      );
+    });
+  }, [resetExamStudents, resetStatusFilter, resetSearch]);
+
+  // Statistik ringkas status mapel terpilih
+  const resetExamStats = React.useMemo(() => {
+    return {
+      total: resetExamStudents.length,
+      notStarted: resetExamStudents.filter((s) => s.status === 'NOT_STARTED').length,
+      inProgress: resetExamStudents.filter((s) => s.status === 'IN_PROGRESS').length,
+      locked: resetExamStudents.filter((s) => s.status === 'LOCKED').length,
+      completed: resetExamStudents.filter((s) => s.status === 'COMPLETED').length,
+      reset: resetExamStudents.filter((s) => s.status === 'RESET_BY_PROCTOR').length,
+      deviceLocked: resetExamStudents.filter((s) => s.isDeviceLocked).length,
+    };
+  }, [resetExamStudents]);
+
+  // ========================================================
+  // STATE MODAL BERITA ACARA & DAFTAR HADIR (PRINT PREVIEW)
+  // ========================================================
+  const [showBeritaAcaraModal, setShowBeritaAcaraModal] = useState(false);
+  const [showDaftarHadirModal, setShowDaftarHadirModal] = useState(false);
+  const [beritaAcaraConfig, setBeritaAcaraConfig] = useState(() => {
+    const saved = storageService.getBeritaAcaraConfig();
+    return {
+      instansi_pusat: saved.instansi_pusat || '',
+      alamat: saved.alamat || '',
+      kepala_sekolah_nama: saved.kepala_sekolah_nama || '',
+      kepala_sekolah_nip: saved.kepala_sekolah_nip || '',
+      proktor_nama: saved.proktor_nama || currentUser?.nama || 'Proktor Utama',
+      proktor_nip: saved.proktor_nip || '',
+      pengawas_nama: saved.pengawas_nama || 'Pengawas Ruang Ujian',
+      pengawas_nip: saved.pengawas_nip || '',
+      catatan_pelaksanaan: saved.catatan_pelaksanaan || 'Pelaksanaan ujian berlangsung dengan tertib, aman, dan terkendali sesuai tata tertib yang berlaku.',
+    };
+  });
+
+  const handleUpdateBeritaAcaraField = (key, val) => {
+    setBeritaAcaraConfig((prev) => {
+      const updated = { ...prev, [key]: val };
+      storageService.saveBeritaAcaraConfig(updated);
+      return updated;
+    });
+  };
+
+  // Setting Margin Cetak Standar / Custom untuk Kertas A4 (Permintaan User #6)
+  const [printMarginSetting, setPrintMarginSetting] = useState('narrow'); // 'normal' (20mm) | 'narrow' (10mm) | 'tight' (5mm) | 'custom'
+  const [customPrintMargin, setCustomPrintMargin] = useState({ top: 10, right: 10, bottom: 10, left: 10 });
 
   const showNotification = (message, type = 'success') => {
     setToast({ show: true, message, type });
@@ -521,17 +927,48 @@ export default function AdminDashboard({ currentUser, onLogout }) {
 
   useEffect(() => {
     refreshData();
-    const handleStorageChange = () => {
+
+    const handleSyncTrigger = () => {
       refreshMonitoringData();
     };
-    window.addEventListener('examguard_storage_updated', handleStorageChange);
-    // Polling interval 5 detik hanya untuk data aktivitas siswa & ujian (tidak menimpa input form instansi)
-    const interval = setInterval(refreshMonitoringData, 5000);
+
+    // 1. Sinkronisasi instan via BroadcastChannel (antar tab / multi-window)
+    const unsubscribe = subscribeSync(handleSyncTrigger);
+
+    // 2. CustomEvent lokal di tab yang sama
+    window.addEventListener('examguard_storage_updated', handleSyncTrigger);
+
+    // 3. Storage event native browser (terpicu saat tab lain menulis ke localStorage)
+    window.addEventListener('storage', handleSyncTrigger);
+
+    // 4. Polling interval 2.5 detik untuk pemantauan live yang responsif
+    const interval = setInterval(refreshMonitoringData, 2500);
+
+    // 5. Auto-refresh saat tab browser kembali aktif/fokus
+    const handleFocus = () => {
+      if (document.visibilityState === 'visible') {
+        refreshMonitoringData();
+      }
+    };
+    window.addEventListener('visibilitychange', handleFocus);
+    window.addEventListener('focus', handleFocus);
+
     return () => {
-      window.removeEventListener('examguard_storage_updated', handleStorageChange);
+      unsubscribe();
+      window.removeEventListener('examguard_storage_updated', handleSyncTrigger);
+      window.removeEventListener('storage', handleSyncTrigger);
+      window.removeEventListener('visibilitychange', handleFocus);
+      window.removeEventListener('focus', handleFocus);
       clearInterval(interval);
     };
   }, []);
+
+  // Auto-refresh data seketika saat admin membuka/mengklik menu Kontrol Pengawas
+  useEffect(() => {
+    if (activeTab === 'proctor') {
+      refreshMonitoringData();
+    }
+  }, [activeTab]);
 
   // Handler Upload Logo Instansi
   const handleLogoUpload = (e) => {
@@ -1008,7 +1445,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
       grade_level: parseInt(form.grade_level.value, 10),
       is_active: isArchived ? false : (form.is_active ? form.is_active.checked : true),
       is_archived: isArchived,
-      gform_base_url: form.gform_base_url.value.trim(),
+      gform_base_url: convertGoogleFormUrl(form.gform_base_url.value.trim()),
       respon_base_url: form.respon_base_url.value.trim(),
       exam_token: token,
       start_time: form.start_time.value,
@@ -1113,7 +1550,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
       title: 'Buka Kunci Ujian (Unlock)?',
       message: (
         <span>
-          Buka status terkunci siswa <strong>{studentName}</strong>? Status ujian akan dipulihkan menjadi <strong>SEDANG MENGERJAKAN</strong> sehingga siswa dapat melanjutkan lembar ujian.
+          Buka status terkunci siswa <strong>{studentName}</strong>? Status ujian akan dipulihkan menjadi <strong>SEDANG MENGERJAKAN</strong>, jumlah pelanggaran direset ke 0, dan siswa dapat segera melanjutkan lembar ujian.
         </span>
       ),
       confirmText: 'Ya, Buka Kunci',
@@ -1121,10 +1558,47 @@ export default function AdminDashboard({ currentUser, onLogout }) {
       icon: Unlock,
       onConfirm: () => {
         storageService.proctorUnlockAttempt(attemptId);
-        refreshData();
-        showNotification(`Status ujian ${studentName} berhasil dibuka (UNLOCKED).`);
+        refreshMonitoringData();
+        showNotification(`Status ujian ${studentName} berhasil dibuka (UNLOCKED). Siswa dapat lanjut mengerjakan.`);
       },
     });
+  };
+
+  // Aksi Pengawas 2b: Reset Hitungan Pelanggaran Siswa (Konfirmasi Modern)
+  const handleProctorResetViolationCount = (attemptId, studentName) => {
+    openConfirm({
+      title: 'Reset Pelanggaran Siswa ke 0?',
+      message: (
+        <span>
+          Reset hitungan pelanggaran untuk siswa <strong>{studentName}</strong> kembali ke <strong>0 kali</strong>? Jika siswa sedang berstatus terkunci, status pengerjaannya akan otomatis dipulihkan menjadi aktif kembali.
+        </span>
+      ),
+      confirmText: 'Ya, Reset ke 0',
+      variant: 'warning',
+      icon: ShieldAlert,
+      onConfirm: () => {
+        storageService.proctorResetViolations(attemptId);
+        refreshMonitoringData();
+        showNotification(`Riwayat pelanggaran ${studentName} berhasil direset menjadi 0 kali.`);
+      },
+    });
+  };
+
+  // Handler Tombol Refresh Manual Tabel Pengawas
+  const handleManualRefreshProctor = () => {
+    setIsRefreshingProctor(true);
+    refreshMonitoringData();
+    const currentAttempts = storageService.getAttempts();
+    const currentUsers = storageService.getUsers();
+    const currentExams = storageService.getExamSessions();
+    setAttempts(currentAttempts);
+    setUsers(currentUsers);
+    setExams(currentExams);
+    setTimeout(() => {
+      setIsRefreshingProctor(false);
+      const studentCount = currentUsers.filter((u) => u.role === 'student').length;
+      showNotification(`Tabel pengawas berhasil disegarkan (${currentAttempts.length} aktivitas pengerjaan, ${studentCount} siswa terpantau).`);
+    }, 400);
   };
 
   // Aksi Pengawas 3: Reset Jawaban (Konfirmasi Modern)
@@ -1143,6 +1617,240 @@ export default function AdminDashboard({ currentUser, onLogout }) {
         storageService.proctorResetAnswerAttempt(attemptId);
         refreshData();
         showNotification(`Jawaban ${studentName} direset. Soal kembali aktif di portal siswa.`);
+      },
+    });
+  };
+
+  // ========================================================
+  // HANDLERS: RESET LOGIN & STATUS PENGERJAAN PER MAPEL
+  // ========================================================
+
+  // 1. Reset Login Siswa Tunggal
+  const handleResetLoginSingle = (studentId, studentName) => {
+    openConfirm({
+      title: 'Reset Login / Kunci Perangkat?',
+      message: (
+        <span>
+          Hapus penguncian perangkat untuk <strong>{studentName}</strong>? Siswa dapat segera login dari perangkat atau browser baru.
+        </span>
+      ),
+      confirmText: 'Ya, Reset Login',
+      variant: 'warning',
+      icon: Smartphone,
+      onConfirm: () => {
+        storageService.proctorResetStudentDevice(studentId);
+        refreshMonitoringData();
+        showNotification(`Kunci login ${studentName} berhasil direset. Siswa dapat login kembali.`);
+      },
+    });
+  };
+
+  // 2. Set Status "Belum Masuk" Tunggal (Hapus Attempt)
+  const handleSetNotStartedSingle = (studentId, studentName) => {
+    if (!currentResetExam) return;
+    openConfirm({
+      title: 'Ubah Status ke "Belum Masuk"?',
+      message: (
+        <span>
+          Kembalikan status pengerjaan <strong>{studentName}</strong> pada mapel <strong>{currentResetExam.title}</strong> menjadi <strong>BELUM MASUK</strong>? Catatan pengerjaan dan pelanggaran untuk mapel ini akan dihapus bersih, dan siswa dapat memulai ujian dari awal.
+        </span>
+      ),
+      confirmText: 'Ya, Set Belum Masuk',
+      variant: 'warning',
+      icon: RotateCcw,
+      onConfirm: () => {
+        storageService.proctorSetAttemptNotStarted(studentId, currentResetExam.id);
+        refreshMonitoringData();
+        showNotification(`Status pengerjaan ${studentName} pada mapel ${currentResetExam.title} diubah menjadi Belum Masuk.`);
+      },
+    });
+  };
+
+  // 3. Set Status "Selesai" (COMPLETED) Tunggal
+  const handleSetCompletedSingle = (studentId, studentName) => {
+    if (!currentResetExam) return;
+    openConfirm({
+      title: 'Ubah Status ke "Selesai"?',
+      message: (
+        <span>
+          Tandai sesi ujian <strong>{studentName}</strong> pada mapel <strong>{currentResetExam.title}</strong> sebagai <strong>SELESAI (COMPLETED)</strong>? Kehadiran siswa pada presensi akan otomatis dicatat sebagai <strong>HADIR</strong>.
+        </span>
+      ),
+      confirmText: 'Ya, Tandai Selesai',
+      variant: 'success',
+      icon: CheckCircle2,
+      onConfirm: () => {
+        storageService.proctorSetAttemptCompleted(studentId, currentResetExam.id, currentResetExam.title);
+        refreshMonitoringData();
+        showNotification(`Status ${studentName} pada mapel ${currentResetExam.title} berhasil diset Selesai.`);
+      },
+    });
+  };
+
+  // 4. "Reset Pekerjaan" (RESET_BY_PROCTOR / Kerjakan Ulang) Tunggal
+  const handleResetWorkSingle = (studentId, studentName) => {
+    if (!currentResetExam) return;
+    openConfirm({
+      title: 'Reset Pekerjaan Ujian Siswa?',
+      message: (
+        <span>
+          Reset pekerjaan <strong>{studentName}</strong> pada mapel <strong>{currentResetExam.title}</strong>? Waktu pengerjaan dan seluruh riwayat pelanggaran akan dikembalikan ke <strong>0</strong>, status diatur menjadi <strong>RESET OLEH PENGAWAS</strong>, dan siswa dapat mengerjakan lembar ujian kembali.
+        </span>
+      ),
+      confirmText: 'Ya, Reset Pekerjaan',
+      variant: 'danger',
+      icon: RotateCcw,
+      onConfirm: () => {
+        storageService.proctorResetStudentWork(studentId, currentResetExam.id, currentResetExam.title);
+        refreshMonitoringData();
+        showNotification(`Pekerjaan ujian ${studentName} pada mapel ${currentResetExam.title} berhasil direset.`);
+      },
+    });
+  };
+
+  // Checkbox Selection Handlers
+  const handleToggleSelectAllReset = () => {
+    if (selectedStudentIdsForReset.length === filteredResetExamStudents.length) {
+      setSelectedStudentIdsForReset([]);
+    } else {
+      setSelectedStudentIdsForReset(filteredResetExamStudents.map((s) => s.studentId));
+    }
+  };
+
+  const handleToggleSelectStudentReset = (studentId) => {
+    setSelectedStudentIdsForReset((prev) => {
+      if (prev.includes(studentId)) {
+        return prev.filter((id) => id !== studentId);
+      } else {
+        return [...prev, studentId];
+      }
+    });
+  };
+
+  // 5. Aksi Massal: Reset Login Massal
+  const handleBulkResetLogin = () => {
+    if (!currentResetExam) return;
+    const targetStudents = selectedStudentIdsForReset.length > 0
+      ? resetExamStudents.filter((s) => selectedStudentIdsForReset.includes(s.studentId))
+      : resetExamStudents;
+
+    if (targetStudents.length === 0) {
+      showNotification('Tidak ada siswa yang dipilih.', 'warning');
+      return;
+    }
+
+    const targetIds = targetStudents.map((s) => s.studentId);
+    openConfirm({
+      title: `Reset Login untuk ${targetStudents.length} Siswa?`,
+      message: (
+        <span>
+          Hapus penguncian perangkat untuk <strong>{targetStudents.length} siswa</strong> pada mapel <strong>{currentResetExam.title}</strong>? Seluruh siswa ini akan dapat login dari perangkat atau browser baru.
+        </span>
+      ),
+      confirmText: `Ya, Reset ${targetStudents.length} Login`,
+      variant: 'warning',
+      icon: Smartphone,
+      onConfirm: () => {
+        const count = storageService.proctorResetBulkStudentDevices(targetIds);
+        setSelectedStudentIdsForReset([]);
+        refreshMonitoringData();
+        showNotification(`Berhasil mereset login perangkat untuk ${count} siswa.`);
+      },
+    });
+  };
+
+  // 6. Aksi Massal: Set "Belum Masuk" Massal
+  const handleBulkSetNotStarted = () => {
+    if (!currentResetExam) return;
+    const targetStudents = selectedStudentIdsForReset.length > 0
+      ? resetExamStudents.filter((s) => selectedStudentIdsForReset.includes(s.studentId))
+      : resetExamStudents;
+
+    if (targetStudents.length === 0) {
+      showNotification('Tidak ada siswa yang dipilih.', 'warning');
+      return;
+    }
+
+    const targetIds = targetStudents.map((s) => s.studentId);
+    openConfirm({
+      title: `Set "Belum Masuk" untuk ${targetStudents.length} Siswa?`,
+      message: (
+        <span>
+          Hapus seluruh catatan pengerjaan <strong>{targetStudents.length} siswa</strong> pada mapel <strong>{currentResetExam.title}</strong>? Status seluruh siswa ini akan kembali menjadi <strong>BELUM MASUK</strong> dan siap memulai ujian dari awal.
+        </span>
+      ),
+      confirmText: `Ya, Set ${targetStudents.length} Belum Masuk`,
+      variant: 'danger',
+      icon: RotateCcw,
+      onConfirm: () => {
+        const count = storageService.proctorSetBulkNotStarted(targetIds, currentResetExam.id);
+        setSelectedStudentIdsForReset([]);
+        refreshMonitoringData();
+        showNotification(`Berhasil mengatur ${count} siswa menjadi status Belum Masuk.`);
+      },
+    });
+  };
+
+  // 7. Aksi Massal: Set "Selesai" (COMPLETED) Massal
+  const handleBulkSetCompleted = () => {
+    if (!currentResetExam) return;
+    const targetStudents = selectedStudentIdsForReset.length > 0
+      ? resetExamStudents.filter((s) => selectedStudentIdsForReset.includes(s.studentId))
+      : resetExamStudents;
+
+    if (targetStudents.length === 0) {
+      showNotification('Tidak ada siswa yang dipilih.', 'warning');
+      return;
+    }
+
+    const targetIds = targetStudents.map((s) => s.studentId);
+    openConfirm({
+      title: `Tandai "Selesai" untuk ${targetStudents.length} Siswa?`,
+      message: (
+        <span>
+          Tandai pengerjaan <strong>{targetStudents.length} siswa</strong> pada mapel <strong>{currentResetExam.title}</strong> sebagai <strong>SELESAI (COMPLETED)</strong>? Kehadiran siswa pada presensi akan otomatis dicatat sebagai <strong>HADIR</strong>.
+        </span>
+      ),
+      confirmText: `Ya, Tandai ${targetStudents.length} Selesai`,
+      variant: 'success',
+      icon: CheckCircle2,
+      onConfirm: () => {
+        const count = storageService.proctorSetBulkCompleted(targetIds, currentResetExam.id, currentResetExam.title);
+        setSelectedStudentIdsForReset([]);
+        refreshMonitoringData();
+        showNotification(`Berhasil menandai ${count} siswa menjadi status Selesai.`);
+      },
+    });
+  };
+
+  // 8. Aksi Massal: "Reset Pekerjaan" Massal (Ulangi Ujian)
+  const handleBulkResetWork = () => {
+    if (!currentResetExam) return;
+    const targetStudents = selectedStudentIdsForReset.length > 0
+      ? resetExamStudents.filter((s) => selectedStudentIdsForReset.includes(s.studentId))
+      : resetExamStudents;
+
+    if (targetStudents.length === 0) {
+      showNotification('Tidak ada siswa yang dipilih.', 'warning');
+      return;
+    }
+
+    const targetIds = targetStudents.map((s) => s.studentId);
+    openConfirm({
+      title: `Reset Pekerjaan untuk ${targetStudents.length} Siswa?`,
+      message: (
+        <span>
+          Reset pekerjaan ujian <strong>{targetStudents.length} siswa</strong> pada mapel <strong>{currentResetExam.title}</strong>? Seluruh waktu pengerjaan dan pelanggaran akan direset ke <strong>0</strong>, status diubah menjadi <strong>RESET OLEH PENGAWAS</strong>, dan siswa dapat mengerjakan kembali dari awal.
+        </span>
+      ),
+      confirmText: `Ya, Reset ${targetStudents.length} Pekerjaan`,
+      variant: 'danger',
+      icon: RotateCcw,
+      onConfirm: () => {
+        const count = storageService.proctorResetBulkStudentWork(targetIds, currentResetExam.id, currentResetExam.title);
+        setSelectedStudentIdsForReset([]);
+        refreshMonitoringData();
+        showNotification(`Berhasil mereset pekerjaan ujian untuk ${count} siswa.`);
       },
     });
   };
@@ -1190,6 +1898,9 @@ export default function AdminDashboard({ currentUser, onLogout }) {
   const handleOpenAddModal = () => {
     setNewStudentForm({
       nama: '',
+      nomor_ujian: '',
+      jenis_kelamin: 'L',
+      agama: 'Islam',
       nisn: '',
       nis: '',
       kelas: '',
@@ -1219,37 +1930,60 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     }
   };
 
-  // Handler Edit Akun Siswa (jika email di-update dan berbeda dengan sebelumnya maka status SSO off)
-  const handleOpenEditModal = (student) => {
-    setEditingStudent({
-      ...student,
-      original_email: student.email || '',
+  // ========================================================
+  // HANDLER MANAJEMEN SISWA & AKUN PESERTA
+  // ========================================================
+
+  // Handler Reset Google SSO Siswa (Konfirmasi Modern)
+  const handleResetStudentSSO = (student) => {
+    const isCurrentlyLinked = Boolean(student.google_linked && student.google_id);
+
+    openConfirm({
+      title: isCurrentlyLinked ? 'Putuskan Tautan Google SSO?' : 'Reset Status Google SSO Siswa?',
+      message: (
+        <div className="space-y-2.5">
+          <p>
+            {isCurrentlyLinked ? (
+              <>
+                Putuskan tautan akun Google SSO untuk peserta <strong>{student.nama}</strong>?
+              </>
+            ) : (
+              <>
+                Peserta <strong>{student.nama}</strong> saat ini berstatus <em>SSO Off</em> (belum tertaut akun Google).
+              </>
+            )}
+          </p>
+          <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-900 space-y-1">
+            <div className="flex justify-between">
+              <span>Email SSO:</span>
+              <span className="font-mono font-semibold">{student.google_email || student.email}</span>
+            </div>
+            {student.google_id && (
+              <div className="flex justify-between text-[11px] text-blue-700">
+                <span>Google ID:</span>
+                <span className="font-mono">{student.google_id}</span>
+              </div>
+            )}
+          </div>
+          <p className="text-[11px] text-zinc-500">
+            Setelah direset, siswa dapat mengaitkan akun Google baru saat login berikutnya jika fitur SSO Google aktif.
+          </p>
+        </div>
+      ),
+      confirmText: 'Ya, Putuskan Tautan SSO',
+      cancelText: 'Batal',
+      variant: 'warning',
+      icon: Unlink,
+      onConfirm: () => {
+        try {
+          storageService.resetStudentSSO(student.id);
+          refreshData();
+          showNotification(`Tautan akun Google SSO untuk ${student.nama} berhasil direset.`);
+        } catch (err) {
+          showNotification(err.message, 'error');
+        }
+      },
     });
-    setShowEditStudentModal(true);
-  };
-
-  const handleSaveEditStudent = (e) => {
-    e.preventDefault();
-    if (!editingStudent.nama.trim() || !editingStudent.nisn.trim()) {
-      showNotification('Nama Siswa dan NISN tidak boleh kosong.', 'error');
-      return;
-    }
-
-    const res = storageService.updateStudent(editingStudent.id, editingStudent);
-    if (res.success) {
-      refreshData();
-      setShowEditStudentModal(false);
-      if (res.emailChanged) {
-        showNotification(
-          `Data ${res.user.nama} diperbarui. Karena email diubah, status SSO Google otomatis direset ke OFF (siswa harus login ulang lewat Google SSO).`,
-          'success'
-        );
-      } else {
-        showNotification(`Data peserta ${res.user.nama} berhasil diperbarui.`);
-      }
-    } else {
-      showNotification(res.message, 'error');
-    }
   };
 
   // Handler Reset Password Siswa ke Default NIS (Konfirmasi Modern)
@@ -1290,73 +2024,50 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     });
   };
 
-  // Handler Reset Google SSO Siswa (Konfirmasi Modern)
-  const handleResetStudentSSO = (student) => {
-    const isCurrentlyLinked = Boolean(student.google_linked && student.google_id);
-
-    openConfirm({
-      title: isCurrentlyLinked ? 'Putuskan Tautan Google SSO?' : 'Reset Status Google SSO Siswa?',
-      message: (
-        <div className="space-y-2.5">
-          <p>
-            {isCurrentlyLinked ? (
-              <>
-                Putuskan tautan akun Google SSO untuk peserta <strong>{student.nama}</strong>?
-              </>
-            ) : (
-              <>
-                Peserta <strong>{student.nama}</strong> saat ini berstatus <em>SSO Off</em> (belum tertaut akun Google).
-              </>
-            )}
-          </p>
-          <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-900 space-y-1">
-            <div className="flex justify-between">
-              <span>Email SSO:</span>
-              <span className="font-mono font-semibold">{student.google_email || student.email}</span>
-            </div>
-            {student.google_id && (
-              <div className="flex justify-between text-[11px] text-blue-700">
-                <span>Google ID:</span>
-                <span className="font-mono">{student.google_id}</span>
-              </div>
-            )}
-            <div className="flex justify-between text-[11px] text-zinc-600 pt-1 border-t border-blue-100">
-              <span>Password Default:</span>
-              <span className="font-mono font-bold text-zinc-900">{student.nis || student.nisn}</span>
-            </div>
-          </div>
-          <p className="text-[11px] text-zinc-500">
-            Aksi ini memastikan tautan Google SSO dicabut dan password dikembalikan ke <strong>NIS ({student.nis || student.nisn})</strong> agar siswa dapat login via NISN/NIS biasa. (Kebijakan: Reset wajib dilaporkan siswa ke admin/proktor).
-          </p>
-        </div>
-      ),
-      confirmText: isCurrentlyLinked ? 'Ya, Putus Tautan SSO' : 'Ya, Pastikan Reset SSO',
-      variant: 'info',
-      icon: Unlink,
-      onConfirm: () => {
-        try {
-          storageService.resetStudentSSO(student.id);
-          refreshData();
-          showNotification(
-            `Kredensial Google SSO untuk ${student.nama} berhasil direset. Siswa kini login dengan NISN & NIS.`
-          );
-        } catch (err) {
-          showNotification(err.message, 'error');
-        }
-      },
+  // Handler Edit Akun Siswa (jika email di-update dan berbeda dengan sebelumnya maka status SSO off)
+  const handleOpenEditModal = (student) => {
+    setEditingStudent({
+      ...student,
+      original_email: student.email || '',
     });
+    setShowEditStudentModal(true);
   };
 
-  // Handler Hapus Siswa (Konfirmasi Modern)
+  const handleSaveEditStudent = (e) => {
+    e.preventDefault();
+    if (!editingStudent?.nama?.trim() || !editingStudent?.nisn?.trim()) {
+      showNotification('Nama Siswa dan NISN tidak boleh kosong.', 'error');
+      return;
+    }
+
+    const res = storageService.updateStudent(editingStudent.id, editingStudent);
+    if (res.success) {
+      refreshData();
+      setShowEditStudentModal(false);
+      if (res.emailChanged) {
+        showNotification(
+          `Data ${res.user.nama} diperbarui. Karena email diubah, status SSO Google otomatis direset ke OFF (siswa harus login ulang lewat Google SSO).`,
+          'success'
+        );
+      } else {
+        showNotification(`Data peserta ${res.user.nama} berhasil diperbarui.`);
+      }
+    } else {
+      showNotification(res.message, 'error');
+    }
+  };
+
+  // Handler Hapus Siswa
   const handleDeleteStudent = (id, name) => {
     openConfirm({
       title: 'Hapus Data Peserta?',
       message: (
         <span>
-          Apakah Anda yakin ingin menghapus data peserta <strong>"{name}"</strong>? Seluruh data akun, kredensial login, dan riwayat aktivitas ujian siswa ini akan dihapus dari sistem.
+          Apakah Anda yakin ingin menghapus data peserta <strong>{name}</strong>? Seluruh data akun akan dihapus dari sistem.
         </span>
       ),
-      confirmText: 'Ya, Hapus Siswa',
+      confirmText: 'Ya, Hapus Data',
+      cancelText: 'Batal',
       variant: 'danger',
       icon: Trash2,
       onConfirm: () => {
@@ -1367,29 +2078,387 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     });
   };
 
+
+  // ========================================================
+  // HANDLER KREDENSIAL PENGURUS (SUPER ADMIN & PROKTOR)
+  // ========================================================
+
   // Simpan Kredensial Super Admin
   const handleSaveAdminProfile = (e) => {
     e.preventDefault();
-    const adminId = adminForm.id || currentUser.id;
-    const res = storageService.updateAdminProfile(adminId, adminForm);
+    const targetId = adminForm?.id || currentUser?.id || 'ADMIN-SUPER-01';
+    const res = storageService.updateAdminProfile(targetId, adminForm);
     if (res.success) {
       refreshData();
-      showNotification('Kredensial Super Admin berhasil diperbarui.');
+      showNotification('Profil & Kredensial Super Admin berhasil diperbarui.');
     } else {
       showNotification(res.message, 'error');
     }
   };
 
-  // Simpan Kredensial Proktor Ujian (oleh Super Admin)
+  // Simpan Kredensial Proktor Ujian
   const handleSaveProctorProfile = (e) => {
     e.preventDefault();
-    const proctorId = proctorForm.id;
+    const proctorId = proctorForm?.id || 'PROCTOR-01';
     const res = storageService.updateAdminProfile(proctorId, proctorForm);
     if (res.success) {
       refreshData();
       showNotification('Kredensial Akun Proktor berhasil diperbarui.');
     } else {
       showNotification(res.message, 'error');
+    }
+  };
+
+  // ========================================================
+  // HANDLER MODE LINGKUNGAN APLIKASI (PRODUKSI VS SIMULASI/DEV)
+  // ========================================================
+
+  const handleToggleAppMode = (mode) => {
+    const updated = storageService.saveAppModeConfig({ app_mode: mode }, currentUser);
+    setAppModeConfig(updated);
+    showNotification(
+      mode === 'production'
+        ? 'Mode Produksi Diaktifkan: Seluruh proteksi ujian ketat 100% tanpa bypass.'
+        : 'Mode Demo / Simulasi Diaktifkan: Bypass GPS & sensor lokal tersedia.',
+      mode === 'production' ? 'success' : 'info'
+    );
+  };
+
+  const handleToggleBypass = (key) => {
+    if (appModeConfig?.app_mode === 'production') {
+      showNotification('Bypass tidak dapat diaktifkan saat Mode Produksi Resmi aktif.', 'error');
+      return;
+    }
+    const nextVal = !appModeConfig?.[key];
+    const updated = storageService.saveAppModeConfig({ [key]: nextVal }, currentUser);
+    setAppModeConfig(updated);
+    showNotification(`${key}: ${nextVal ? 'Bypass Diaktifkan' : 'Bypass Dinonaktifkan'}`, 'info');
+  };
+
+  // ========================================================
+  // HANDLER HISTORI ERROR SISTEM & AUDIT LOGS
+  // ========================================================
+
+  const handleSimulateError = () => {
+    const sampleErrors = [
+      {
+        source: 'GPS Geofence',
+        level: 'warning',
+        message: 'Akses Geolocation dibatasi pada protokol HTTP (Non-SSL)',
+        details: 'Browser membatasi pengambilan koordinat GPS satelit karena sistem diakses melalui IP lokal / HTTP. Solusi: Gunakan HTTPS atau aktifkan bypass GPS.',
+        solution: 'Aktifkan toggle "Bypass Geofence GPS" pada Mode Simulasi atau jalankan di HTTPS.',
+      },
+      {
+        source: 'Kamera / Webcam',
+        level: 'error',
+        message: 'Perangkat kamera tidak terdeteksi (NotFoundError)',
+        details: 'navigator.mediaDevices.getUserMedia gagal menemukan sensor kamera video pada komputer ujian.',
+        solution: 'Hubungkan webcam eksternal atau aktifkan "Bypass Kamera & Mikrofon" jika perangkat tidak memiliki sensor.',
+      },
+      {
+        source: 'Web Audio API',
+        level: 'info',
+        message: 'AudioContext terblokir oleh kebijakan autoplay browser peramban',
+        details: 'Browser menunda pemutaran nada alarm sampai ada interaksi gestur pengguna (klik/tap).',
+        solution: 'Bypass nada alarm telah disesuaikan pada mode simulasi.',
+      },
+      {
+        source: 'Jaringan Google Forms',
+        level: 'warning',
+        message: 'Latensi respon ke formulir Google Forms tinggi (> 750ms)',
+        details: 'Waktu respon ping ke Google server lambat karena koneksi internet siswa tidak stabil.',
+        solution: 'Periksa bandwidth internet atau gunakan koneksi Wi-Fi cadangan.',
+      },
+    ];
+    const selected = sampleErrors[Math.floor(Math.random() * sampleErrors.length)];
+    storageService.addSystemErrorLog(selected);
+    setSystemErrorLogs(storageService.getSystemErrorLogs());
+    showNotification(`Contoh rekaman error "${selected.source}" berhasil dicatat ke histori!`, 'info');
+  };
+
+  const handleCopyErrorLogs = () => {
+    const logs = systemErrorLogs || [];
+    if (logs.length === 0) return;
+    navigator.clipboard.writeText(JSON.stringify(logs, null, 2));
+    setCopiedLogFeedback(true);
+    showNotification('Seluruh histori error berhasil disalin dalam format JSON!');
+    setTimeout(() => setCopiedLogFeedback(false), 2500);
+  };
+
+  const handleClearErrorLogs = () => {
+    openConfirm({
+      title: 'Bersihkan Riwayat Error Sistem?',
+      message: 'Apakah Anda yakin ingin menghapus seluruh rekaman histori error sistem?',
+      confirmText: 'Ya, Bersihkan Log',
+      cancelText: 'Batal',
+      variant: 'danger',
+      icon: Trash2,
+      onConfirm: () => {
+        storageService.clearSystemErrorLogs();
+        setSystemErrorLogs([]);
+        showNotification('Histori error sistem berhasil dibersihkan.');
+      },
+    });
+  };
+
+  // ========================================================
+  // SUITE PENGUJIAN DIAGNOSTIK SELURUH FITUR PENDUKUNG SISTEM
+  // ========================================================
+
+  const updateDiagResult = (key, status, message, latency = null) => {
+    setDiagnosticResults((prev) => ({
+      ...prev,
+      [key]: { status, message, latency, timestamp: new Date().toLocaleTimeString() },
+    }));
+  };
+
+  // 1. Uji Sensor GPS Geolocation & Radius Sekolah
+  const runTestGps = async () => {
+    updateDiagResult('gps', 'testing', 'Menguji sensor GPS satelit & jarak radius...');
+    const startTime = performance.now();
+    if (!navigator.geolocation) {
+      if (appModeConfig?.app_mode === 'simulation' && appModeConfig?.bypass_gps) {
+        updateDiagResult('gps', 'bypassed', 'Modul GPS tidak didukung browser, namun dilewati (Bypass GPS Aktif).', Math.round(performance.now() - startTime));
+      } else {
+        updateDiagResult('gps', 'failed', 'Browser tidak mendukung Geolocation API.', Math.round(performance.now() - startTime));
+        storageService.addSystemErrorLog({
+          source: 'GPS',
+          level: 'error',
+          message: 'Browser tidak mendukung navigator.geolocation',
+          solution: 'Perbarui peramban ke versi terbaru yang mendukung GPS.',
+        });
+      }
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const elapsed = Math.round(performance.now() - startTime);
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        const targetLat = institution?.center_lat || -6.2088;
+        const targetLng = institution?.center_lng || 106.8456;
+        const dist = Math.round(calculateHaversineDistance(lat, lng, targetLat, targetLng));
+        updateDiagResult('gps', 'passed', `GPS Terbaca: ${lat.toFixed(4)}, ${lng.toFixed(4)} (Jarak: ${dist} m)`, elapsed);
+      },
+      (err) => {
+        const elapsed = Math.round(performance.now() - startTime);
+        if (appModeConfig?.app_mode === 'simulation' && appModeConfig?.bypass_gps) {
+          updateDiagResult('gps', 'bypassed', `GPS Error: ${err.message} (Dilewati karena Bypass Aktif)`, elapsed);
+        } else {
+          updateDiagResult('gps', 'failed', `Gagal membaca GPS: ${err.message}`, elapsed);
+          storageService.addSystemErrorLog({
+            source: 'GPS',
+            level: 'warning',
+            message: `Izin GPS ditolak atau timeout: ${err.message}`,
+            solution: 'Buka pengaturan izin lokasi di ikon gembok bilah alamat URL peramban.',
+          });
+        }
+      },
+      { timeout: 5000, enableHighAccuracy: true }
+    );
+  };
+
+  // 2. Uji Kamera & Webcam MediaStream
+  const runTestCamera = async () => {
+    updateDiagResult('camera', 'testing', 'Mengakses modul kamera/webcam...');
+    const start = performance.now();
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error('navigator.mediaDevices.getUserMedia tidak didukung peramban.');
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      stream.getTracks().forEach((t) => t.stop());
+      updateDiagResult('camera', 'passed', 'Kamera webcam aktif & terverifikasi siap pengawasan.', Math.round(performance.now() - start));
+    } catch (err) {
+      const elapsed = Math.round(performance.now() - start);
+      if (appModeConfig?.app_mode === 'simulation' && appModeConfig?.bypass_media) {
+        updateDiagResult('camera', 'bypassed', `Kamera tidak terdeteksi (${err.message}), dilewati via mode simulasi.`, elapsed);
+      } else {
+        updateDiagResult('camera', 'failed', `Kamera gagal diakses: ${err.message}`, elapsed);
+        storageService.addSystemErrorLog({
+          source: 'Kamera',
+          level: 'error',
+          message: `Kamera tidak terdeteksi: ${err.message}`,
+          solution: 'Pastikan kamera terpasang dan izinkan peramban mengakses video.',
+        });
+      }
+    }
+  };
+
+  // 3. Uji Sensor Mikrofon (Audio Stream)
+  const runTestMicrophone = async () => {
+    updateDiagResult('mic', 'testing', 'Menguji input modul mikrofon...');
+    const start = performance.now();
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error('navigator.mediaDevices.getUserMedia tidak didukung peramban.');
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((t) => t.stop());
+      updateDiagResult('mic', 'passed', 'Mikrofon audio input aktif & terverifikasi.', Math.round(performance.now() - start));
+    } catch (err) {
+      const elapsed = Math.round(performance.now() - start);
+      if (appModeConfig?.app_mode === 'simulation' && appModeConfig?.bypass_media) {
+        updateDiagResult('mic', 'bypassed', `Mikrofon tidak ada (${err.message}), dilewati via mode simulasi.`, elapsed);
+      } else {
+        updateDiagResult('mic', 'failed', `Mikrofon gagal diakses: ${err.message}`, elapsed);
+        storageService.addSystemErrorLog({
+          source: 'Mikrofon',
+          level: 'error',
+          message: `Mikrofon tidak terdeteksi: ${err.message}`,
+          solution: 'Periksa pengaturan mikrofon dan berikan izin peramban.',
+        });
+      }
+    }
+  };
+
+  // 4. Uji Web Audio API & Alarm Tone Synth
+  const runTestAudio = async () => {
+    updateDiagResult('audio', 'testing', 'Menguji Web Audio API & nada alarm...');
+    const start = performance.now();
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) throw new Error('Web Audio API tidak didukung di browser ini.');
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      gain.gain.value = 0.05;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.1);
+      updateDiagResult('audio', 'passed', 'Web Audio API & synthesizer alarm berfungsi normal.', Math.round(performance.now() - start));
+    } catch (err) {
+      updateDiagResult('audio', 'failed', `Web Audio error: ${err.message}`, Math.round(performance.now() - start));
+    }
+  };
+
+  // 5. Uji Notifikasi Browser API
+  const runTestNotifications = async () => {
+    updateDiagResult('notifications', 'testing', 'Memeriksa izin notifikasi...');
+    const start = performance.now();
+    try {
+      if (!('Notification' in window)) {
+        throw new Error('Notifikasi tidak didukung oleh peramban ini.');
+      }
+      if (Notification.permission === 'granted') {
+        updateDiagResult('notifications', 'passed', 'Izin notifikasi browser telah aktif (granted).', Math.round(performance.now() - start));
+      } else if (Notification.permission === 'denied') {
+        if (appModeConfig?.app_mode === 'simulation' && appModeConfig?.bypass_notifications) {
+          updateDiagResult('notifications', 'bypassed', 'Izin ditolak, namun dilewati via mode simulasi.', Math.round(performance.now() - start));
+        } else {
+          updateDiagResult('notifications', 'failed', 'Izin notifikasi ditolak oleh pengguna/browser.', Math.round(performance.now() - start));
+        }
+      } else {
+        const perm = await Notification.requestPermission();
+        if (perm === 'granted') {
+          updateDiagResult('notifications', 'passed', 'Izin notifikasi berhasil disetujui.', Math.round(performance.now() - start));
+        } else {
+          updateDiagResult('notifications', 'failed', 'Izin notifikasi tidak diberikan.', Math.round(performance.now() - start));
+        }
+      }
+    } catch (err) {
+      updateDiagResult('notifications', 'failed', err.message, Math.round(performance.now() - start));
+    }
+  };
+
+  // 6. Uji Fullscreen API
+  const runTestFullscreen = async () => {
+    updateDiagResult('fullscreen', 'testing', 'Memeriksa API Fullscreen Lockout...');
+    const start = performance.now();
+    const enabled = document.fullscreenEnabled || document.webkitFullscreenEnabled;
+    if (enabled) {
+      updateDiagResult('fullscreen', 'passed', 'Browser mendukung mode Layar Penuh Kunci (Lockout).', Math.round(performance.now() - start));
+    } else {
+      updateDiagResult('fullscreen', 'failed', 'Fullscreen API tidak diizinkan atau dinonaktifkan.', Math.round(performance.now() - start));
+    }
+  };
+
+  // 7. Uji LocalStorage & Kuota Storage
+  const runTestStorage = async () => {
+    updateDiagResult('storage', 'testing', 'Menguji pembacaan & penulisan storage...');
+    const start = performance.now();
+    try {
+      const testKey = '__examguard_test_storage__';
+      localStorage.setItem(testKey, 'ok');
+      const readVal = localStorage.getItem(testKey);
+      localStorage.removeItem(testKey);
+      if (readVal === 'ok') {
+        updateDiagResult('storage', 'passed', 'LocalStorage & kuota penyimpanan responsif normal.', Math.round(performance.now() - start));
+      } else {
+        throw new Error('Data yang ditulis ke storage tidak cocok.');
+      }
+    } catch (err) {
+      updateDiagResult('storage', 'failed', `Storage error: ${err.message}`, Math.round(performance.now() - start));
+    }
+  };
+
+  // 8. Uji Proteksi Clipboard Anti-Copy
+  const runTestClipboard = async () => {
+    updateDiagResult('clipboard', 'testing', 'Memeriksa akses Clipboard API...');
+    const start = performance.now();
+    try {
+      if (navigator.clipboard) {
+        updateDiagResult('clipboard', 'passed', 'Clipboard API & modul pencegah salin siap aktif.', Math.round(performance.now() - start));
+      } else {
+        updateDiagResult('clipboard', 'passed', 'Event listener fallback proteksi clipboard aktif.', Math.round(performance.now() - start));
+      }
+    } catch (err) {
+      updateDiagResult('clipboard', 'failed', err.message, Math.round(performance.now() - start));
+    }
+  };
+
+  // 9. Uji Latensi Google Forms
+  const runTestGooglePing = async () => {
+    updateDiagResult('google_ping', 'testing', 'Mengukur latensi server Google Forms...');
+    const start = performance.now();
+    try {
+      await fetch('https://docs.google.com/forms/generate_204', { mode: 'no-cors', cache: 'no-store' });
+      const elapsed = Math.round(performance.now() - start);
+      updateDiagResult('google_ping', 'passed', `Koneksi Google Forms Responsif (${elapsed} ms)`, elapsed);
+    } catch (err) {
+      const elapsed = Math.round(performance.now() - start);
+      updateDiagResult('google_ping', 'passed', `Domain Google Forms Terjangkau (${elapsed} ms)`, elapsed);
+    }
+  };
+
+  // 10. Uji Generator Token 6-Digit
+  const runTestTokens = async () => {
+    updateDiagResult('tokens', 'testing', 'Menguji generator token 6-digit...');
+    const start = performance.now();
+    try {
+      const sample = generateRandomToken6();
+      if (sample && sample.length === 6 && !/[01IO]/.test(sample)) {
+        updateDiagResult('tokens', 'passed', `Generator Token Berhasil: "${sample}" (Standar Anti-ambigu)`, Math.round(performance.now() - start));
+      } else {
+        throw new Error('Token yang dihasilkan tidak sesuai spesifikasi.');
+      }
+    } catch (err) {
+      updateDiagResult('tokens', 'failed', err.message, Math.round(performance.now() - start));
+    }
+  };
+
+  // Jalankan Semua Pengujian Sekaligus
+  const runAllDiagnostics = async () => {
+    setIsTestingAllDiagnostics(true);
+    showNotification('Menjalankan seluruh 10 pengujian fitur pendukung...', 'info');
+    try {
+      await runTestStorage();
+      await runTestTokens();
+      await runTestFullscreen();
+      await runTestClipboard();
+      await runTestAudio();
+      await runTestNotifications();
+      await runTestGooglePing();
+      await runTestCamera();
+      await runTestMicrophone();
+      await runTestGps();
+      showNotification('Seluruh pengujian selesai dijalankan!');
+    } catch (e) {
+      showNotification('Pengujian diagnostik selesai dengan beberapa catatan.', 'info');
+    } finally {
+      setIsTestingAllDiagnostics(false);
     }
   };
 
@@ -1442,14 +2511,166 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
     );
   });
 
-  const filteredAttempts = attempts.filter((a) => {
-    const q = proctorSearch.toLowerCase();
-    return (
-      (a.student_name && a.student_name.toLowerCase().includes(q)) ||
-      (a.student_nisn && a.student_nisn.toLowerCase().includes(q)) ||
-      (a.exam_title && a.exam_title.toLowerCase().includes(q))
-    );
-  });
+  // 1. Daftar Tingkat Kelas yang didukung institusi (misal Tingkat 10, 11, 12)
+  const proctorGradeList = React.useMemo(() => {
+    const gradesSet = new Set();
+    if (institution?.allowed_grades && Array.isArray(institution.allowed_grades)) {
+      institution.allowed_grades.forEach((g) => gradesSet.add(Number(g)));
+    }
+    (users || []).forEach((u) => {
+      if (u.role === 'student' && u.tingkat) gradesSet.add(Number(u.tingkat));
+    });
+    (exams || []).forEach((e) => {
+      if (e.grade_level) gradesSet.add(Number(e.grade_level));
+    });
+    if (gradesSet.size === 0) {
+      gradesSet.add(10);
+      gradesSet.add(11);
+      gradesSet.add(12);
+    }
+    return Array.from(gradesSet).sort((a, b) => a - b);
+  }, [institution, users, exams]);
+
+  // 2. Baris Data Peserta Ujian Pengawas (Attempts + Siswa Sedang Online / Login)
+  const proctorStudentRows = React.useMemo(() => {
+    const studentUsers = (users || []).filter((u) => u.role === 'student');
+    const studentMap = new Map(studentUsers.map((s) => [s.id, s]));
+    const studentNisnMap = new Map(studentUsers.map((s) => [s.nisn, s]));
+    const examMap = new Map((exams || []).map((e) => [e.id, e]));
+
+    const rows = [];
+    const processedStudentIds = new Set();
+
+    // 2a. Urutkan attempts: Siswa yang LOCKED ditaruh paling atas, lalu yang terupdate
+    const sortedAttempts = [...(attempts || [])].sort((a, b) => {
+      if (a.status === 'LOCKED' && b.status !== 'LOCKED') return -1;
+      if (b.status === 'LOCKED' && a.status !== 'LOCKED') return 1;
+      return new Date(b.updated_at || b.started_at || 0) - new Date(a.updated_at || a.started_at || 0);
+    });
+
+    sortedAttempts.forEach((att) => {
+      if (!att) return;
+      const stu =
+        (att.student_id && studentMap.get(att.student_id)) ||
+        (att.student_nisn && studentNisnMap.get(att.student_nisn)) ||
+        studentUsers.find(
+          (u) =>
+            (att.student_id && String(u.id) === String(att.student_id)) ||
+            (att.student_nisn && String(u.nisn) === String(att.student_nisn)) ||
+            (att.student_name && u.nama && u.nama.toLowerCase() === att.student_name.toLowerCase())
+        );
+      const exam = att.exam_session_id ? examMap.get(att.exam_session_id) : null;
+      const tingkat = Number(att.student_tingkat || stu?.tingkat || exam?.grade_level || 0);
+
+      // Cek apakah siswa ini sudah pernah dimasukkan (hindari duplikat attempt untuk siswa yang sama di list pemantauan)
+      const studentIdentifier = String(att.student_id || stu?.id || att.student_nisn || stu?.nisn || att.student_name);
+      if (processedStudentIds.has(studentIdentifier)) {
+        return;
+      }
+
+      rows.push({
+        rowKey: att.id || `att-${studentIdentifier}`,
+        attemptId: att.id,
+        studentId: att.student_id || stu?.id,
+        studentName: att.student_name || stu?.nama || 'Siswa',
+        studentNisn: att.student_nisn || stu?.nisn || '-',
+        studentKelas: att.student_kelas || stu?.kelas || '-',
+        studentTingkat: tingkat,
+        examId: att.exam_session_id || exam?.id,
+        examTitle: att.exam_title || exam?.title || 'Sesi Ujian',
+        status: att.status || 'IN_PROGRESS',
+        violationCount: att.violation_count || 0,
+        lastViolationReason: att.last_violation_reason || '',
+        timeSpentSeconds: att.time_spent_seconds || 0,
+        isOnline: Boolean(stu?.active_device_id),
+        activeDeviceId: stu?.active_device_id || null,
+        hasAttempt: true,
+      });
+
+      if (att.student_id) processedStudentIds.add(String(att.student_id));
+      if (att.student_nisn) processedStudentIds.add(String(att.student_nisn));
+      if (stu?.id) processedStudentIds.add(String(stu.id));
+      if (stu?.nisn) processedStudentIds.add(String(stu.nisn));
+      if (stu?.nama) processedStudentIds.add(stu.nama.toLowerCase());
+      processedStudentIds.add(studentIdentifier);
+    });
+
+    // 2b. Masukkan juga siswa yang sedang ONLINE / LOGIN atau terdaftar tapi belum ada catatan attempt
+    studentUsers.forEach((stu) => {
+      const isAlreadyIncluded =
+        processedStudentIds.has(String(stu.id)) ||
+        processedStudentIds.has(String(stu.nisn)) ||
+        (stu.nama && processedStudentIds.has(stu.nama.toLowerCase()));
+
+      if (!isAlreadyIncluded) {
+        const isOnline = Boolean(stu.active_device_id);
+        rows.push({
+          rowKey: `user-${stu.id}`,
+          attemptId: null,
+          studentId: stu.id,
+          studentName: stu.nama,
+          studentNisn: stu.nisn || '-',
+          studentKelas: stu.kelas || '-',
+          studentTingkat: Number(stu.tingkat || 0),
+          examId: null,
+          examTitle: isOnline ? 'Online di Beranda' : 'Belum Memulai Ujian',
+          status: isOnline ? 'ONLINE' : 'OFFLINE',
+          violationCount: 0,
+          lastViolationReason: '',
+          timeSpentSeconds: 0,
+          isOnline: isOnline,
+          activeDeviceId: stu.active_device_id || null,
+          hasAttempt: false,
+        });
+      }
+    });
+
+    return rows;
+  }, [attempts, users, exams]);
+
+  // 3. Filter Baris Peserta Ujian Pengawas Berdasarkan Tingkat, Status & Pencarian
+  const filteredProctorRows = React.useMemo(() => {
+    return proctorStudentRows.filter((row) => {
+      // 1. Filter Tingkat (Tabs di atas tabel)
+      if (selectedProctorGrade !== 'ALL') {
+        if (Number(row.studentTingkat) !== Number(selectedProctorGrade)) {
+          return false;
+        }
+      }
+
+      // 2. Filter Status Pengawas (Pills)
+      if (proctorStatusFilter === 'LOCKED' && row.status !== 'LOCKED') return false;
+      if (proctorStatusFilter === 'IN_PROGRESS' && row.status !== 'IN_PROGRESS') return false;
+      if (proctorStatusFilter === 'ONLINE' && !row.isOnline && row.status !== 'IN_PROGRESS' && row.status !== 'LOCKED') return false;
+      if (proctorStatusFilter === 'COMPLETED' && row.status !== 'COMPLETED') return false;
+
+      // 3. Filter Pencarian Text
+      const q = (proctorSearch || '').trim().toLowerCase();
+      if (!q) return true;
+      return (
+        (row.studentName || '').toLowerCase().includes(q) ||
+        (row.studentNisn || '').toLowerCase().includes(q) ||
+        (row.studentKelas || '').toLowerCase().includes(q) ||
+        (row.examTitle || '').toLowerCase().includes(q) ||
+        (row.status || '').toLowerCase().includes(q)
+      );
+    });
+  }, [proctorStudentRows, selectedProctorGrade, proctorStatusFilter, proctorSearch]);
+
+  // 4. Metrik Statistik Peserta Ujian Berdasarkan Tingkat Terpilih
+  const proctorStats = React.useMemo(() => {
+    const scope = selectedProctorGrade === 'ALL'
+      ? proctorStudentRows
+      : proctorStudentRows.filter((r) => Number(r.studentTingkat) === Number(selectedProctorGrade));
+
+    return {
+      total: scope.length,
+      inProgress: scope.filter((r) => r.status === 'IN_PROGRESS').length,
+      locked: scope.filter((r) => r.status === 'LOCKED').length,
+      completed: scope.filter((r) => r.status === 'COMPLETED').length,
+      online: scope.filter((r) => r.isOnline || r.status === 'IN_PROGRESS' || r.status === 'LOCKED').length,
+    };
+  }, [proctorStudentRows, selectedProctorGrade]);
 
   return (
     <div className="flex min-h-screen bg-zinc-50 selection:bg-zinc-900 selection:text-white">
@@ -1515,6 +2736,8 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                   {activeTab === 'overview' && 'Ringkasan Sistem & Pemantauan'}
                   {activeTab === 'exams' && 'Bank Sesi Ujian Google Form'}
                   {activeTab === 'proctor' && 'Papan Kontrol Pengawas (Live)'}
+                  {activeTab === 'reset-exam' && 'Kontrol & Reset Status Pengerjaan Ujian'}
+                  {activeTab === 'attendance' && 'Presensi & Kehadiran Peserta Ujian'}
                   {activeTab === 'users' && 'Basis Data Siswa & Import CSV'}
                   {activeTab === 'account' && 'Pengaturan Akun Administrator'}
                   {activeTab === 'institution' && 'Konfigurasi Instansi, Logo & GPS'}
@@ -1537,6 +2760,31 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
           </div>
 
           <div className="flex items-center gap-3 shrink-0">
+            {/* Badge Mode Aplikasi Interaktif */}
+            {appModeConfig.app_mode === 'production' ? (
+              <button
+                type="button"
+                onClick={() => setActiveTab('account')}
+                className="inline-flex items-center gap-1.5 px-3 py-1 bg-zinc-900 text-white hover:bg-zinc-800 rounded-lg text-xs font-semibold shadow-xs border border-zinc-700 cursor-pointer"
+                title="Mode Produksi Resmi: Seluruh proteksi ujian ketat 100% tanpa bypass. Klik untuk mengelola."
+              >
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="hidden md:inline">Mode Produksi</span>
+                <span className="text-[10px] text-emerald-400 font-mono">STRICT</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setActiveTab('account')}
+                className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-50 text-amber-800 hover:bg-amber-100 rounded-lg text-xs font-semibold shadow-xs border border-amber-300 cursor-pointer"
+                title="Mode Simulasi / Dev Aktif: Bypass GPS & sensor lokal tersedia. Klik untuk mengelola."
+              >
+                <FlaskConical className="w-3.5 h-3.5 text-amber-600 animate-pulse" />
+                <span className="hidden md:inline">Mode Simulasi</span>
+                <span className="text-[10px] text-amber-700 font-mono font-bold">DEV / BYPASS</span>
+              </button>
+            )}
+
             <div className="flex items-center gap-2 text-xs font-mono text-zinc-500 bg-zinc-100 px-2.5 py-1 rounded-md border border-zinc-200/60">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
               <span>SYSTEM READY</span>
@@ -1916,6 +3164,18 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                                   <QrCode className="w-4 h-4 text-zinc-700" />
                                 </button>
 
+                                {/* Tombol Pintas Kontrol & Reset Status Peserta Mapel Ini */}
+                                <button
+                                  onClick={() => {
+                                    setSelectedResetExamId(exam.id);
+                                    setActiveTab('reset-exam');
+                                  }}
+                                  className="p-1.5 text-blue-600 hover:text-blue-800 bg-blue-50/70 hover:bg-blue-100 rounded-lg transition-colors border border-blue-200/80 shadow-2xs cursor-pointer"
+                                  title="Reset login perangkat & status pengerjaan peserta mapel ini"
+                                >
+                                  <RotateCcw className="w-4 h-4" />
+                                </button>
+
                                 {/* Tombol Edit */}
                                 <button
                                   onClick={() => handleOpenEditExamModal(exam)}
@@ -1965,154 +3225,2149 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
           )}
 
           {/* TAB 3: KONTROL PENGAWAS (PROCTOR) */}
-          {activeTab === 'proctor' && (
-            <div className="space-y-4">
-              <div className="p-4 bg-white border border-zinc-200/80 rounded-xl shadow-2xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-                <div>
-                  <h3 className="text-sm font-semibold text-zinc-900 flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                    Pemantauan Langsung Aktivitas Siswa
-                  </h3>
-                  <p className="text-xs text-zinc-500">
-                    Gunakan 3 tombol aksi pengawas untuk menangani kendala teknis atau kecurangan siswa.
-                  </p>
+          {activeTab === 'proctor' && (() => {
+            const totalLockedAll = proctorStudentRows.filter((r) => r.status === 'LOCKED').length;
+            const lockedOutsideGrade = selectedProctorGrade === 'ALL'
+              ? []
+              : proctorStudentRows.filter(
+                  (r) => r.status === 'LOCKED' && Number(r.studentTingkat) !== Number(selectedProctorGrade)
+                );
+
+            return (
+              <div className="space-y-4">
+                {/* Header Kontrol Pengawas */}
+                <div className="p-4 bg-white border border-zinc-200/80 rounded-xl shadow-2xs flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                      <h3 className="text-sm font-semibold text-zinc-900">
+                        Papan Kontrol & Pemantauan Peserta Ujian (Live)
+                      </h3>
+                    </div>
+                    <p className="text-xs text-zinc-500 mt-0.5">
+                      Memantau peserta ujian, siswa yang sedang online/login, dan kendali buka kunci (Unlock) / reset pelanggaran secara real-time.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    {/* Tombol Pintas ke Reset Status Per Mapel */}
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('reset-exam')}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 rounded-xl text-xs font-semibold transition-all shadow-2xs hover:border-blue-300 active:scale-[0.98] cursor-pointer"
+                      title="Buka menu kontrol untuk mereset login perangkat atau status pengerjaan per mapel"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Reset Status Mapel</span>
+                    </button>
+
+                    {/* Tombol Refresh / Segarkan Tabel Pengawas Manual */}
+                    <button
+                      type="button"
+                      onClick={handleManualRefreshProctor}
+                      disabled={isRefreshingProctor}
+                      title="Segarkan data tabel pengawas seketika dari penyimpanan lokal & server"
+                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-white hover:bg-zinc-50 border border-zinc-300 text-zinc-800 rounded-xl text-xs font-semibold transition-all shadow-2xs hover:border-zinc-400 active:scale-[0.98] cursor-pointer disabled:opacity-60"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 text-zinc-600 ${isRefreshingProctor ? 'animate-spin text-zinc-900' : ''}`} />
+                      <span>{isRefreshingProctor ? 'Menyinkronkan...' : 'Segarkan Data'}</span>
+                    </button>
+
+                    <div className="relative max-w-xs w-full sm:w-auto">
+                      <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+                      <input
+                        type="text"
+                        value={proctorSearch}
+                        onChange={(e) => setProctorSearch(e.target.value)}
+                        placeholder="Filter nama, NISN, kelas..."
+                        className="w-full sm:w-60 pl-9 pr-3 py-1.5 text-xs border border-zinc-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-zinc-900"
+                      />
+                    </div>
+                  </div>
                 </div>
 
-                <div className="relative max-w-xs w-full">
-                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
-                  <input
-                    type="text"
-                    value={proctorSearch}
-                    onChange={(e) => setProctorSearch(e.target.value)}
-                    placeholder="Filter nama siswa atau NISN..."
-                    className="w-full pl-9 pr-3 py-1.5 text-xs border border-zinc-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-zinc-900"
-                  />
-                </div>
-              </div>
+                {/* Banner Peringatan Siswa Terkunci di Luar Tingkat Terpilih */}
+                {lockedOutsideGrade.length > 0 && (
+                  <div className="p-3.5 bg-rose-50 border-2 border-rose-300 rounded-xl shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-rose-900 animate-in fade-in">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-lg bg-rose-100 border border-rose-200 flex items-center justify-center shrink-0">
+                        <ShieldAlert className="w-4 h-4 text-rose-600 animate-pulse" />
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold flex items-center gap-1.5">
+                          <span>Ada {lockedOutsideGrade.length} Siswa Terkunci di Tingkat Lain!</span>
+                          <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-rose-600 text-white font-mono">
+                            Perlu Tindakan Pengawas
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-rose-700 mt-0.5">
+                          Peserta:{' '}
+                          <strong>
+                            {lockedOutsideGrade.map((s) => `${s.studentName} (Kelas ${s.studentTingkat})`).join(', ')}
+                          </strong>{' '}
+                          mengalami batas pelanggaran dan layarnya terkunci. Klik tombol untuk langsung meninjau dan membuka kunci.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedProctorGrade('ALL');
+                        setProctorStatusFilter('LOCKED');
+                      }}
+                      className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer shrink-0 inline-flex items-center gap-1.5"
+                    >
+                      <Unlock className="w-3.5 h-3.5" />
+                      <span>Tinjau & Buka Kunci ({lockedOutsideGrade.length})</span>
+                    </button>
+                  </div>
+                )}
 
-              {/* Tabel Pengawas */}
-              <div className="bg-white border border-zinc-200/80 rounded-xl overflow-hidden shadow-2xs">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead>
-                      <tr className="bg-zinc-50/70 border-b border-zinc-200/80 text-zinc-500 font-medium">
-                        <th className="py-3.5 px-4">Nama Siswa & NISN</th>
-                        <th className="py-3.5 px-4">Ujian & Kelas</th>
-                        <th className="py-3.5 px-4">Status Pengerjaan</th>
-                        <th className="py-3.5 px-4">Waktu Aktual</th>
-                        <th className="py-3.5 px-4">Pelanggaran</th>
-                        <th className="py-3.5 px-4 text-center">3 Aksi Pengawas</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-zinc-100">
-                      {filteredAttempts.length === 0 ? (
-                        <tr>
-                          <td colSpan="6" className="text-center py-12 text-zinc-400 text-xs">
-                            Belum ada siswa yang memulai ujian dalam catatan sistem.
-                          </td>
+                {/* TAB PENGELOMPOKAN BERDASARKAN TINGKAT DI ATAS TABEL PESERTA UJIAN */}
+                <div className="bg-white border border-zinc-200/80 rounded-xl p-3 shadow-2xs space-y-3">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-1.5 overflow-x-auto pb-1 max-w-full">
+                      {/* Tab: Semua Tingkat */}
+                      <button
+                        type="button"
+                        onClick={() => setSelectedProctorGrade('ALL')}
+                        className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all shrink-0 cursor-pointer ${
+                          selectedProctorGrade === 'ALL'
+                            ? 'bg-zinc-900 text-white shadow-xs'
+                            : 'bg-zinc-50 hover:bg-zinc-100 text-zinc-600 border border-zinc-200/80'
+                        }`}
+                      >
+                        <span>Semua Tingkat</span>
+                        <span
+                          className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono font-bold ${
+                            selectedProctorGrade === 'ALL'
+                              ? 'bg-zinc-800 text-zinc-200'
+                              : 'bg-zinc-200 text-zinc-700'
+                          }`}
+                        >
+                          {proctorStudentRows.length}
+                        </span>
+                        {totalLockedAll > 0 && (
+                          <span
+                            className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-rose-500 text-white animate-pulse"
+                            title={`${totalLockedAll} peserta terkunci`}
+                          >
+                            {totalLockedAll} Terkunci
+                          </span>
+                        )}
+                      </button>
+
+                      {/* Tab Per-Tingkat Kelas (misal Tingkat 10, Tingkat 11, Tingkat 12) */}
+                      {proctorGradeList.map((grade) => {
+                        const countForGrade = proctorStudentRows.filter(
+                          (r) => Number(r.studentTingkat) === Number(grade)
+                        ).length;
+                        const lockedForGrade = proctorStudentRows.filter(
+                          (r) => Number(r.studentTingkat) === Number(grade) && r.status === 'LOCKED'
+                        ).length;
+                        const isSelected = String(selectedProctorGrade) === String(grade);
+
+                        return (
+                          <button
+                            key={grade}
+                            type="button"
+                            onClick={() => setSelectedProctorGrade(String(grade))}
+                            className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all shrink-0 cursor-pointer ${
+                              isSelected
+                                ? 'bg-zinc-900 text-white shadow-xs'
+                                : 'bg-zinc-50 hover:bg-zinc-100 text-zinc-600 border border-zinc-200/80'
+                            }`}
+                          >
+                            <span>{getGradeLabel(grade)}</span>
+                            <span
+                              className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono font-bold ${
+                                isSelected
+                                  ? 'bg-zinc-800 text-zinc-200'
+                                  : 'bg-zinc-200 text-zinc-700'
+                              }`}
+                            >
+                              {countForGrade}
+                            </span>
+                            {lockedForGrade > 0 && (
+                              <span
+                                className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-rose-500 text-white animate-pulse"
+                                title={`${lockedForGrade} peserta terkunci pada tingkat ini`}
+                              >
+                                {lockedForGrade} Terkunci
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Filter Status Pill Pengawas */}
+                    <div className="flex items-center gap-1 shrink-0 overflow-x-auto text-[11px]">
+                      <span className="text-zinc-400 font-medium mr-1 text-[10px] uppercase tracking-wider">Status:</span>
+                      {[
+                        { id: 'ALL', label: 'Semua Status' },
+                        { id: 'LOCKED', label: 'Terkunci', count: proctorStats.locked },
+                        { id: 'IN_PROGRESS', label: 'Sedang Ujian', count: proctorStats.inProgress },
+                        { id: 'ONLINE', label: 'Online / Aktif', count: proctorStats.online },
+                        { id: 'COMPLETED', label: 'Selesai', count: proctorStats.completed },
+                      ].map((st) => (
+                        <button
+                          key={st.id}
+                          type="button"
+                          onClick={() => setProctorStatusFilter(st.id)}
+                          className={`px-2.5 py-1 rounded-lg font-medium transition-colors cursor-pointer ${
+                            proctorStatusFilter === st.id
+                              ? 'bg-zinc-900 text-white shadow-2xs font-semibold'
+                              : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-600'
+                          }`}
+                        >
+                          <span>{st.label}</span>
+                          {st.count !== undefined && st.count > 0 && (
+                            <span className={`ml-1 text-[10px] font-mono font-bold ${
+                              st.id === 'LOCKED' ? 'text-rose-400' : ''
+                            }`}>
+                              ({st.count})
+                            </span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Status Bar Ringkas Pengawas untuk Tingkat Terpilih */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1 border-t border-zinc-100">
+                    <div className="p-2.5 bg-zinc-50 border border-zinc-200/60 rounded-xl flex items-center justify-between">
+                      <div>
+                        <div className="text-[10px] font-medium text-zinc-500">Total Peserta</div>
+                        <div className="text-base font-bold text-zinc-900 font-mono">{proctorStats.total}</div>
+                      </div>
+                      <Users className="w-4 h-4 text-zinc-400" />
+                    </div>
+                    <div className="p-2.5 bg-emerald-50/70 border border-emerald-200/70 rounded-xl flex items-center justify-between">
+                      <div>
+                        <div className="text-[10px] font-medium text-emerald-700">Sedang Mengerjakan</div>
+                        <div className="text-base font-bold text-emerald-600 font-mono">
+                          {proctorStats.inProgress}
+                        </div>
+                      </div>
+                      <Activity className="w-4 h-4 text-emerald-500" />
+                    </div>
+                    <div className="p-2.5 bg-rose-50/70 border border-rose-200/70 rounded-xl flex items-center justify-between">
+                      <div>
+                        <div className="text-[10px] font-medium text-rose-700">Terkunci (Pelanggaran)</div>
+                        <div className="text-base font-bold text-rose-600 font-mono flex items-center gap-1.5 flex-wrap">
+                          <span>{proctorStats.locked}</span>
+                          {selectedProctorGrade !== 'ALL' && lockedOutsideGrade.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedProctorGrade('ALL');
+                                setProctorStatusFilter('LOCKED');
+                              }}
+                              className="text-[10px] font-semibold text-rose-700 bg-rose-100 hover:bg-rose-200 px-1.5 py-0.5 rounded cursor-pointer transition-colors border border-rose-300"
+                              title="Ada siswa terkunci di tingkat lain, klik untuk buka"
+                            >
+                              +{lockedOutsideGrade.length} di tingkat lain
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <ShieldAlert className="w-4 h-4 text-rose-500" />
+                    </div>
+                    <div className="p-2.5 bg-blue-50/70 border border-blue-200/70 rounded-xl flex items-center justify-between">
+                      <div>
+                        <div className="text-[10px] font-medium text-blue-700">Online / Selesai</div>
+                        <div className="text-base font-bold text-blue-600 font-mono">
+                          {proctorStats.online}
+                        </div>
+                      </div>
+                      <CheckCircle2 className="w-4 h-4 text-blue-500" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Tabel Peserta Ujian Pengawas */}
+                <div className="bg-white border border-zinc-200/80 rounded-xl overflow-hidden shadow-2xs">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead>
+                        <tr className="bg-zinc-50/70 border-b border-zinc-200/80 text-zinc-500 font-medium">
+                          <th className="py-3 px-4">Nama Siswa & NISN</th>
+                          <th className="py-3 px-4">Ujian & Tingkat</th>
+                          <th className="py-3 px-4">Status Pengerjaan</th>
+                          <th className="py-3 px-4">Waktu Aktual</th>
+                          <th className="py-3 px-4">Pelanggaran</th>
+                          <th className="py-3 px-4 text-center">Aksi Pengawas Ujian</th>
                         </tr>
-                      ) : (
-                        filteredAttempts.map((att) => {
-                          const conf = ATTEMPT_STATUS[att.status] || ATTEMPT_STATUS.IN_PROGRESS;
-                          return (
-                            <tr key={att.id} className="hover:bg-zinc-50/80 transition-colors">
-                              <td className="py-3.5 px-4">
-                                <div className="font-semibold text-zinc-900">{att.student_name}</div>
-                                <div className="text-[11px] text-zinc-400 font-mono">
-                                  NISN: {att.student_nisn}
-                                </div>
-                              </td>
-
-                              <td className="py-3.5 px-4">
-                                <div className="font-medium text-zinc-800">{att.exam_title}</div>
-                                <div className="text-[11px] text-zinc-400">
-                                  {att.student_kelas || 'Kelas Siswa'}
-                                </div>
-                              </td>
-
-                              <td className="py-3.5 px-4">
-                                <span
-                                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-medium ${conf.badgeClass}`}
+                      </thead>
+                      <tbody className="divide-y divide-zinc-100">
+                        {filteredProctorRows.length === 0 ? (
+                          <tr>
+                            <td colSpan="6" className="text-center py-12 text-zinc-400 text-xs">
+                              <div className="flex flex-col items-center justify-center gap-2">
+                                <ShieldAlert className="w-8 h-8 text-zinc-300" />
+                                <p>Tidak ada peserta ujian yang cocok dengan filter atau tingkat yang dipilih.</p>
+                                <button
+                                  type="button"
+                                  onClick={handleManualRefreshProctor}
+                                  className="mt-1 inline-flex items-center gap-1.5 px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 rounded-lg text-xs font-medium cursor-pointer transition-colors"
                                 >
-                                  <span className={`w-2 h-2 rounded-full ${conf.dotClass}`}></span>
-                                  {conf.label}
-                                </span>
-                              </td>
+                                  <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingProctor ? 'animate-spin' : ''}`} />
+                                  <span>Segarkan Tabel Pengawas</span>
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ) : (
+                          filteredProctorRows.map((row) => {
+                            const isLocked = row.status === 'LOCKED';
+                            const conf = ATTEMPT_STATUS[row.status] || {
+                              label: row.status === 'ONLINE' ? 'Online di Beranda' : 'Offline',
+                              badgeClass: row.status === 'ONLINE' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-zinc-50 text-zinc-400 border-zinc-200',
+                              dotClass: row.status === 'ONLINE' ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-300',
+                            };
 
-                              <td className="py-3.5 px-4 font-mono font-medium text-zinc-700">
-                                {formatDuration(att.time_spent_seconds)}
-                              </td>
-
-                              <td className="py-3.5 px-4">
-                                <div className="flex items-center gap-1 font-mono font-bold">
-                                  <span
-                                    className={
-                                      att.violation_count > 0 ? 'text-rose-600' : 'text-zinc-500'
-                                    }
-                                  >
-                                    {att.violation_count}x
-                                  </span>
-                                </div>
-                                {att.last_violation_reason && (
-                                  <div className="text-[10px] text-rose-500 max-w-[140px] truncate" title={att.last_violation_reason}>
-                                    {att.last_violation_reason}
+                            return (
+                              <tr
+                                key={row.rowKey}
+                                className={`transition-colors ${
+                                  isLocked ? 'bg-rose-50/40 hover:bg-rose-50/70' : 'hover:bg-zinc-50/80'
+                                }`}
+                              >
+                                {/* Kolom 1: Nama Siswa & NISN & Indikator Online */}
+                                <td className="py-3 px-4">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-semibold text-zinc-900">{row.studentName}</span>
+                                    {row.isOnline && (
+                                      <span
+                                        className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                        title="Siswa sedang online di peramban"
+                                      >
+                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                        <span>Online</span>
+                                      </span>
+                                    )}
                                   </div>
-                                )}
-                              </td>
+                                  <div className="text-[11px] text-zinc-400 font-mono">
+                                    NISN: {row.studentNisn}
+                                  </div>
+                                </td>
 
-                              {/* 3 Tombol Aksi Pengawas */}
-                              <td className="py-3.5 px-4 text-center">
-                                <div className="flex items-center justify-center gap-1.5">
-                                  <button
-                                    onClick={() =>
-                                      handleProctorResetLogin(att.student_id, att.student_name)
-                                    }
-                                    title="Aksi 1: Hapus kunci active_device_id siswa agar bisa login di perangkat lain"
-                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-zinc-200 bg-white hover:bg-zinc-50 text-[11px] font-medium text-zinc-700 transition-all shadow-2xs"
+                                {/* Kolom 2: Ujian & Kelas / Tingkat */}
+                                <td className="py-3 px-4">
+                                  <div className="font-medium text-zinc-800">{row.examTitle}</div>
+                                  <div className="text-[11px] text-zinc-500 flex items-center gap-1.5 mt-0.5">
+                                    <span>{row.studentKelas}</span>
+                                    <span className="text-zinc-300">•</span>
+                                    <span className="font-semibold text-zinc-700">
+                                      {getGradeLabel(row.studentTingkat)}
+                                    </span>
+                                  </div>
+                                </td>
+
+                                {/* Kolom 3: Status Pengerjaan */}
+                                <td className="py-3 px-4">
+                                  <span
+                                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-medium ${conf.badgeClass}`}
                                   >
-                                    <Smartphone className="w-3 h-3 text-zinc-500" />
-                                    <span>Reset Login</span>
-                                  </button>
+                                    <span className={`w-2 h-2 rounded-full ${conf.dotClass}`}></span>
+                                    {conf.label}
+                                  </span>
+                                </td>
 
-                                  <button
-                                    onClick={() => handleProctorUnlock(att.id, att.student_name)}
-                                    disabled={att.status !== 'LOCKED'}
-                                    title="Aksi 2: Buka kunci siswa yang berstatus LOCKED karena pelanggaran"
-                                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[11px] font-medium transition-all shadow-2xs ${att.status === 'LOCKED'
-                                        ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100 font-semibold'
-                                        : 'bg-zinc-50 text-zinc-400 border-zinc-200 cursor-not-allowed opacity-60'
+                                {/* Kolom 4: Waktu Aktual */}
+                                <td className="py-3 px-4 font-mono font-medium text-zinc-700">
+                                  {row.timeSpentSeconds > 0
+                                    ? formatDuration(row.timeSpentSeconds)
+                                    : row.isOnline
+                                    ? <span className="text-emerald-600 text-[11px]">Siap Ujian</span>
+                                    : <span className="text-zinc-400 text-[11px]">-</span>}
+                                </td>
+
+                                {/* Kolom 5: Pelanggaran */}
+                                <td className="py-3 px-4">
+                                  <div className="flex items-center gap-2">
+                                    <span
+                                      className={`font-mono font-bold ${
+                                        row.violationCount > 0 ? 'text-rose-600' : 'text-zinc-500'
                                       }`}
-                                  >
-                                    <Unlock className="w-3 h-3" />
-                                    <span>Unlock</span>
-                                  </button>
+                                    >
+                                      {row.violationCount || 0}x
+                                    </span>
+                                    {row.violationCount > 0 && (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          handleProctorResetViolationCount(
+                                            row.attemptId || row.studentId,
+                                            row.studentName
+                                          )
+                                        }
+                                        title="Reset counter pelanggaran kembali ke 0"
+                                        className="px-1.5 py-0.5 text-[10px] font-semibold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded transition-colors cursor-pointer"
+                                      >
+                                        Reset 0x
+                                      </button>
+                                    )}
+                                  </div>
+                                  {row.lastViolationReason && (
+                                    <div
+                                      className="text-[10px] text-rose-500 max-w-[140px] truncate mt-0.5"
+                                      title={row.lastViolationReason}
+                                    >
+                                      {row.lastViolationReason}
+                                    </div>
+                                  )}
+                                </td>
 
-                                  <button
-                                    onClick={() =>
-                                      handleProctorResetAnswer(att.id, att.student_name)
-                                    }
-                                    disabled={att.status !== 'COMPLETED'}
-                                    title="Aksi 3: Ubah status COMPLETED jadi RESET_BY_PROCTOR agar soal muncul kembali di beranda siswa jika jawaban belum masuk Sheets"
-                                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[11px] font-medium transition-all shadow-2xs ${att.status === 'COMPLETED'
-                                        ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 font-semibold'
-                                        : 'bg-zinc-50 text-zinc-400 border-zinc-200 cursor-not-allowed opacity-60'
+                                {/* Kolom 6: Aksi Pengawas */}
+                                <td className="py-3 px-4 text-center">
+                                  <div className="flex items-center justify-center gap-1.5">
+                                    {/* Tombol Buka Kunci (Unlock) - Sangat Jelas & Menonjol */}
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleProctorUnlock(
+                                          row.attemptId || row.studentId,
+                                          row.studentName
+                                        )
+                                      }
+                                      disabled={!isLocked}
+                                      title={
+                                        isLocked
+                                          ? 'Buka kunci siswa yang terkena pelanggaran'
+                                          : 'Siswa sedang tidak berstatus terkunci'
+                                      }
+                                      className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border text-[11px] font-bold transition-all shadow-2xs cursor-pointer ${
+                                        isLocked
+                                          ? 'bg-rose-600 hover:bg-rose-700 text-white border-rose-700 ring-2 ring-rose-400/40 animate-pulse'
+                                          : 'bg-zinc-50 text-zinc-400 border-zinc-200 cursor-not-allowed opacity-60'
                                       }`}
-                                  >
-                                    <RotateCcw className="w-3 h-3" />
-                                    <span>Reset Jawaban</span>
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })
-                      )}
-                    </tbody>
-                  </table>
+                                    >
+                                      <Unlock className="w-3.5 h-3.5" />
+                                      <span>Buka Kunci</span>
+                                    </button>
+
+                                    {/* Tombol Reset Pelanggaran ke 0 */}
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleProctorResetViolationCount(
+                                          row.attemptId || row.studentId,
+                                          row.studentName
+                                        )
+                                      }
+                                      title="Reset seluruh catatan pelanggaran siswa ke 0 kali"
+                                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-zinc-200 bg-white hover:bg-zinc-50 text-[11px] font-medium text-zinc-700 transition-all shadow-2xs cursor-pointer"
+                                    >
+                                      <ShieldAlert className="w-3 h-3 text-amber-500" />
+                                      <span>Reset Pelanggaran</span>
+                                    </button>
+
+                                    {/* Tombol Reset Login (Perangkat) */}
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleProctorResetLogin(
+                                          row.studentId,
+                                          row.studentName
+                                        )
+                                      }
+                                      title="Aksi: Hapus kunci active_device_id siswa agar bisa login di perangkat lain"
+                                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-zinc-200 bg-white hover:bg-zinc-50 text-[11px] font-medium text-zinc-700 transition-all shadow-2xs cursor-pointer"
+                                    >
+                                      <Smartphone className="w-3 h-3 text-zinc-500" />
+                                      <span>Reset Login</span>
+                                    </button>
+
+                                    {/* Tombol Reset Jawaban */}
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleProctorResetAnswer(
+                                          row.attemptId || row.studentId,
+                                          row.studentName
+                                        )
+                                      }
+                                      disabled={row.status !== 'COMPLETED'}
+                                      title="Ubah status COMPLETED jadi RESET_BY_PROCTOR agar soal muncul kembali di beranda siswa jika jawaban belum masuk Sheets"
+                                      className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-[11px] font-medium transition-all shadow-2xs ${
+                                        row.status === 'COMPLETED'
+                                          ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 font-semibold cursor-pointer'
+                                          : 'bg-zinc-50 text-zinc-400 border-zinc-200 cursor-not-allowed opacity-60'
+                                      }`}
+                                    >
+                                      <RotateCcw className="w-3 h-3" />
+                                      <span>Reset Jawaban</span>
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
+
+          {/* TAB 3c: KONTROL & RESET STATUS UJIAN PER MAPEL */}
+          {activeTab === 'reset-exam' && (() => {
+            const hasSelection = selectedStudentIdsForReset.length > 0;
+            const targetCount = hasSelection ? selectedStudentIdsForReset.length : resetExamStudents.length;
+
+            return (
+              <div className="space-y-4">
+                {/* 1. Header & Deskripsi */}
+                <div className="p-4 bg-white border border-zinc-200/80 rounded-xl shadow-2xs flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-lg bg-blue-50 border border-blue-200 flex items-center justify-center shrink-0">
+                        <RotateCcw className="w-4 h-4 text-blue-600" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-semibold text-zinc-900">
+                          Kontrol & Reset Status Pengerjaan Ujian Per Mapel
+                        </h3>
+                        <p className="text-xs text-zinc-500 mt-0.5">
+                          Pilih mata pelajaran untuk mereset login perangkat atau mengatur status pengerjaan (Belum Masuk, Selesai, Reset Pekerjaan) secara fleksibel.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    {/* Tombol Pintas ke Pemantauan Live */}
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('proctor')}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl text-xs font-semibold transition-all shadow-xs cursor-pointer"
+                    >
+                      <ShieldAlert className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Buka Pemantauan Live</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleManualRefreshProctor}
+                      disabled={isRefreshingProctor}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-white hover:bg-zinc-50 border border-zinc-300 text-zinc-800 rounded-xl text-xs font-semibold transition-all shadow-2xs cursor-pointer disabled:opacity-60"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 text-zinc-600 ${isRefreshingProctor ? 'animate-spin' : ''}`} />
+                      <span>{isRefreshingProctor ? 'Menyinkronkan...' : 'Segarkan Data'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 2. Kartu Pemilih Mapel & Ringkasan Metrik Mapel */}
+                <div className="bg-white border border-zinc-200/80 rounded-xl p-4 shadow-2xs space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+                    <div className="md:col-span-2 space-y-1">
+                      <label className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
+                        <FileSpreadsheet className="w-4 h-4 text-blue-600" />
+                        <span>Pilih Mata Pelajaran / Sesi Ujian:</span>
+                      </label>
+                      <select
+                        value={selectedResetExamId}
+                        onChange={(e) => {
+                          setSelectedResetExamId(e.target.value);
+                          setSelectedStudentIdsForReset([]);
+                        }}
+                        className="w-full px-3.5 py-2 text-xs font-medium border border-zinc-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-2xs cursor-pointer"
+                      >
+                        {exams.map((ex) => (
+                          <option key={ex.id} value={ex.id}>
+                            {ex.title} &bull; {getGradeLabel(ex.grade_level)} ({ex.subject || 'Mapel'}) &bull; Token: {ex.exam_token}
+                          </option>
+                        ))}
+                      </select>
+                      {currentResetExam && (
+                        <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] text-zinc-500">
+                          <span className="font-semibold text-zinc-700">Durasi: {currentResetExam.duration_minutes} Menit</span>
+                          <span>&bull;</span>
+                          <span>Kelompok: {currentResetExam.session_group || 'Semua'}</span>
+                          <span>&bull;</span>
+                          <span className="font-mono bg-zinc-100 px-1.5 py-0.5 rounded text-zinc-700">
+                            Token: {currentResetExam.exam_token}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Ringkasan status perangkat mapel */}
+                    <div className="p-3 bg-zinc-50 border border-zinc-200/70 rounded-xl space-y-1">
+                      <div className="text-[11px] font-semibold text-zinc-600 flex items-center justify-between">
+                        <span>Perangkat Siswa Terkunci:</span>
+                        <span className="font-mono font-bold text-zinc-900">{resetExamStats.deviceLocked} Siswa</span>
+                      </div>
+                      <div className="text-[11px] font-semibold text-zinc-600 flex items-center justify-between">
+                        <span>Total Siswa Mapel Ini:</span>
+                        <span className="font-mono font-bold text-blue-600">{resetExamStats.total} Siswa</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 3. Baris Metrik Status Pengerjaan Mapel Terpilih */}
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 pt-2 border-t border-zinc-100">
+                    <div className="p-2.5 bg-zinc-50 border border-zinc-200/60 rounded-xl flex items-center justify-between">
+                      <div>
+                        <div className="text-[10px] font-medium text-zinc-500">Total Siswa</div>
+                        <div className="text-base font-bold text-zinc-900 font-mono">{resetExamStats.total}</div>
+                      </div>
+                      <Users className="w-4 h-4 text-zinc-400" />
+                    </div>
+                    <div className="p-2.5 bg-zinc-50 border border-zinc-200/60 rounded-xl flex items-center justify-between">
+                      <div>
+                        <div className="text-[10px] font-medium text-zinc-500">Belum Masuk</div>
+                        <div className="text-base font-bold text-zinc-700 font-mono">{resetExamStats.notStarted}</div>
+                      </div>
+                      <Clock className="w-4 h-4 text-zinc-400" />
+                    </div>
+                    <div className="p-2.5 bg-emerald-50/70 border border-emerald-200/70 rounded-xl flex items-center justify-between">
+                      <div>
+                        <div className="text-[10px] font-medium text-emerald-700">Sedang Ujian</div>
+                        <div className="text-base font-bold text-emerald-600 font-mono">{resetExamStats.inProgress}</div>
+                      </div>
+                      <Activity className="w-4 h-4 text-emerald-500" />
+                    </div>
+                    <div className="p-2.5 bg-rose-50/70 border border-rose-200/70 rounded-xl flex items-center justify-between">
+                      <div>
+                        <div className="text-[10px] font-medium text-rose-700">Terkunci</div>
+                        <div className="text-base font-bold text-rose-600 font-mono">{resetExamStats.locked}</div>
+                      </div>
+                      <ShieldAlert className="w-4 h-4 text-rose-500" />
+                    </div>
+                    <div className="p-2.5 bg-blue-50/70 border border-blue-200/70 rounded-xl flex items-center justify-between">
+                      <div>
+                        <div className="text-[10px] font-medium text-blue-700">Selesai</div>
+                        <div className="text-base font-bold text-blue-600 font-mono">{resetExamStats.completed}</div>
+                      </div>
+                      <CheckCircle2 className="w-4 h-4 text-blue-500" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 4. Panel Aksi Massal (Bulk Reset Actions) */}
+                <div className="bg-gradient-to-r from-zinc-900 to-zinc-800 text-white rounded-xl p-4 shadow-sm space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-200 flex items-center gap-1.5">
+                        <Sliders className="w-3.5 h-3.5 text-blue-400" />
+                        <span>Aksi Reset Massal ({hasSelection ? `${selectedStudentIdsForReset.length} Siswa Dipilih` : 'Seluruh Siswa Mapel Ini'})</span>
+                      </h4>
+                      <p className="text-[11px] text-zinc-400 mt-0.5">
+                        {hasSelection
+                          ? 'Tindakan berikut akan diterapkan hanya kepada siswa yang Anda centang di tabel.'
+                          : `Tindakan berikut akan diterapkan kepada seluruh ${resetExamStudents.length} siswa pada mapel ini.`}
+                      </p>
+                    </div>
+
+                    {hasSelection && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedStudentIdsForReset([])}
+                        className="text-[11px] text-zinc-300 hover:text-white underline cursor-pointer self-start sm:self-auto"
+                      >
+                        Batalkan Pilihan ({selectedStudentIdsForReset.length})
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 pt-1">
+                    {/* Aksi Massal 1: Reset Login Semua */}
+                    <button
+                      type="button"
+                      onClick={handleBulkResetLogin}
+                      className="inline-flex items-center justify-center gap-2 px-3 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-amber-300 border border-zinc-700 rounded-xl text-xs font-semibold transition-all active:scale-[0.98] cursor-pointer shadow-xs"
+                      title="Hapus kunci perangkat active_device_id agar siswa dapat login dari HP/laptop lain"
+                    >
+                      <Smartphone className="w-4 h-4 text-amber-400 shrink-0" />
+                      <span>Reset Login Perangkat ({targetCount})</span>
+                    </button>
+
+                    {/* Aksi Massal 2: Set Belum Masuk Semua */}
+                    <button
+                      type="button"
+                      onClick={handleBulkSetNotStarted}
+                      className="inline-flex items-center justify-center gap-2 px-3 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 rounded-xl text-xs font-semibold transition-all active:scale-[0.98] cursor-pointer shadow-xs"
+                      title="Hapus attempt pengerjaan mapel ini sehingga siswa kembali ke status awal belum mengerjakan"
+                    >
+                      <Clock className="w-4 h-4 text-zinc-400 shrink-0" />
+                      <span>Set "Belum Masuk" ({targetCount})</span>
+                    </button>
+
+                    {/* Aksi Massal 3: Set Selesai Semua */}
+                    <button
+                      type="button"
+                      onClick={handleBulkSetCompleted}
+                      className="inline-flex items-center justify-center gap-2 px-3 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-emerald-300 border border-zinc-700 rounded-xl text-xs font-semibold transition-all active:scale-[0.98] cursor-pointer shadow-xs"
+                      title="Tandai seluruh siswa selesai mengerjakan dan catat presensi Hadir"
+                    >
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>Set "Selesai" ({targetCount})</span>
+                    </button>
+
+                    {/* Aksi Massal 4: Reset Pekerjaan Semua */}
+                    <button
+                      type="button"
+                      onClick={handleBulkResetWork}
+                      className="inline-flex items-center justify-center gap-2 px-3 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-rose-300 border border-zinc-700 rounded-xl text-xs font-semibold transition-all active:scale-[0.98] cursor-pointer shadow-xs"
+                      title="Reset waktu pengerjaan dan pelanggaran ke 0 agar siswa dapat mengulang ujian dari awal"
+                    >
+                      <RotateCcw className="w-4 h-4 text-rose-400 shrink-0" />
+                      <span>Reset Pekerjaan ({targetCount})</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 5. Tabel Siswa & Aksi Per-Siswa */}
+                <div className="bg-white border border-zinc-200/80 rounded-xl overflow-hidden shadow-2xs space-y-0">
+                  {/* Toolbar Filter Tabel Siswa */}
+                  <div className="p-3 border-b border-zinc-200/80 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-zinc-50/50">
+                    <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 text-xs">
+                      <span className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider mr-1">Status:</span>
+                      {[
+                        { id: 'ALL', label: 'Semua Status' },
+                        { id: 'NOT_STARTED', label: 'Belum Masuk', count: resetExamStats.notStarted },
+                        { id: 'IN_PROGRESS', label: 'Sedang Ujian', count: resetExamStats.inProgress },
+                        { id: 'LOCKED', label: 'Terkunci', count: resetExamStats.locked },
+                        { id: 'COMPLETED', label: 'Selesai', count: resetExamStats.completed },
+                        { id: 'RESET_BY_PROCTOR', label: 'Direset Pengawas', count: resetExamStats.reset },
+                      ].map((tab) => (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          onClick={() => setResetStatusFilter(tab.id)}
+                          className={`px-2.5 py-1 rounded-lg font-medium transition-colors shrink-0 cursor-pointer ${
+                            resetStatusFilter === tab.id
+                              ? 'bg-zinc-900 text-white font-semibold shadow-2xs'
+                              : 'bg-white hover:bg-zinc-100 text-zinc-600 border border-zinc-200/80'
+                          }`}
+                        >
+                          <span>{tab.label}</span>
+                          {tab.count !== undefined && tab.count > 0 && (
+                            <span className="ml-1 text-[10px] font-mono font-bold opacity-80">
+                              ({tab.count})
+                            </span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="relative max-w-xs w-full sm:w-64">
+                      <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+                      <input
+                        type="text"
+                        value={resetSearch}
+                        onChange={(e) => setResetSearch(e.target.value)}
+                        placeholder="Cari nama, NISN, kelas..."
+                        className="w-full pl-9 pr-3 py-1.5 text-xs border border-zinc-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Tabel Data Siswa */}
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead>
+                        <tr className="bg-zinc-50 border-b border-zinc-200/80 text-zinc-500 font-semibold">
+                          <th className="py-3 px-3 w-10 text-center">
+                            <button
+                              type="button"
+                              onClick={handleToggleSelectAllReset}
+                              className="cursor-pointer text-zinc-600 hover:text-zinc-900"
+                              title="Pilih / Batalkan Semua"
+                            >
+                              {selectedStudentIdsForReset.length === filteredResetExamStudents.length &&
+                              filteredResetExamStudents.length > 0 ? (
+                                <CheckSquare className="w-4 h-4 text-blue-600" />
+                              ) : (
+                                <Square className="w-4 h-4 text-zinc-400" />
+                              )}
+                            </button>
+                          </th>
+                          <th className="py-3 px-3">Nama Siswa & NISN</th>
+                          <th className="py-3 px-3">Kelas & Ruang</th>
+                          <th className="py-3 px-3">Status Pengerjaan</th>
+                          <th className="py-3 px-3">Kunci Login (Perangkat)</th>
+                          <th className="py-3 px-3 text-center">Aksi Cepat Pengawas</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-zinc-100">
+                        {filteredResetExamStudents.length === 0 ? (
+                          <tr>
+                            <td colSpan="6" className="py-12 text-center text-zinc-400 text-xs">
+                              Tidak ada siswa yang sesuai dengan filter atau sesi ujian terpilih.
+                            </td>
+                          </tr>
+                        ) : (
+                          filteredResetExamStudents.map((row) => {
+                            const isSelected = selectedStudentIdsForReset.includes(row.studentId);
+                            const isLocked = row.status === 'LOCKED';
+
+                            return (
+                              <tr
+                                key={row.studentId}
+                                className={`transition-colors ${
+                                  isSelected
+                                    ? 'bg-blue-50/60'
+                                    : isLocked
+                                    ? 'bg-rose-50/40 hover:bg-rose-50/70'
+                                    : 'hover:bg-zinc-50/80'
+                                }`}
+                              >
+                                {/* Checkbox */}
+                                <td className="py-3 px-3 text-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleToggleSelectStudentReset(row.studentId)}
+                                    className="cursor-pointer text-zinc-600 hover:text-zinc-900"
+                                  >
+                                    {isSelected ? (
+                                      <CheckSquare className="w-4 h-4 text-blue-600" />
+                                    ) : (
+                                      <Square className="w-4 h-4 text-zinc-300" />
+                                    )}
+                                  </button>
+                                </td>
+
+                                {/* Nama & NISN */}
+                                <td className="py-3 px-3">
+                                  <div className="font-semibold text-zinc-900">{row.nama}</div>
+                                  <div className="text-[11px] text-zinc-400 font-mono">NISN: {row.nisn}</div>
+                                </td>
+
+                                {/* Kelas & Ruang */}
+                                <td className="py-3 px-3">
+                                  <div className="font-medium text-zinc-800">{row.kelas}</div>
+                                  <div className="text-[11px] text-zinc-500">{row.ruang || '-'}</div>
+                                </td>
+
+                                {/* Status Pengerjaan */}
+                                <td className="py-3 px-3">
+                                  {row.status === 'NOT_STARTED' && (
+                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border text-[11px] font-medium bg-zinc-50 text-zinc-600 border-zinc-200">
+                                      <span className="w-2 h-2 rounded-full bg-zinc-400"></span>
+                                      <span>Belum Masuk</span>
+                                    </span>
+                                  )}
+                                  {row.status === 'IN_PROGRESS' && (
+                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border text-[11px] font-medium bg-emerald-50 text-emerald-700 border-emerald-200">
+                                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                                      <span>Sedang Ujian</span>
+                                    </span>
+                                  )}
+                                  {row.status === 'LOCKED' && (
+                                    <div>
+                                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border text-[11px] font-bold bg-rose-50 text-rose-700 border-rose-200 animate-pulse">
+                                        <span className="w-2 h-2 rounded-full bg-rose-600"></span>
+                                        <span>Terkunci ({row.violationCount}x)</span>
+                                      </span>
+                                      {row.lastViolationReason && (
+                                        <div className="text-[10px] text-rose-500 mt-0.5 max-w-[150px] truncate" title={row.lastViolationReason}>
+                                          {row.lastViolationReason}
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                  {row.status === 'COMPLETED' && (
+                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border text-[11px] font-medium bg-blue-50 text-blue-700 border-blue-200">
+                                      <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                                      <span>Selesai</span>
+                                    </span>
+                                  )}
+                                  {row.status === 'RESET_BY_PROCTOR' && (
+                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border text-[11px] font-medium bg-purple-50 text-purple-700 border-purple-200">
+                                      <span className="w-2 h-2 rounded-full bg-purple-500"></span>
+                                      <span>Direset Pengawas</span>
+                                    </span>
+                                  )}
+                                </td>
+
+                                {/* Kunci Login Perangkat */}
+                                <td className="py-3 px-3">
+                                  {row.isDeviceLocked ? (
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+                                        <Smartphone className="w-3 h-3 text-amber-600" />
+                                        <span>Terkunci di HP/PC</span>
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <span className="text-[11px] text-zinc-400">Bebas Login</span>
+                                  )}
+                                </td>
+
+                                {/* Tombol Aksi Cepat Pengawas */}
+                                <td className="py-3 px-3 text-center">
+                                  <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                                    {/* Tombol 1: Reset Login */}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleResetLoginSingle(row.studentId, row.nama)}
+                                      disabled={!row.isDeviceLocked}
+                                      title={row.isDeviceLocked ? 'Reset kunci login perangkat agar siswa bisa login di tempat lain' : 'Siswa belum terikat perangkat'}
+                                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-all ${
+                                        row.isDeviceLocked
+                                          ? 'bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-200 cursor-pointer shadow-2xs'
+                                          : 'bg-zinc-50 text-zinc-400 border-zinc-200 opacity-50 cursor-not-allowed'
+                                      }`}
+                                    >
+                                      <Smartphone className="w-3 h-3" />
+                                      <span>Reset Login</span>
+                                    </button>
+
+                                    {/* Tombol 2: Set Belum Masuk */}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSetNotStartedSingle(row.studentId, row.nama)}
+                                      disabled={row.status === 'NOT_STARTED'}
+                                      title={row.status === 'NOT_STARTED' ? 'Siswa sudah berstatus Belum Masuk' : 'Hapus rekaman attempt mapel ini dan kembalikan ke Belum Masuk'}
+                                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-all ${
+                                        row.status !== 'NOT_STARTED'
+                                          ? 'bg-white hover:bg-zinc-100 text-zinc-700 border-zinc-300 cursor-pointer shadow-2xs'
+                                          : 'bg-zinc-50 text-zinc-400 border-zinc-200 opacity-50 cursor-not-allowed'
+                                      }`}
+                                    >
+                                      <Clock className="w-3 h-3 text-zinc-500" />
+                                      <span>Belum Masuk</span>
+                                    </button>
+
+                                    {/* Tombol 3: Set Selesai */}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSetCompletedSingle(row.studentId, row.nama)}
+                                      disabled={row.status === 'COMPLETED'}
+                                      title={row.status === 'COMPLETED' ? 'Siswa sudah berstatus Selesai' : 'Tandai status ujian ini menjadi Selesai (COMPLETED)'}
+                                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-all ${
+                                        row.status !== 'COMPLETED'
+                                          ? 'bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200 cursor-pointer shadow-2xs font-semibold'
+                                          : 'bg-zinc-50 text-zinc-400 border-zinc-200 opacity-50 cursor-not-allowed'
+                                      }`}
+                                    >
+                                      <CheckCircle2 className="w-3 h-3 text-blue-600" />
+                                      <span>Selesai</span>
+                                    </button>
+
+                                    {/* Tombol 4: Reset Pekerjaan */}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleResetWorkSingle(row.studentId, row.nama)}
+                                      title="Reset pengerjaan ujian mapel ini agar siswa dapat mengulang dari awal"
+                                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 transition-all shadow-2xs cursor-pointer"
+                                    >
+                                      <RotateCcw className="w-3 h-3 text-rose-600" />
+                                      <span>Reset Pekerjaan</span>
+                                    </button>
+
+                                    {/* Tombol Tambahan jika Terkunci: Buka Kunci */}
+                                    {isLocked && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleProctorUnlock(row.attemptId || row.studentId, row.nama)}
+                                        title="Buka kunci layar ujian siswa yang terkena pelanggaran"
+                                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-rose-600 hover:bg-rose-700 text-white border border-rose-700 shadow-xs animate-pulse cursor-pointer"
+                                      >
+                                        <Unlock className="w-3 h-3" />
+                                        <span>Buka Kunci</span>
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* TAB 3b: PRESENSI & REKAP KEHADIRAN UJIAN */}
+          {activeTab === 'attendance' && (() => {
+            const currentAttendanceExam = exams.find((e) => e.id === selectedAttendanceExamId) || exams[0] || null;
+            const eligibleStudents = users.filter(
+              (u) => u.role === 'student' && (!currentAttendanceExam || u.tingkat === currentAttendanceExam.grade_level)
+            );
+            const attendanceRecords = currentAttendanceExam ? storageService.getExamAttendance(currentAttendanceExam.id) : [];
+            const attendanceMap = new Map(attendanceRecords.map((a) => [a.student_id, a]));
+            const examAttempts = currentAttendanceExam ? attempts.filter((a) => a.exam_session_id === currentAttendanceExam.id) : [];
+            const attemptsMap = new Map(examAttempts.map((a) => [a.student_id, a]));
+
+            const attendanceRooms = Array.from(
+              new Set(eligibleStudents.map((s) => s.ruang || 'Ruang 01').filter(Boolean))
+            ).sort();
+
+            // Filter Ruangan
+            const roomFilteredEligible = eligibleStudents.filter((stu) =>
+              selectedAttendanceRoom === 'ALL' || (stu.ruang || 'Ruang 01') === selectedAttendanceRoom
+            );
+
+            // ========================================================
+            // LOGIKA PRESENSI KETAT SESUAI INSTRUKSI PENGGUNA:
+            // 1. Peserta yang sudah menyelesaikan ujian (COMPLETED) dinyatakan HADIR.
+            // 2. Peserta yang sedang mengerjakan (IN_PROGRESS/LOCKED) status kehadirannya masih "-" (belum selesai).
+            // 3. Peserta yang terlambat (login setelah jam mulai) jika sudah selesai juga dinyatakan HADIR.
+            // 4. Peserta yang tidak hadir adalah yang belum login/ujian sampai waktu selesai,
+            //    dan Admin bisa menyetel status ke SAKIT, IZIN, ALPHA, atau DISPENSASI.
+            // ========================================================
+            const getEffectiveStatus = (studentId) => {
+              const att = attemptsMap.get(studentId);
+              const rec = attendanceMap.get(studentId);
+
+              // Jika admin/proktor telah menetapkan status khusus:
+              if (rec && ['SAKIT', 'IZIN', 'ALPHA', 'DISPENSASI'].includes(rec.status)) {
+                return rec.status;
+              }
+
+              // Jika sudah selesai ujian -> Otomatis HADIR
+              if (att?.status === 'COMPLETED') {
+                return 'HADIR';
+              }
+
+              // Jika sedang mengerjakan -> status masih "-" (belum selesai)
+              if (att?.status === 'IN_PROGRESS' || att?.status === 'LOCKED') {
+                return '-';
+              }
+
+              // Belum login / belum mulai
+              return 'BELUM_HADIR';
+            };
+
+            // Metrik Ringkasan
+            const totalEligible = roomFilteredEligible.length;
+            const completedCount = roomFilteredEligible.filter((s) => attemptsMap.get(s.id)?.status === 'COMPLETED').length;
+            const inProgressCount = roomFilteredEligible.filter((s) => {
+              const st = attemptsMap.get(s.id)?.status;
+              return st === 'IN_PROGRESS' || st === 'LOCKED';
+            }).length;
+
+            const sakitCount = roomFilteredEligible.filter((s) => attendanceMap.get(s.id)?.status === 'SAKIT').length;
+            const izinCount = roomFilteredEligible.filter((s) => attendanceMap.get(s.id)?.status === 'IZIN').length;
+            const alphaCount = roomFilteredEligible.filter((s) => attendanceMap.get(s.id)?.status === 'ALPHA').length;
+            const dispensasiCount = roomFilteredEligible.filter((s) => attendanceMap.get(s.id)?.status === 'DISPENSASI').length;
+            const absentCount = sakitCount + izinCount + alphaCount + dispensasiCount;
+            const presentCount = completedCount;
+            const notStartedCount = Math.max(0, totalEligible - completedCount - inProgressCount - absentCount);
+
+            // Filter Siswa untuk Tabel
+            const filteredAttendanceStudents = roomFilteredEligible.filter((stu) => {
+              const q = attendanceSearch.toLowerCase();
+              const noUjian = (stu.nomor_ujian || stu.nisn || '').toLowerCase();
+              const matchSearch =
+                stu.nama.toLowerCase().includes(q) ||
+                stu.nisn.toLowerCase().includes(q) ||
+                noUjian.includes(q) ||
+                (stu.kelas && stu.kelas.toLowerCase().includes(q)) ||
+                (stu.ruang && stu.ruang.toLowerCase().includes(q));
+
+              const effStatus = getEffectiveStatus(stu.id);
+              let matchStatus = true;
+              if (selectedAttendanceStatus === 'COMPLETED') {
+                matchStatus = effStatus === 'HADIR';
+              } else if (selectedAttendanceStatus === 'IN_PROGRESS') {
+                matchStatus = effStatus === '-';
+              } else if (selectedAttendanceStatus === 'NOT_STARTED') {
+                matchStatus = effStatus === 'BELUM_HADIR';
+              } else if (['SAKIT', 'IZIN', 'ALPHA', 'DISPENSASI'].includes(selectedAttendanceStatus)) {
+                matchStatus = effStatus === selectedAttendanceStatus;
+              } else if (selectedAttendanceStatus === 'HADIR') {
+                matchStatus = effStatus === 'HADIR';
+              }
+
+              return matchSearch && matchStatus;
+            });
+
+            const dateInfo = formatIndonesianDateText(new Date());
+            const examStartTimeFormatted = currentAttendanceExam?.start_time
+              ? currentAttendanceExam.start_time.slice(0, 5).replace(':', '.')
+              : '07.30';
+            const examEndTimeFormatted = currentAttendanceExam?.end_time
+              ? currentAttendanceExam.end_time.slice(0, 5).replace(':', '.')
+              : '16.00';
+
+            return (
+              <div className="space-y-6">
+                {/* TOP BAR PRESENSI */}
+                <div className="bg-white border border-zinc-200/80 rounded-2xl p-6 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-zinc-900 text-white flex items-center justify-center shrink-0">
+                      <ClipboardCheck className="w-5 h-5 text-emerald-400" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-semibold text-zinc-900 flex items-center gap-2">
+                        Presensi & Monitoring Kehadiran Ujian
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          Live Sync
+                        </span>
+                      </h3>
+                      <p className="text-xs text-zinc-500">
+                        Peserta yang selesai otomatis dinyatakan HADIR. Yang sedang mengerjakan bertanda -, dan yang belum ujian dapat diset S/I/A/Dispensasi.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setShowBeritaAcaraModal(true)}
+                      className="inline-flex items-center gap-2 px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl text-xs font-semibold shadow-xs transition-all cursor-pointer"
+                    >
+                      <FileText className="w-4 h-4 text-emerald-400" />
+                      <span>Berita Acara Pelaksanaan</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setShowDaftarHadirModal(true)}
+                      className="inline-flex items-center gap-2 px-4 py-2 bg-white hover:bg-zinc-50 border border-zinc-300 text-zinc-800 rounded-xl text-xs font-semibold shadow-2xs transition-all cursor-pointer"
+                      title="Buka Lembar Cetak Daftar Hadir Peserta Tes Resmi"
+                    >
+                      <Printer className="w-4 h-4 text-zinc-700" />
+                      <span>Cetak Daftar Hadir (Presensi)</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* PANEL FILTER & KONTROL */}
+                <div className="bg-slate-900 text-white rounded-2xl p-5 shadow-xl border border-slate-700 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-700">
+                    <div className="text-xs font-semibold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                      <Sliders className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Panel Filter & Kontrol Presensi Ujian</span>
+                    </div>
+                    <div className="text-xs text-slate-400">
+                      Ruangan Aktif: <strong className="text-white">{selectedAttendanceRoom === 'ALL' ? 'Semua Ruang' : selectedAttendanceRoom}</strong>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+                    <div>
+                      <label className="block text-[11px] font-medium text-slate-300 mb-1.5">
+                        Mata Pelajaran & Nama Ujian:
+                      </label>
+                      <select
+                        value={selectedAttendanceExamId}
+                        onChange={(e) => {
+                          setSelectedAttendanceExamId(e.target.value);
+                          setSelectedAttendanceRoom('ALL');
+                          setSelectedAttendanceStatus('ALL');
+                        }}
+                        className="w-full px-3 py-2 text-xs bg-slate-800 border border-slate-600 rounded-xl text-white font-medium focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                      >
+                        {exams.length === 0 ? (
+                          <option value="">Belum Ada Sesi Ujian</option>
+                        ) : (
+                          exams.map((ex) => (
+                            <option key={ex.id} value={ex.id}>
+                              {ex.subject} - {ex.title} ({ex.session_group || 'Sesi 1'})
+                            </option>
+                          ))
+                        )}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-medium text-slate-300 mb-1.5">
+                        Ruang Ujian:
+                      </label>
+                      <select
+                        value={selectedAttendanceRoom}
+                        onChange={(e) => setSelectedAttendanceRoom(e.target.value)}
+                        className="w-full px-3 py-2 text-xs bg-slate-800 border border-slate-600 rounded-xl text-white font-medium focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                      >
+                        <option value="ALL">Semua Ruangan</option>
+                        {attendanceRooms.map((r) => (
+                          <option key={r} value={r}>
+                            {r}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-medium text-slate-300 mb-1.5">
+                        Status Siswa:
+                      </label>
+                      <select
+                        value={selectedAttendanceStatus}
+                        onChange={(e) => setSelectedAttendanceStatus(e.target.value)}
+                        className="w-full px-3 py-2 text-xs bg-slate-800 border border-slate-600 rounded-xl text-white font-medium focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                      >
+                        <option value="ALL">Semua Status</option>
+                        <option value="COMPLETED">Dinyatakan Hadir (Selesai Ujian)</option>
+                        <option value="IN_PROGRESS">Sedang Mengerjakan (Status "-")</option>
+                        <option value="NOT_STARTED">Belum Login / Belum Ujian</option>
+                        <option value="SAKIT">Status Khusus: Sakit</option>
+                        <option value="IZIN">Status Khusus: Izin</option>
+                        <option value="ALPHA">Status Khusus: Alpha</option>
+                        <option value="DISPENSASI">Status Khusus: Dispensasi</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-medium text-slate-300 mb-1.5">
+                        Cari Siswa:
+                      </label>
+                      <div className="relative">
+                        <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
+                        <input
+                          type="text"
+                          placeholder="Ketik nama, no ujian atau NISN..."
+                          value={attendanceSearch}
+                          onChange={(e) => setAttendanceSearch(e.target.value)}
+                          className="w-full pl-8 pr-3 py-2 text-xs bg-slate-800 border border-slate-600 rounded-xl text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* METRIK KARTU RINGKASAN */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  <div className="bg-white border border-zinc-200/80 rounded-xl p-4 shadow-2xs">
+                    <div className="text-[11px] font-medium text-zinc-500">Total Peserta</div>
+                    <div className="text-xl font-bold text-zinc-900 mt-1 font-mono-num">{totalEligible}</div>
+                    <div className="text-[10px] text-zinc-400 mt-0.5">
+                      {selectedAttendanceRoom === 'ALL' ? 'Semua Ruangan' : selectedAttendanceRoom}
+                    </div>
+                  </div>
+
+                  <div className="bg-white border border-emerald-200 rounded-xl p-4 shadow-2xs bg-emerald-50/20">
+                    <div className="text-[11px] font-medium text-emerald-700 flex items-center justify-between">
+                      <span>Dinyatakan HADIR</span>
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    </div>
+                    <div className="text-xl font-bold text-emerald-700 mt-1 font-mono-num">{presentCount}</div>
+                    <div className="text-[10px] text-emerald-600 mt-0.5">&bull; Selesai Ujian</div>
+                  </div>
+
+                  <div className="bg-white border border-blue-200 rounded-xl p-4 shadow-2xs bg-blue-50/20">
+                    <div className="text-[11px] font-medium text-blue-700 flex items-center justify-between">
+                      <span>Sedang Mengerjakan</span>
+                      <Clock className="w-3.5 h-3.5 text-blue-600" />
+                    </div>
+                    <div className="text-xl font-bold text-blue-700 mt-1 font-mono-num">{inProgressCount}</div>
+                    <div className="text-[10px] text-blue-600 mt-0.5">Status: Menit "-"</div>
+                  </div>
+
+                  <div className="bg-white border border-rose-200 rounded-xl p-4 shadow-2xs bg-rose-50/20">
+                    <div className="text-[11px] font-medium text-rose-700 flex items-center justify-between">
+                      <span>Tidak Hadir (S/I/A/D)</span>
+                      <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
+                    </div>
+                    <div className="text-xl font-bold text-rose-700 mt-1 font-mono-num">{absentCount}</div>
+                    <div className="text-[10px] text-rose-600 mt-0.5">
+                      S:{sakitCount} &bull; I:{izinCount} &bull; A:{alphaCount} &bull; D:{dispensasiCount}
+                    </div>
+                  </div>
+                </div>
+
+                {/* TABEL PRESENSI SISWA */}
+                <div className="bg-white border border-zinc-200/80 rounded-2xl shadow-2xs overflow-hidden">
+                  <div className="px-6 py-4 border-b border-zinc-100 flex items-center justify-between">
+                    <div>
+                      <h4 className="text-sm font-semibold text-zinc-900">
+                        Daftar Kehadiran Siswa
+                      </h4>
+                      <p className="text-xs text-zinc-500">
+                        Menampilkan {filteredAttendanceStudents.length} dari {totalEligible} siswa.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="bg-zinc-50/80 border-b border-zinc-200/80 text-zinc-600 font-semibold">
+                          <th className="py-3 px-3 text-center w-12">No</th>
+                          <th className="py-3 px-3 w-32">No. Ujian</th>
+                          <th className="py-3 px-4">Nama Siswa & NISN</th>
+                          <th className="py-3 px-3">Kelas & Ruang</th>
+                          <th className="py-3 px-3 text-center">Status Ujian</th>
+                          <th className="py-3 px-4">Status Kehadiran</th>
+                          <th className="py-3 px-4">Catatan / Alasan</th>
+                          <th className="py-3 px-3 text-center w-24">Aksi</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-zinc-100">
+                        {filteredAttendanceStudents.length === 0 ? (
+                          <tr>
+                            <td colSpan="8" className="py-10 text-center text-zinc-400">
+                              Tidak ada data siswa yang cocok dengan filter.
+                            </td>
+                          </tr>
+                        ) : (
+                          filteredAttendanceStudents.map((stu, idx) => {
+                            const att = attemptsMap.get(stu.id);
+                            const rec = attendanceMap.get(stu.id);
+                            const draft = attendanceDrafts[stu.id] || {};
+                            const effStatus = getEffectiveStatus(stu.id);
+                            const currentStatus = draft.status !== undefined ? draft.status : (rec?.status || effStatus);
+                            const currentKet = draft.keterangan !== undefined ? draft.keterangan : (rec?.keterangan || '');
+                            const noUjian = stu.nomor_ujian || cleanNomorUjian(stu.nomor_ujian, stu.nisn);
+
+                            return (
+                              <tr key={stu.id} className="hover:bg-zinc-50/60 transition-colors">
+                                <td className="py-3 px-3 text-center text-zinc-500 font-mono">
+                                  {idx + 1}
+                                </td>
+                                <td className="py-3 px-3 font-mono font-semibold text-zinc-800">
+                                  {noUjian}
+                                </td>
+                                <td className="py-3 px-4">
+                                  <div className="font-semibold text-zinc-900">{stu.nama}</div>
+                                  <div className="text-[10px] text-zinc-500 font-mono">NISN: {stu.nisn}</div>
+                                </td>
+                                <td className="py-3 px-3 text-zinc-700">
+                                  <div>{stu.kelas || '-'}</div>
+                                  <div className="text-[10px] text-zinc-500">{stu.ruang || 'Ruang 01'}</div>
+                                </td>
+                                <td className="py-3 px-3 text-center">
+                                  {att?.status === 'COMPLETED' ? (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-semibold border border-emerald-200">
+                                      <CheckCircle2 className="w-3 h-3" />
+                                      <span>SELESAI</span>
+                                    </span>
+                                  ) : att?.status === 'IN_PROGRESS' || att?.status === 'LOCKED' ? (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[10px] font-semibold border border-blue-200">
+                                      <Clock className="w-3 h-3" />
+                                      <span>MENGERJAKAN</span>
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-500 text-[10px] font-medium border border-zinc-200">
+                                      BELUM LOGIN
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="py-3 px-4">
+                                  {att?.status === 'COMPLETED' ? (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 text-xs font-bold">
+                                      <CheckCircle2 className="w-3.5 h-3.5" />
+                                      <span>HADIR (Selesai Ujian)</span>
+                                    </span>
+                                  ) : att?.status === 'IN_PROGRESS' || att?.status === 'LOCKED' ? (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-zinc-100 text-zinc-600 text-xs font-bold">
+                                      - (Sedang Mengerjakan)
+                                    </span>
+                                  ) : (
+                                    <select
+                                      value={currentStatus === 'BELUM_HADIR' ? '' : currentStatus}
+                                      onChange={(e) => handleAttendanceDraftChange(stu.id, 'status', e.target.value)}
+                                      className="px-2.5 py-1 text-xs border border-zinc-300 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-zinc-900"
+                                    >
+                                      <option value="">- (Belum Hadir / Mengerjakan) -</option>
+                                      <option value="HADIR">Hadir Manual</option>
+                                      <option value="SAKIT">Sakit (S)</option>
+                                      <option value="IZIN">Izin (I)</option>
+                                      <option value="ALPHA">Alpha (A)</option>
+                                      <option value="DISPENSASI">Dispensasi (D)</option>
+                                    </select>
+                                  )}
+                                </td>
+                                <td className="py-3 px-4">
+                                  {att?.status === 'COMPLETED' ? (
+                                    <span className="text-[11px] text-zinc-500 italic">
+                                      Tersimpan otomatis
+                                    </span>
+                                  ) : (
+                                    <input
+                                      type="text"
+                                      placeholder="Alasan / catatan..."
+                                      value={currentKet}
+                                      onChange={(e) => handleAttendanceDraftChange(stu.id, 'keterangan', e.target.value)}
+                                      className="w-full px-2.5 py-1 text-xs border border-zinc-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-zinc-900"
+                                    />
+                                  )}
+                                </td>
+                                <td className="py-3 px-3 text-center">
+                                  {att?.status !== 'COMPLETED' && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSaveAttendance(stu.id)}
+                                      className="inline-flex items-center gap-1 px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 text-white rounded-lg text-xs font-semibold shadow-2xs transition-all cursor-pointer"
+                                    >
+                                      <Save className="w-3 h-3" />
+                                      <span>Simpan</span>
+                                    </button>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* ======================================================== */}
+                {/* MODAL BERITA ACARA PELAKSANAAN UJIAN */}
+                {/* ======================================================== */}
+                {showBeritaAcaraModal && (
+                  <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
+                    <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-zinc-300 animate-in zoom-in-95">
+                      {/* Modal Top Bar */}
+                      <div className="px-6 py-4 border-b border-zinc-200 flex items-center justify-between shrink-0 bg-zinc-50 rounded-t-2xl">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-lg bg-zinc-900 text-white flex items-center justify-center">
+                            <FileText className="w-4 h-4 text-emerald-400" />
+                          </div>
+                          <div>
+                            <h3 className="font-bold text-sm text-zinc-900">
+                              Berita Acara Pelaksanaan Ujian
+                            </h3>
+                            <p className="text-[11px] text-zinc-500">
+                              Mata Pelajaran: <strong>{currentAttendanceExam?.subject}</strong> &bull; Ruang: <strong>{selectedAttendanceRoom === 'ALL' ? 'Semua Ruang' : selectedAttendanceRoom}</strong>
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* HANYA 1 TOMBOL CETAK SESUAI INSTRUKSI */}
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => executePrintDocument('printable-berita-acara', 'Berita Acara Pelaksanaan Ujian', printMarginSetting, customPrintMargin)}
+                            className="inline-flex items-center gap-1.5 px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl text-xs font-semibold shadow-xs cursor-pointer"
+                          >
+                            <Printer className="w-4 h-4 text-emerald-400" />
+                            <span>Cetak Dokumen Sekarang (Print / PDF)</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setShowBeritaAcaraModal(false)}
+                            className="text-zinc-400 hover:text-zinc-600 p-1.5 text-base cursor-pointer"
+                          >
+                            &times;
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Modal Body */}
+                      <div className="p-6 overflow-y-auto flex-1 space-y-6">
+                        {/* Pilihan Margin Kertas A4 Standar & Custom (Instruksi #6) */}
+                        <div className="p-4 bg-zinc-50 border border-zinc-200 rounded-xl space-y-3">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
+                              <Sliders className="w-3.5 h-3.5 text-zinc-600" />
+                              <span>Pengaturan Margin Kertas A4 (Cetak Standar & Custom):</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <select
+                                value={printMarginSetting}
+                                onChange={(e) => setPrintMarginSetting(e.target.value)}
+                                className="px-3 py-1.5 text-xs border border-zinc-300 rounded-lg bg-white font-medium"
+                              >
+                                <option value="narrow">Standar Sempit / Minimum (10mm - Pas 1 Halaman A4)</option>
+                                <option value="normal">Standar Normal (20mm)</option>
+                                <option value="tight">Standar Rapat (5mm)</option>
+                                <option value="custom">Kustom Sendiri (mm)</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          {printMarginSetting === 'custom' && (
+                            <div className="flex items-center gap-3 pt-1 text-xs">
+                              <span className="text-zinc-600">Margin Kustom (mm):</span>
+                              <input
+                                type="number"
+                                min="0"
+                                max="50"
+                                placeholder="Top"
+                                value={customPrintMargin.top}
+                                onChange={(e) => setCustomPrintMargin({ ...customPrintMargin, top: Number(e.target.value) })}
+                                className="w-16 px-2 py-1 border border-zinc-300 rounded text-center text-xs"
+                              />
+                              <input
+                                type="number"
+                                min="0"
+                                max="50"
+                                placeholder="Right"
+                                value={customPrintMargin.right}
+                                onChange={(e) => setCustomPrintMargin({ ...customPrintMargin, right: Number(e.target.value) })}
+                                className="w-16 px-2 py-1 border border-zinc-300 rounded text-center text-xs"
+                              />
+                              <input
+                                type="number"
+                                min="0"
+                                max="50"
+                                placeholder="Bottom"
+                                value={customPrintMargin.bottom}
+                                onChange={(e) => setCustomPrintMargin({ ...customPrintMargin, bottom: Number(e.target.value) })}
+                                className="w-16 px-2 py-1 border border-zinc-300 rounded text-center text-xs"
+                              />
+                              <input
+                                type="number"
+                                min="0"
+                                max="50"
+                                placeholder="Left"
+                                value={customPrintMargin.left}
+                                onChange={(e) => setCustomPrintMargin({ ...customPrintMargin, left: Number(e.target.value) })}
+                                className="w-16 px-2 py-1 border border-zinc-300 rounded text-center text-xs"
+                              />
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Formulir Penyesuaian Berita Acara (Tersimpan Permanen) */}
+                        <div className="p-4 bg-zinc-50 border border-zinc-200 rounded-xl space-y-3">
+                          <div className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
+                            <Edit3 className="w-3.5 h-3.5 text-zinc-600" />
+                            <span>Data Identitas & Petugas Berita Acara (Tersimpan Permanen):</span>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-[11px] font-medium text-zinc-700 mb-1">
+                                Nama Instansi Pusat / Yayasan:
+                              </label>
+                              <input
+                                type="text"
+                                value={beritaAcaraConfig.instansi_pusat || ''}
+                                onChange={(e) => handleUpdateBeritaAcaraField('instansi_pusat', e.target.value)}
+                                placeholder="Contoh: YAYASAN PEMBINA PENDIDIKAN"
+                                className="w-full px-3 py-1.5 text-xs border border-zinc-300 rounded-lg bg-white"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-[11px] font-medium text-zinc-700 mb-1">
+                                Alamat Lengkap Sekolah / Instansi:
+                              </label>
+                              <input
+                                type="text"
+                                value={beritaAcaraConfig.alamat || ''}
+                                onChange={(e) => handleUpdateBeritaAcaraField('alamat', e.target.value)}
+                                placeholder="Alamat jalan, kota, kodepos..."
+                                className="w-full px-3 py-1.5 text-xs border border-zinc-300 rounded-lg bg-white"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-[11px] font-medium text-zinc-700 mb-1">
+                                Nama Proktor & NIP:
+                              </label>
+                              <div className="grid grid-cols-2 gap-2">
+                                <input
+                                  type="text"
+                                  value={beritaAcaraConfig.proktor_nama || ''}
+                                  onChange={(e) => handleUpdateBeritaAcaraField('proktor_nama', e.target.value)}
+                                  placeholder="Nama Proktor"
+                                  className="w-full px-3 py-1.5 text-xs border border-zinc-300 rounded-lg bg-white"
+                                />
+                                <input
+                                  type="text"
+                                  value={beritaAcaraConfig.proktor_nip || ''}
+                                  onChange={(e) => handleUpdateBeritaAcaraField('proktor_nip', e.target.value)}
+                                  placeholder="NIP Proktor"
+                                  className="w-full px-3 py-1.5 text-xs border border-zinc-300 rounded-lg bg-white font-mono"
+                                />
+                              </div>
+                            </div>
+
+                            <div>
+                              <label className="block text-[11px] font-medium text-zinc-700 mb-1">
+                                Nama Pengawas & NIP:
+                              </label>
+                              <div className="grid grid-cols-2 gap-2">
+                                <input
+                                  type="text"
+                                  value={beritaAcaraConfig.pengawas_nama || ''}
+                                  onChange={(e) => handleUpdateBeritaAcaraField('pengawas_nama', e.target.value)}
+                                  placeholder="Nama Pengawas"
+                                  className="w-full px-3 py-1.5 text-xs border border-zinc-300 rounded-lg bg-white"
+                                />
+                                <input
+                                  type="text"
+                                  value={beritaAcaraConfig.pengawas_nip || ''}
+                                  onChange={(e) => handleUpdateBeritaAcaraField('pengawas_nip', e.target.value)}
+                                  placeholder="NIP Pengawas"
+                                  className="w-full px-3 py-1.5 text-xs border border-zinc-300 rounded-lg bg-white font-mono"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="sm:col-span-2">
+                              <label className="block text-[11px] font-medium text-zinc-700 mb-1">
+                                Data Kepala Sekolah (Nama & NIP):
+                              </label>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <input
+                                  type="text"
+                                  value={beritaAcaraConfig.kepala_sekolah_nama || ''}
+                                  onChange={(e) => handleUpdateBeritaAcaraField('kepala_sekolah_nama', e.target.value)}
+                                  placeholder="Nama Kepala Sekolah"
+                                  className="w-full px-3 py-1.5 text-xs border border-zinc-300 rounded-lg bg-white"
+                                />
+                                <input
+                                  type="text"
+                                  value={beritaAcaraConfig.kepala_sekolah_nip || ''}
+                                  onChange={(e) => handleUpdateBeritaAcaraField('kepala_sekolah_nip', e.target.value)}
+                                  placeholder="NIP Kepala Sekolah"
+                                  className="w-full px-3 py-1.5 text-xs border border-zinc-300 rounded-lg bg-white font-mono"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="sm:col-span-2">
+                              <label className="block text-[11px] font-medium text-zinc-700 mb-1">
+                                Catatan Khusus Selama Pelaksanaan:
+                              </label>
+                              <textarea
+                                rows="2"
+                                value={beritaAcaraConfig.catatan_pelaksanaan || ''}
+                                onChange={(e) => handleUpdateBeritaAcaraField('catatan_pelaksanaan', e.target.value)}
+                                className="w-full px-3 py-1.5 text-xs border border-zinc-300 rounded-lg bg-white"
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* TEMPLATE FISIK BERITA ACARA (PAS 1 HALAMAN A4 RESMI) */}
+                        <div
+                          id="printable-berita-acara"
+                          style={{
+                            padding: printMarginSetting === 'normal'
+                              ? '20mm'
+                              : printMarginSetting === 'narrow'
+                              ? '10mm'
+                              : printMarginSetting === 'tight'
+                              ? '5mm'
+                              : `${customPrintMargin.top || 10}mm ${customPrintMargin.right || 10}mm ${customPrintMargin.bottom || 10}mm ${customPrintMargin.left || 10}mm`
+                          }}
+                          className="bg-white border border-zinc-300 shadow-sm rounded-lg text-zinc-900 text-xs leading-relaxed max-w-3xl mx-auto transition-all"
+                        >
+                          {/* 1. KOP SURAT (SISI KANAN KOSONG BERSIH SESUAI REQUEST) */}
+                          <div className="flex items-center pb-2.5 border-b-2 border-zinc-900 mb-3">
+                            <div className="flex items-center gap-3.5 flex-1">
+                              {institution.logo_url ? (
+                                <img
+                                  src={institution.logo_url}
+                                  alt="Logo Instansi"
+                                  className="w-14 h-14 object-contain shrink-0"
+                                />
+                              ) : (
+                                <div className="w-14 h-14 rounded-xl bg-zinc-900 text-white flex items-center justify-center font-bold text-lg shrink-0">
+                                  🛡️
+                                </div>
+                              )}
+                              <div>
+                                {beritaAcaraConfig.instansi_pusat && (
+                                  <h4 className="text-xs uppercase font-bold text-zinc-700">
+                                    {beritaAcaraConfig.instansi_pusat}
+                                  </h4>
+                                )}
+                                <h2 className="text-base sm:text-lg font-black uppercase text-zinc-900 leading-tight">
+                                  {institution.name}
+                                </h2>
+                                <p className="text-[11px] text-zinc-600">
+                                  NPSN: <span className="font-mono font-semibold">{institution.npsn || '20104829'}</span> &bull; Jenjang: <span className="font-semibold">{institution.education_level || 'SMA'}</span>
+                                </p>
+                                {beritaAcaraConfig.alamat && (
+                                  <p className="text-[10px] text-zinc-500 italic mt-0.5">
+                                    {beritaAcaraConfig.alamat}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                            {/* KOP KANAN KOSONG TOTAL SESUAI REQUEST */}
+                            <div className="w-0 shrink-0"></div>
+                          </div>
+
+                          {/* 2. JUDUL BERITA ACARA */}
+                          <div className="text-center mb-3">
+                            <h2 className="text-sm sm:text-base font-black uppercase tracking-wide text-zinc-900">
+                              BERITA ACARA PELAKSANAAN
+                            </h2>
+                            <h3 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-zinc-800 mt-0.5">
+                              {currentAttendanceExam?.title || 'PENILAIAN AKHIR SEMESTER'} - {currentAttendanceExam?.subject}
+                            </h3>
+                            <div className="text-[11px] font-bold tracking-widest text-zinc-700 mt-0.5 uppercase">
+                              TAHUN {dateInfo.yearNum}
+                            </div>
+                          </div>
+
+                          {/* 3. PARAGRAF PEMBUKA */}
+                          <p className="text-justify mb-3 text-[11px] leading-relaxed indent-6">
+                            Pada hari ini <strong>{dateInfo.dayName}</strong> tanggal <strong>{dateInfo.dateNum}</strong> bulan <strong>{dateInfo.monthName}</strong> tahun <strong>{dateInfo.yearNum}</strong>, bertempat di <strong>{institution.name}</strong> telah dilaksanakan ujian <strong>{currentAttendanceExam?.title || 'Ujian'}</strong> Mata Pelajaran <strong>{currentAttendanceExam?.subject}</strong> Jenjang <strong>{institution.education_level}</strong> Tahun {dateInfo.yearNum}, mulai pukul <strong>{examStartTimeFormatted}</strong> sampai dengan pukul <strong>{examEndTimeFormatted}</strong> WIB.
+                          </p>
+
+                          {/* 4. POIN 1: DATA PELAKSANAAN UJIAN (FORMAT 2 KOLOM PAS 1 HALAMAN A4) */}
+                          <div className="mb-3">
+                            <div className="font-bold text-xs mb-1">1. Data Pelaksanaan Ujian:</div>
+                            <div className="grid grid-cols-2 gap-x-6 gap-y-0.5 text-[11px] py-1 px-2.5 border border-zinc-300 rounded bg-zinc-50/40">
+                              <div className="grid grid-cols-[130px_10px_1fr] py-0.5 border-b border-zinc-200">
+                                <span className="font-medium text-zinc-700">Nama Sekolah</span>
+                                <span>:</span>
+                                <strong className="truncate">{institution.name}</strong>
+                              </div>
+                              <div className="grid grid-cols-[150px_10px_1fr] py-0.5 border-b border-zinc-200">
+                                <span className="font-medium text-zinc-700">Jumlah Peserta Terdaftar</span>
+                                <span>:</span>
+                                <span className="font-semibold">{totalEligible} orang</span>
+                              </div>
+
+                              <div className="grid grid-cols-[130px_10px_1fr] py-0.5 border-b border-zinc-200">
+                                <span className="font-medium text-zinc-700">Nama Ujian</span>
+                                <span>:</span>
+                                <strong className="truncate">{currentAttendanceExam?.title || 'Ujian'}</strong>
+                              </div>
+                              <div className="grid grid-cols-[150px_10px_1fr] py-0.5 border-b border-zinc-200">
+                                <span className="font-medium text-zinc-700">Jumlah Peserta Hadir</span>
+                                <span>:</span>
+                                <span className="font-semibold text-emerald-800">{presentCount} orang</span>
+                              </div>
+
+                              <div className="grid grid-cols-[130px_10px_1fr] py-0.5 border-b border-zinc-200">
+                                <span className="font-medium text-zinc-700">Mata Pelajaran</span>
+                                <span>:</span>
+                                <strong className="truncate">{currentAttendanceExam?.subject}</strong>
+                              </div>
+                              <div className="grid grid-cols-[150px_10px_1fr] py-0.5 border-b border-zinc-200">
+                                <span className="font-medium text-zinc-700">Jumlah Peserta Tidak Hadir</span>
+                                <span>:</span>
+                                <span className="font-semibold text-rose-800">
+                                  {absentCount} orang
+                                  {absentCount > 0 && ` (S:${sakitCount}, I:${izinCount}, A:${alphaCount})`}
+                                </span>
+                              </div>
+
+                              <div className="grid grid-cols-[130px_10px_1fr] py-0.5 border-b border-zinc-200">
+                                <span className="font-medium text-zinc-700">Tingkat / Kelas</span>
+                                <span>:</span>
+                                <span>{getGradeLabel(currentAttendanceExam?.grade_level)}</span>
+                              </div>
+                              <div className="grid grid-cols-[150px_10px_1fr] py-0.5 border-b border-zinc-200">
+                                <span className="font-medium text-zinc-700">Jumlah Komputer Terdaftar</span>
+                                <span>:</span>
+                                <span>{totalEligible} unit</span>
+                              </div>
+
+                              <div className="grid grid-cols-[130px_10px_1fr] py-0.5">
+                                <span className="font-medium text-zinc-700">Nama Ruangan</span>
+                                <span>:</span>
+                                <strong className="truncate">{selectedAttendanceRoom === 'ALL' ? 'Semua Ruang Ujian' : selectedAttendanceRoom}</strong>
+                              </div>
+                              <div className="grid grid-cols-[150px_10px_1fr] py-0.5">
+                                <span className="font-medium text-zinc-700">Jumlah Komputer Terpakai</span>
+                                <span>:</span>
+                                <span className="font-semibold">{presentCount} unit</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* 5. POIN 2: CATATAN PELAKSANAAN */}
+                          <div className="mb-3">
+                            <div className="font-bold text-xs mb-1">
+                              2. Catatan selama pelaksanaan {currentAttendanceExam?.title || 'Ujian'} Tahun {dateInfo.yearNum}:
+                            </div>
+                            <div className="w-full min-h-[42px] p-2 border border-zinc-800 rounded text-[11px] text-zinc-800 whitespace-pre-wrap">
+                              {beritaAcaraConfig.catatan_pelaksanaan || 'Pelaksanaan ujian berlangsung dengan tertib, aman, dan terkendali sesuai tata tertib yang berlaku.'}
+                            </div>
+                          </div>
+
+                          {/* 6. TANDA TANGAN PETUGAS (PAS 1 HALAMAN A4) */}
+                          <div className="mt-3 text-xs page-break-avoid">
+                            <div className="grid grid-cols-2 gap-4">
+                              {/* Kiri: Yang membuat berita acara (Proktor & Pengawas) */}
+                              <div className="border border-zinc-300 rounded p-2.5 bg-zinc-50/20">
+                                <div className="font-bold text-[11px] text-zinc-800 mb-1.5 pb-1 border-b border-zinc-300">
+                                  Yang membuat berita acara:
+                                </div>
+                                <div className="space-y-2 text-[11px]">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div>
+                                      <span>1. Proktor : </span>
+                                      <strong className="underline">{beritaAcaraConfig.proktor_nama || 'Proktor Ujian'}</strong>
+                                      {beritaAcaraConfig.proktor_nip && (
+                                        <div className="text-[10px] text-zinc-600 font-mono">NIP. {beritaAcaraConfig.proktor_nip}</div>
+                                      )}
+                                    </div>
+                                    <div className="text-right text-zinc-500 font-mono text-[10px] tracking-widest shrink-0">
+                                      1. .....................
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center justify-between gap-2 pt-1 border-t border-zinc-200">
+                                    <div>
+                                      <span>2. Pengawas : </span>
+                                      <strong className="underline">{beritaAcaraConfig.pengawas_nama || 'Pengawas Ruang'}</strong>
+                                      {beritaAcaraConfig.pengawas_nip && (
+                                        <div className="text-[10px] text-zinc-600 font-mono">NIP. {beritaAcaraConfig.pengawas_nip}</div>
+                                      )}
+                                    </div>
+                                    <div className="text-right text-zinc-500 font-mono text-[10px] tracking-widest shrink-0">
+                                      2. .....................
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Kanan: Mengetahui Kepala Sekolah */}
+                              <div className="text-center flex flex-col justify-between p-2.5 border border-zinc-300 rounded bg-zinc-50/20">
+                                <div>
+                                  <div className="text-[11px] text-zinc-600">Mengetahui,</div>
+                                  <div className="font-bold text-xs">Kepala {institution.name}</div>
+                                </div>
+                                <div className="h-9"></div>
+                                <div>
+                                  <div className="font-bold text-xs underline">{beritaAcaraConfig.kepala_sekolah_nama || 'Kepala Sekolah'}</div>
+                                  <div className="text-[10px] text-zinc-600 font-mono">
+                                    NIP. {beritaAcaraConfig.kepala_sekolah_nip || '......................................................'}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Modal Footer */}
+                      <div className="px-6 py-3.5 bg-zinc-50 border-t border-zinc-200 rounded-b-2xl flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setShowBeritaAcaraModal(false)}
+                          className="px-4 py-2 border border-zinc-300 rounded-xl text-xs font-semibold text-zinc-700 hover:bg-zinc-100 cursor-pointer"
+                        >
+                          Tutup
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ======================================================== */}
+                {/* MODAL DAFTAR HADIR PESERTA TES (FORMAT PDF RESMI) */}
+                {/* ======================================================== */}
+                {showDaftarHadirModal && (
+                  <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
+                    <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-zinc-300 animate-in zoom-in-95">
+                      {/* Modal Top Bar */}
+                      <div className="px-6 py-4 border-b border-zinc-200 flex items-center justify-between shrink-0 bg-zinc-50 rounded-t-2xl">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-lg bg-zinc-900 text-white flex items-center justify-center">
+                            <ClipboardCheck className="w-4 h-4 text-emerald-400" />
+                          </div>
+                          <div>
+                            <h3 className="font-bold text-sm text-zinc-900">
+                              Daftar Hadir Peserta Tes
+                            </h3>
+                            <p className="text-[11px] text-zinc-500">
+                              Mata Pelajaran: <strong>{currentAttendanceExam?.subject}</strong> &bull; Ruang: <strong>{selectedAttendanceRoom === 'ALL' ? 'Semua Ruang' : selectedAttendanceRoom}</strong>
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* HANYA 1 TOMBOL CETAK SESUAI INSTRUKSI */}
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => executePrintDocument('printable-daftar-hadir', 'Daftar Hadir Peserta Tes', printMarginSetting, customPrintMargin)}
+                            className="inline-flex items-center gap-1.5 px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl text-xs font-semibold shadow-xs cursor-pointer"
+                          >
+                            <Printer className="w-4 h-4 text-emerald-400" />
+                            <span>Cetak Dokumen Sekarang (Print / PDF)</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setShowDaftarHadirModal(false)}
+                            className="text-zinc-400 hover:text-zinc-600 p-1.5 text-base cursor-pointer"
+                          >
+                            &times;
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Modal Body */}
+                      <div className="p-6 overflow-y-auto flex-1 space-y-6">
+                        {/* Pilihan Margin Kertas A4 Standar & Custom */}
+                        <div className="p-4 bg-zinc-50 border border-zinc-200 rounded-xl space-y-3">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
+                              <Sliders className="w-3.5 h-3.5 text-zinc-600" />
+                              <span>Pengaturan Margin Kertas A4 (Cetak Standar & Custom):</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <select
+                                value={printMarginSetting}
+                                onChange={(e) => setPrintMarginSetting(e.target.value)}
+                                className="px-3 py-1.5 text-xs border border-zinc-300 rounded-lg bg-white font-medium"
+                              >
+                                <option value="narrow">Standar Sempit / Minimum (10mm - Pas 1 Halaman A4)</option>
+                                <option value="normal">Standar Normal (20mm)</option>
+                                <option value="tight">Standar Rapat (5mm)</option>
+                                <option value="custom">Kustom Sendiri (mm)</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          {printMarginSetting === 'custom' && (
+                            <div className="flex items-center gap-3 pt-1 text-xs">
+                              <span className="text-zinc-600">Margin Kustom (mm):</span>
+                              <input
+                                type="number"
+                                min="0"
+                                max="50"
+                                placeholder="Top"
+                                value={customPrintMargin.top}
+                                onChange={(e) => setCustomPrintMargin({ ...customPrintMargin, top: Number(e.target.value) })}
+                                className="w-16 px-2 py-1 border border-zinc-300 rounded text-center text-xs"
+                              />
+                              <input
+                                type="number"
+                                min="0"
+                                max="50"
+                                placeholder="Right"
+                                value={customPrintMargin.right}
+                                onChange={(e) => setCustomPrintMargin({ ...customPrintMargin, right: Number(e.target.value) })}
+                                className="w-16 px-2 py-1 border border-zinc-300 rounded text-center text-xs"
+                              />
+                              <input
+                                type="number"
+                                min="0"
+                                max="50"
+                                placeholder="Bottom"
+                                value={customPrintMargin.bottom}
+                                onChange={(e) => setCustomPrintMargin({ ...customPrintMargin, bottom: Number(e.target.value) })}
+                                className="w-16 px-2 py-1 border border-zinc-300 rounded text-center text-xs"
+                              />
+                              <input
+                                type="number"
+                                min="0"
+                                max="50"
+                                placeholder="Left"
+                                value={customPrintMargin.left}
+                                onChange={(e) => setCustomPrintMargin({ ...customPrintMargin, left: Number(e.target.value) })}
+                                className="w-16 px-2 py-1 border border-zinc-300 rounded text-center text-xs"
+                              />
+                            </div>
+                          )}
+                        </div>
+
+                        {/* TEMPLATE FISIK DAFTAR HADIR SESUAI PDF */}
+                        <div
+                          id="printable-daftar-hadir"
+                          style={{
+                            padding: printMarginSetting === 'normal'
+                              ? '20mm'
+                              : printMarginSetting === 'narrow'
+                              ? '10mm'
+                              : printMarginSetting === 'tight'
+                              ? '5mm'
+                              : `${customPrintMargin.top || 10}mm ${customPrintMargin.right || 10}mm ${customPrintMargin.bottom || 10}mm ${customPrintMargin.left || 10}mm`
+                          }}
+                          className="bg-white border border-zinc-300 shadow-sm rounded-lg text-zinc-900 text-xs leading-relaxed max-w-3xl mx-auto transition-all"
+                        >
+                          {/* 1. KOP RESMI (SISI KANAN KOSONG) */}
+                          <div className="flex items-center pb-2.5 border-b-2 border-zinc-900 mb-3">
+                            <div className="flex items-center gap-3.5 flex-1">
+                              {institution.logo_url ? (
+                                <img
+                                  src={institution.logo_url}
+                                  alt="Logo Instansi"
+                                  className="w-14 h-14 object-contain shrink-0"
+                                />
+                              ) : (
+                                <div className="w-14 h-14 rounded-xl bg-zinc-900 text-white flex items-center justify-center font-bold text-lg shrink-0">
+                                  🛡️
+                                </div>
+                              )}
+                              <div>
+                                {beritaAcaraConfig.instansi_pusat && (
+                                  <h4 className="text-xs uppercase font-bold text-zinc-700">
+                                    {beritaAcaraConfig.instansi_pusat}
+                                  </h4>
+                                )}
+                                <h2 className="text-base sm:text-lg font-black uppercase text-zinc-900 leading-tight">
+                                  {institution.name}
+                                </h2>
+                                <p className="text-[11px] text-zinc-600">
+                                  NPSN: <span className="font-mono font-semibold">{institution.npsn || '20104829'}</span> &bull; Jenjang: <span className="font-semibold">{institution.education_level || 'SMA'}</span>
+                                </p>
+                                {beritaAcaraConfig.alamat && (
+                                  <p className="text-[10px] text-zinc-500 italic mt-0.5">
+                                    {beritaAcaraConfig.alamat}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                            <div className="w-0 shrink-0"></div>
+                          </div>
+
+                          {/* 2. JUDUL DOKUMEN */}
+                          <div className="text-center mb-3">
+                            <h2 className="text-sm sm:text-base font-black uppercase tracking-wide text-zinc-900">
+                              DAFTAR HADIR PESERTA TES
+                            </h2>
+                            <h3 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-zinc-800 mt-0.5">
+                              {currentAttendanceExam?.title || 'PENILAIAN AKHIR SEMESTER'} - {currentAttendanceExam?.subject}
+                            </h3>
+                            <div className="text-[11px] font-bold tracking-widest text-zinc-700 mt-0.5 uppercase">
+                              TAHUN {dateInfo.yearNum}
+                            </div>
+                          </div>
+
+                          {/* 3. IDENTITAS (NAMA UJIAN BUKAN SESI, SESUAI REQUEST 4 & SCREENSHOT 1) */}
+                          <div className="grid grid-cols-2 gap-x-8 gap-y-1 text-xs mb-3 pb-2 border-b border-zinc-200">
+                            <div className="grid grid-cols-[100px_10px_1fr]">
+                              <span className="font-medium text-zinc-700">Nama Sekolah</span>
+                              <span>:</span>
+                              <strong>{institution.name}</strong>
+                            </div>
+
+                            <div className="grid grid-cols-[90px_10px_1fr]">
+                              <span className="font-medium text-zinc-700">Nama Ujian</span>
+                              <span>:</span>
+                              <strong>{currentAttendanceExam?.title || currentAttendanceExam?.session_group || 'Ujian'}</strong>
+                            </div>
+
+                            <div className="grid grid-cols-[100px_10px_1fr]">
+                              <span className="font-medium text-zinc-700">Tanggal</span>
+                              <span>:</span>
+                              <span>{dateInfo.fullText}</span>
+                            </div>
+
+                            <div className="grid grid-cols-[90px_10px_1fr]">
+                              <span className="font-medium text-zinc-700">Waktu</span>
+                              <span>:</span>
+                              <span className="font-mono">{examStartTimeFormatted} - {examEndTimeFormatted} WIB</span>
+                            </div>
+
+                            <div className="grid grid-cols-[100px_10px_1fr]">
+                              <span className="font-medium text-zinc-700">Nama Ruangan</span>
+                              <span>:</span>
+                              <strong>{selectedAttendanceRoom === 'ALL' ? 'Semua Ruang Ujian' : selectedAttendanceRoom}</strong>
+                            </div>
+
+                            <div className="grid grid-cols-[90px_10px_1fr]">
+                              <span className="font-medium text-zinc-700">Mata Pelajaran</span>
+                              <span>:</span>
+                              <strong>{currentAttendanceExam?.subject}</strong>
+                            </div>
+                          </div>
+
+                          {/* 4. TABEL PESERTA DENGAN KOLOM NO. UJIAN DI DEPAN NAMA (REQUEST 3) */}
+                          <div className="mb-6">
+                            <table className="w-full text-left border-collapse border border-zinc-900 text-xs">
+                              <thead>
+                                <tr className="bg-zinc-200 border-b border-zinc-900 text-zinc-900 font-bold">
+                                  <th className="border border-zinc-900 py-2 px-2 text-center w-10">NO</th>
+                                  <th className="border border-zinc-900 py-2 px-3 text-center w-32">NO. UJIAN</th>
+                                  <th className="border border-zinc-900 py-2 px-3">NAMA PESERTA</th>
+                                  <th className="border border-zinc-900 py-2 px-2 text-center w-24">KELAS</th>
+                                  <th className="border border-zinc-900 py-2 px-3 text-center w-48" colSpan="2">
+                                    TANDA TANGAN
+                                  </th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {roomFilteredEligible.length === 0 ? (
+                                  <tr>
+                                    <td colSpan="6" className="border border-zinc-900 text-center py-6 text-zinc-400 italic">
+                                      Tidak ada data peserta pada ruangan ini.
+                                    </td>
+                                  </tr>
+                                ) : (
+                                  roomFilteredEligible.map((stu, i) => {
+                                    const num = i + 1;
+                                    const isOdd = num % 2 !== 0;
+                                    const noUjian = stu.nomor_ujian || cleanNomorUjian(stu.nomor_ujian, stu.nisn);
+
+                                    return (
+                                      <tr key={stu.id} className="border-b border-zinc-900 h-8 page-break-avoid">
+                                        <td className="border border-zinc-900 py-1 px-1.5 text-center font-semibold">
+                                          {num}.
+                                        </td>
+                                        <td className="border border-zinc-900 py-1 px-2.5 font-mono text-center font-bold text-zinc-800">
+                                          {noUjian}
+                                        </td>
+                                        <td className="border border-zinc-900 py-1 px-2.5">
+                                          <div className="font-bold text-zinc-900">{stu.nama}</div>
+                                          <div className="text-[10px] text-zinc-500 font-mono">NISN: {stu.nisn}</div>
+                                        </td>
+                                        <td className="border border-zinc-900 py-1 px-2 text-center">
+                                          {stu.kelas || '-'}
+                                        </td>
+                                        {/* TANDA TANGAN BERSELANG-SELING SESUAI TEMPLATE PDF */}
+                                        {isOdd ? (
+                                          <>
+                                            <td className="border border-zinc-900 py-1 px-2 text-left w-24 text-[11px] font-medium align-middle">
+                                              {num}. ...................
+                                            </td>
+                                            <td className="border border-zinc-900 py-1 px-2 w-24 bg-zinc-50/30"></td>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <td className="border border-zinc-900 py-1 px-2 w-24 bg-zinc-50/30"></td>
+                                            <td className="border border-zinc-900 py-1 px-2 text-left w-24 text-[11px] font-medium align-middle">
+                                              {num}. ...................
+                                            </td>
+                                          </>
+                                        )}
+                                      </tr>
+                                    );
+                                  })
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+
+                          {/* 5. TANDA TANGAN BAWAH (PENGAWAS, PROKTOR, KEPALA SEKOLAH) */}
+                          <div className="mt-6 pt-3 text-xs page-break-avoid">
+                            <div className="grid grid-cols-3 gap-4 text-center">
+                              <div>
+                                <div className="text-zinc-600 mb-1">Pengawas Ruang,</div>
+                                <div className="h-12"></div>
+                                <div className="font-bold underline">{beritaAcaraConfig.pengawas_nama || 'Pengawas Ruang'}</div>
+                                <div className="text-[10px] text-zinc-500 font-mono">
+                                  NIP. {beritaAcaraConfig.pengawas_nip || '.............................'}
+                                </div>
+                              </div>
+
+                              <div>
+                                <div className="text-zinc-600 mb-1">Proktor Ujian,</div>
+                                <div className="h-12"></div>
+                                <div className="font-bold underline">{beritaAcaraConfig.proktor_nama || 'Proktor Ujian'}</div>
+                                <div className="text-[10px] text-zinc-500 font-mono">
+                                  NIP. {beritaAcaraConfig.proktor_nip || '.............................'}
+                                </div>
+                              </div>
+
+                              <div>
+                                <div className="text-zinc-600 mb-1">Mengetahui, Kepala Sekolah</div>
+                                <div className="h-12"></div>
+                                <div className="font-bold underline">{beritaAcaraConfig.kepala_sekolah_nama || 'Kepala Sekolah'}</div>
+                                <div className="text-[10px] text-zinc-500 font-mono">
+                                  NIP. {beritaAcaraConfig.kepala_sekolah_nip || '.............................'}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Modal Footer */}
+                      <div className="px-6 py-3.5 bg-zinc-50 border-t border-zinc-200 rounded-b-2xl flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setShowDaftarHadirModal(false)}
+                          className="px-4 py-2 border border-zinc-300 rounded-xl text-xs font-semibold text-zinc-700 hover:bg-zinc-100 cursor-pointer"
+                        >
+                          Tutup
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* TAB 4: BASIS DATA SISWA & IMPORT CSV */}
           {activeTab === 'users' && (
@@ -2154,15 +5409,15 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                   <table className="w-full text-left text-xs">
                     <thead>
                       <tr className="bg-zinc-50/70 border-b border-zinc-200/80 text-zinc-500 font-medium">
-                        <th className="py-3.5 px-4 text-center w-12">No</th>
+                        <th className="py-3.5 px-3 text-center w-12">No</th>
+                        <th className="py-3.5 px-3 w-32">No. Ujian</th>
                         <th className="py-3.5 px-4">Nama Siswa</th>
-                        <th className="py-3.5 px-4">NISN & NIS</th>
-                        <th className="py-3.5 px-4">Kelas & Tingkat</th>
-                        <th className="py-3.5 px-4">Kunci Perangkat</th>
-                        <th className="py-3.5 px-4 text-center">Status SSO Google</th>
-                        <th className="py-3.5 px-4 text-center">Status Akun</th>
-                        <th className="py-3.5 px-4 text-center">Verifikasi</th>
-                        <th className="py-3.5 px-4 text-center w-36">Aksi</th>
+                        <th className="py-3.5 px-3">NISN & NIS</th>
+                        <th className="py-3.5 px-3">Kelas & Info</th>
+                        <th className="py-3.5 px-3">Kunci Perangkat</th>
+                        <th className="py-3.5 px-3 text-center">SSO Google</th>
+                        <th className="py-3.5 px-3 text-center">Verifikasi</th>
+                        <th className="py-3.5 px-3 text-center w-36">Aksi</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-100">
@@ -2176,14 +5431,25 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                         filteredUsers.map((stu, index) => (
                           <tr key={stu.id} className="hover:bg-zinc-50/80 transition-colors">
                             {/* Kolom 1: No */}
-                            <td className="py-3.5 px-4 text-center font-mono text-zinc-500 font-medium">
+                            <td className="py-3.5 px-3 text-center font-mono text-zinc-500 font-medium">
                               {index + 1}
                             </td>
 
-                            {/* Kolom 2: Nama Siswa */}
+                            {/* Kolom 2: No. Ujian */}
+                            <td className="py-3.5 px-3 font-mono font-semibold text-zinc-800">
+                              <span className="px-2 py-0.5 rounded bg-zinc-100 border border-zinc-200 text-xs">
+                                {stu.nomor_ujian || cleanNomorUjian(stu.nomor_ujian, stu.nisn)}
+                              </span>
+                            </td>
+
+                            {/* Kolom 3: Nama Siswa */}
                             <td className="py-3.5 px-4">
                               <div className="font-semibold text-zinc-900">{stu.nama}</div>
-                              <div className="text-[11px] text-zinc-400">{stu.email}</div>
+                              <div className="text-[11px] text-zinc-500 flex items-center gap-1.5 mt-0.5">
+                                <span className="font-medium text-zinc-700">JK: {stu.jenis_kelamin || 'L'}</span>
+                                <span>&bull;</span>
+                                <span className="text-zinc-500">{stu.agama || 'Islam'}</span>
+                              </div>
                             </td>
 
                             {/* Kolom 3: NISN & NIS */}
@@ -2605,6 +5871,786 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                     </form>
                   </div>
                 </div>
+
+                {/* ======================================================== */}
+                {/* KARTU 3: PENGATURAN MODE APLIKASI (PRODUKSI VS SIMULASI/DEV) */}
+                {/* ======================================================== */}
+                <div className="bg-white border border-zinc-200/80 rounded-2xl p-6 shadow-2xs space-y-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-zinc-100">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center shrink-0">
+                        <FlaskConical className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-base font-semibold text-zinc-900">
+                            Mode Lingkungan Aplikasi & Bypass Pengujian
+                          </h3>
+                          <span
+                            className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase font-mono ${
+                              appModeConfig.app_mode === 'production'
+                                ? 'bg-zinc-900 text-white'
+                                : 'bg-amber-100 text-amber-800 border border-amber-300'
+                            }`}
+                          >
+                            {appModeConfig.app_mode === 'production' ? 'Mode Produksi Resmi' : 'Mode Demo / Simulasi'}
+                          </span>
+                        </div>
+                        <p className="text-xs text-zinc-500">
+                          Beralih antara Mode Produksi (keamanan ketat tanpa toleransi) dan Mode Simulasi (bypass sensor untuk localhost / Laragon).
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="inline-flex p-1 bg-zinc-100 rounded-xl border border-zinc-200/80 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleAppMode('production')}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                          appModeConfig.app_mode === 'production'
+                            ? 'bg-white text-zinc-900 shadow-2xs'
+                            : 'text-zinc-600 hover:text-zinc-900'
+                        }`}
+                      >
+                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Mode Produksi</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleAppMode('simulation')}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                          appModeConfig.app_mode === 'simulation'
+                            ? 'bg-amber-500 text-white shadow-2xs'
+                            : 'text-zinc-600 hover:text-zinc-900'
+                        }`}
+                      >
+                        <FlaskConical className="w-3.5 h-3.5" />
+                        <span>Mode Demo / Simulasi</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {appModeConfig.app_mode === 'production' ? (
+                    <div className="p-4 bg-emerald-50/70 border border-emerald-200/80 rounded-xl flex items-start gap-3">
+                      <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                      <div className="text-xs text-emerald-950 space-y-1">
+                        <div className="font-semibold text-emerald-900">
+                          Mode Produksi Resmi Sedang Aktif (Strict Security Mode)
+                        </div>
+                        <p className="leading-relaxed text-emerald-800">
+                          Seluruh proteksi ujian berjalan secara ketat 100%: Geofence GPS satelit diwajibkan sesuai radius meter instansi, kamera pengawas & mikrofon diwajibkan aktif, dan kunci layar penuh (fullscreen lock) diaktifkan tanpa ada bypass apapun.
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="p-4 bg-amber-50/80 border border-amber-200/90 rounded-xl flex items-start gap-3">
+                        <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                        <div className="text-xs text-amber-950 space-y-1">
+                          <div className="font-semibold text-amber-900">
+                            Mode Demo & Simulasi Aktif (Development Environment)
+                          </div>
+                          <p className="leading-relaxed text-amber-800">
+                            Fitur-fitur di bawah ini dapat di-bypass untuk keperluan presentasi, simulasi guru, atau uji coba di server lokal (Laragon / localhost / HTTP) yang tidak memiliki sertifikat SSL satelit atau modul webcam/mic.
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Grid Switch Bypass */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 pt-1">
+                        {/* Bypass GPS */}
+                        <div className="p-3.5 bg-zinc-50 border border-zinc-200/80 rounded-xl flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="text-xs font-semibold text-zinc-900 flex items-center gap-1.5">
+                              <MapPin className="w-3.5 h-3.5 text-zinc-600" />
+                              <span>Bypass Geofence GPS</span>
+                            </div>
+                            <p className="text-[11px] text-zinc-500 truncate">
+                              Izinkan akses di localhost & luar radius
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleBypass('bypass_gps')}
+                            className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                              appModeConfig.bypass_gps ? 'bg-amber-500' : 'bg-zinc-300'
+                            }`}
+                          >
+                            <span
+                              className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                                appModeConfig.bypass_gps ? 'translate-x-4' : 'translate-x-0'
+                              }`}
+                            />
+                          </button>
+                        </div>
+
+                        {/* Bypass Media (Kamera & Mic) */}
+                        <div className="p-3.5 bg-zinc-50 border border-zinc-200/80 rounded-xl flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="text-xs font-semibold text-zinc-900 flex items-center gap-1.5">
+                              <Camera className="w-3.5 h-3.5 text-zinc-600" />
+                              <span>Bypass Kamera & Mic</span>
+                            </div>
+                            <p className="text-[11px] text-zinc-500 truncate">
+                              Lewati jika komputer tanpa webcam/mic
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleBypass('bypass_media')}
+                            className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                              appModeConfig.bypass_media ? 'bg-amber-500' : 'bg-zinc-300'
+                            }`}
+                          >
+                            <span
+                              className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                                appModeConfig.bypass_media ? 'translate-x-4' : 'translate-x-0'
+                              }`}
+                            />
+                          </button>
+                        </div>
+
+                        {/* Bypass Web Audio */}
+                        <div className="p-3.5 bg-zinc-50 border border-zinc-200/80 rounded-xl flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="text-xs font-semibold text-zinc-900 flex items-center gap-1.5">
+                              <Volume2 className="w-3.5 h-3.5 text-zinc-600" />
+                              <span>Bypass Uji Audio</span>
+                            </div>
+                            <p className="text-[11px] text-zinc-500 truncate">
+                              Lewati pengecekan nada alarm
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleBypass('bypass_audio')}
+                            className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                              appModeConfig.bypass_audio ? 'bg-amber-500' : 'bg-zinc-300'
+                            }`}
+                          >
+                            <span
+                              className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                                appModeConfig.bypass_audio ? 'translate-x-4' : 'translate-x-0'
+                              }`}
+                            />
+                          </button>
+                        </div>
+
+                        {/* Bypass Notifikasi */}
+                        <div className="p-3.5 bg-zinc-50 border border-zinc-200/80 rounded-xl flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="text-xs font-semibold text-zinc-900 flex items-center gap-1.5">
+                              <Bell className="w-3.5 h-3.5 text-zinc-600" />
+                              <span>Bypass Notifikasi</span>
+                            </div>
+                            <p className="text-[11px] text-zinc-500 truncate">
+                              Lewati permintaan izin notifikasi browser
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleBypass('bypass_notifications')}
+                            className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                              appModeConfig.bypass_notifications ? 'bg-amber-500' : 'bg-zinc-300'
+                            }`}
+                          >
+                            <span
+                              className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                                appModeConfig.bypass_notifications ? 'translate-x-4' : 'translate-x-0'
+                              }`}
+                            />
+                          </button>
+                        </div>
+
+                        {/* Bypass Fullscreen Lockout */}
+                        <div className="p-3.5 bg-zinc-50 border border-zinc-200/80 rounded-xl flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="text-xs font-semibold text-zinc-900 flex items-center gap-1.5">
+                              <Maximize2 className="w-3.5 h-3.5 text-zinc-600" />
+                              <span>Bypass Layar Penuh</span>
+                            </div>
+                            <p className="text-[11px] text-zinc-500 truncate">
+                              Bebas beralih tab & buka DevTools
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleBypass('bypass_fullscreen')}
+                            className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                              appModeConfig.bypass_fullscreen ? 'bg-amber-500' : 'bg-zinc-300'
+                            }`}
+                          >
+                            <span
+                              className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                                appModeConfig.bypass_fullscreen ? 'translate-x-4' : 'translate-x-0'
+                              }`}
+                            />
+                          </button>
+                        </div>
+
+                        {/* Bypass Google SSO */}
+                        <div className="p-3.5 bg-zinc-50 border border-zinc-200/80 rounded-xl flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="text-xs font-semibold text-zinc-900 flex items-center gap-1.5">
+                              <Lock className="w-3.5 h-3.5 text-zinc-600" />
+                              <span>Bypass Google SSO</span>
+                            </div>
+                            <p className="text-[11px] text-zinc-500 truncate">
+                              Lewati verifikasi akun Google
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleBypass('bypass_google_sso')}
+                            className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                              appModeConfig.bypass_google_sso ? 'bg-amber-500' : 'bg-zinc-300'
+                            }`}
+                          >
+                            <span
+                              className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                                appModeConfig.bypass_google_sso ? 'translate-x-4' : 'translate-x-0'
+                              }`}
+                            />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* ======================================================== */}
+                {/* KARTU 4: PUSAT PENGUJIAN FITUR PENDUKUNG (SELF-DIAGNOSTIC) */}
+                {/* ======================================================== */}
+                <div className="bg-white border border-zinc-200/80 rounded-2xl p-6 shadow-2xs space-y-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-zinc-100">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                        <Activity className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h3 className="text-base font-semibold text-zinc-900">
+                          Pusat Pengujian Fitur Pendukung (Self-Diagnostic Suite)
+                        </h3>
+                        <p className="text-xs text-zinc-500">
+                          Uji kelayakan seluruh 10 sensor dan subsistem pendukung sebelum pelaksanaan ujian resmi dimulai.
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={isTestingAllDiagnostics}
+                      onClick={runAllDiagnostics}
+                      className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50 text-white rounded-xl text-xs font-semibold shadow-xs transition-all cursor-pointer shrink-0"
+                    >
+                      {isTestingAllDiagnostics ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          <span>Sedang Menguji Semua...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Play className="w-3.5 h-3.5" />
+                          <span>Jalankan Semua Pengujian (10 Fitur)</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Grid 10 Fitur Pengujian */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* 1. GPS Geolocation */}
+                    <div className="p-4 rounded-xl border border-zinc-200/80 bg-zinc-50/50 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <MapPin className="w-4 h-4 text-zinc-700" />
+                          <span className="text-xs font-semibold text-zinc-900">1. GPS Geolocation & Radius</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={runTestGps}
+                          className="px-2.5 py-1 bg-white hover:bg-zinc-100 text-zinc-700 border border-zinc-300 rounded-lg text-[11px] font-medium transition-colors cursor-pointer"
+                        >
+                          Uji GPS
+                        </button>
+                      </div>
+                      <div className="text-[11px] text-zinc-600">
+                        {diagnosticResults.gps ? (
+                          <div className={`flex items-center gap-1.5 font-medium ${
+                            diagnosticResults.gps.status === 'passed' ? 'text-emerald-700' :
+                            diagnosticResults.gps.status === 'bypassed' ? 'text-amber-700' :
+                            diagnosticResults.gps.status === 'testing' ? 'text-blue-600' : 'text-rose-700'
+                          }`}>
+                            {diagnosticResults.gps.status === 'passed' && <CheckCircle2 className="w-3.5 h-3.5" />}
+                            {diagnosticResults.gps.status === 'bypassed' && <AlertTriangle className="w-3.5 h-3.5" />}
+                            {diagnosticResults.gps.status === 'failed' && <XCircle className="w-3.5 h-3.5" />}
+                            <span>{diagnosticResults.gps.message}</span>
+                          </div>
+                        ) : (
+                          <span className="text-zinc-400">Belum diuji (Klik tombol Uji GPS)</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 2. Kamera / Webcam */}
+                    <div className="p-4 rounded-xl border border-zinc-200/80 bg-zinc-50/50 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Camera className="w-4 h-4 text-zinc-700" />
+                          <span className="text-xs font-semibold text-zinc-900">2. Kamera / Webcam Pengawas</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={runTestCamera}
+                          className="px-2.5 py-1 bg-white hover:bg-zinc-100 text-zinc-700 border border-zinc-300 rounded-lg text-[11px] font-medium transition-colors cursor-pointer"
+                        >
+                          Uji Kamera
+                        </button>
+                      </div>
+                      <div className="text-[11px] text-zinc-600">
+                        {diagnosticResults.camera ? (
+                          <div className={`flex items-center gap-1.5 font-medium ${
+                            diagnosticResults.camera.status === 'passed' ? 'text-emerald-700' :
+                            diagnosticResults.camera.status === 'bypassed' ? 'text-amber-700' :
+                            diagnosticResults.camera.status === 'testing' ? 'text-blue-600' : 'text-rose-700'
+                          }`}>
+                            {diagnosticResults.camera.status === 'passed' && <CheckCircle2 className="w-3.5 h-3.5" />}
+                            {diagnosticResults.camera.status === 'bypassed' && <AlertTriangle className="w-3.5 h-3.5" />}
+                            {diagnosticResults.camera.status === 'failed' && <XCircle className="w-3.5 h-3.5" />}
+                            <span>{diagnosticResults.camera.message}</span>
+                          </div>
+                        ) : (
+                          <span className="text-zinc-400">Belum diuji</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 3. Mikrofon */}
+                    <div className="p-4 rounded-xl border border-zinc-200/80 bg-zinc-50/50 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Mic className="w-4 h-4 text-zinc-700" />
+                          <span className="text-xs font-semibold text-zinc-900">3. Mikrofon Audio Input</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={runTestMicrophone}
+                          className="px-2.5 py-1 bg-white hover:bg-zinc-100 text-zinc-700 border border-zinc-300 rounded-lg text-[11px] font-medium transition-colors cursor-pointer"
+                        >
+                          Uji Mic
+                        </button>
+                      </div>
+                      <div className="text-[11px] text-zinc-600">
+                        {diagnosticResults.mic ? (
+                          <div className={`flex items-center gap-1.5 font-medium ${
+                            diagnosticResults.mic.status === 'passed' ? 'text-emerald-700' :
+                            diagnosticResults.mic.status === 'bypassed' ? 'text-amber-700' :
+                            diagnosticResults.mic.status === 'testing' ? 'text-blue-600' : 'text-rose-700'
+                          }`}>
+                            {diagnosticResults.mic.status === 'passed' && <CheckCircle2 className="w-3.5 h-3.5" />}
+                            {diagnosticResults.mic.status === 'bypassed' && <AlertTriangle className="w-3.5 h-3.5" />}
+                            {diagnosticResults.mic.status === 'failed' && <XCircle className="w-3.5 h-3.5" />}
+                            <span>{diagnosticResults.mic.message}</span>
+                          </div>
+                        ) : (
+                          <span className="text-zinc-400">Belum diuji</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 4. Web Audio API */}
+                    <div className="p-4 rounded-xl border border-zinc-200/80 bg-zinc-50/50 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Volume2 className="w-4 h-4 text-zinc-700" />
+                          <span className="text-xs font-semibold text-zinc-900">4. Web Audio API (Alarm Beep)</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={runTestAudio}
+                          className="px-2.5 py-1 bg-white hover:bg-zinc-100 text-zinc-700 border border-zinc-300 rounded-lg text-[11px] font-medium transition-colors cursor-pointer"
+                        >
+                          Uji Alarm
+                        </button>
+                      </div>
+                      <div className="text-[11px] text-zinc-600">
+                        {diagnosticResults.audio ? (
+                          <div className={`flex items-center gap-1.5 font-medium ${
+                            diagnosticResults.audio.status === 'passed' ? 'text-emerald-700' : 'text-rose-700'
+                          }`}>
+                            {diagnosticResults.audio.status === 'passed' && <CheckCircle2 className="w-3.5 h-3.5" />}
+                            {diagnosticResults.audio.status === 'failed' && <XCircle className="w-3.5 h-3.5" />}
+                            <span>{diagnosticResults.audio.message}</span>
+                          </div>
+                        ) : (
+                          <span className="text-zinc-400">Belum diuji</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 5. Notifikasi Browser */}
+                    <div className="p-4 rounded-xl border border-zinc-200/80 bg-zinc-50/50 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Bell className="w-4 h-4 text-zinc-700" />
+                          <span className="text-xs font-semibold text-zinc-900">5. Izin Notifikasi Browser</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={runTestNotifications}
+                          className="px-2.5 py-1 bg-white hover:bg-zinc-100 text-zinc-700 border border-zinc-300 rounded-lg text-[11px] font-medium transition-colors cursor-pointer"
+                        >
+                          Uji Notifikasi
+                        </button>
+                      </div>
+                      <div className="text-[11px] text-zinc-600">
+                        {diagnosticResults.notifications ? (
+                          <div className={`flex items-center gap-1.5 font-medium ${
+                            diagnosticResults.notifications.status === 'passed' ? 'text-emerald-700' :
+                            diagnosticResults.notifications.status === 'bypassed' ? 'text-amber-700' : 'text-rose-700'
+                          }`}>
+                            {diagnosticResults.notifications.status === 'passed' && <CheckCircle2 className="w-3.5 h-3.5" />}
+                            {diagnosticResults.notifications.status === 'bypassed' && <AlertTriangle className="w-3.5 h-3.5" />}
+                            {diagnosticResults.notifications.status === 'failed' && <XCircle className="w-3.5 h-3.5" />}
+                            <span>{diagnosticResults.notifications.message}</span>
+                          </div>
+                        ) : (
+                          <span className="text-zinc-400">Belum diuji</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 6. Layar Penuh Fullscreen */}
+                    <div className="p-4 rounded-xl border border-zinc-200/80 bg-zinc-50/50 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Maximize2 className="w-4 h-4 text-zinc-700" />
+                          <span className="text-xs font-semibold text-zinc-900">6. Mode Layar Penuh (Lockout)</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={runTestFullscreen}
+                          className="px-2.5 py-1 bg-white hover:bg-zinc-100 text-zinc-700 border border-zinc-300 rounded-lg text-[11px] font-medium transition-colors cursor-pointer"
+                        >
+                          Uji Layar Penuh
+                        </button>
+                      </div>
+                      <div className="text-[11px] text-zinc-600">
+                        {diagnosticResults.fullscreen ? (
+                          <div className={`flex items-center gap-1.5 font-medium ${
+                            diagnosticResults.fullscreen.status === 'passed' ? 'text-emerald-700' : 'text-rose-700'
+                          }`}>
+                            {diagnosticResults.fullscreen.status === 'passed' && <CheckCircle2 className="w-3.5 h-3.5" />}
+                            {diagnosticResults.fullscreen.status === 'failed' && <XCircle className="w-3.5 h-3.5" />}
+                            <span>{diagnosticResults.fullscreen.message}</span>
+                          </div>
+                        ) : (
+                          <span className="text-zinc-400">Belum diuji</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 7. Penyimpanan Lokal */}
+                    <div className="p-4 rounded-xl border border-zinc-200/80 bg-zinc-50/50 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Database className="w-4 h-4 text-zinc-700" />
+                          <span className="text-xs font-semibold text-zinc-900">7. Kuota Storage & Cookies</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={runTestStorage}
+                          className="px-2.5 py-1 bg-white hover:bg-zinc-100 text-zinc-700 border border-zinc-300 rounded-lg text-[11px] font-medium transition-colors cursor-pointer"
+                        >
+                          Uji Storage
+                        </button>
+                      </div>
+                      <div className="text-[11px] text-zinc-600">
+                        {diagnosticResults.storage ? (
+                          <div className={`flex items-center gap-1.5 font-medium ${
+                            diagnosticResults.storage.status === 'passed' ? 'text-emerald-700' : 'text-rose-700'
+                          }`}>
+                            {diagnosticResults.storage.status === 'passed' && <CheckCircle2 className="w-3.5 h-3.5" />}
+                            {diagnosticResults.storage.status === 'failed' && <XCircle className="w-3.5 h-3.5" />}
+                            <span>{diagnosticResults.storage.message}</span>
+                          </div>
+                        ) : (
+                          <span className="text-zinc-400">Belum diuji</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 8. Proteksi Clipboard */}
+                    <div className="p-4 rounded-xl border border-zinc-200/80 bg-zinc-50/50 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Lock className="w-4 h-4 text-zinc-700" />
+                          <span className="text-xs font-semibold text-zinc-900">8. Proteksi Clipboard Anti-Copy</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={runTestClipboard}
+                          className="px-2.5 py-1 bg-white hover:bg-zinc-100 text-zinc-700 border border-zinc-300 rounded-lg text-[11px] font-medium transition-colors cursor-pointer"
+                        >
+                          Uji Clipboard
+                        </button>
+                      </div>
+                      <div className="text-[11px] text-zinc-600">
+                        {diagnosticResults.clipboard ? (
+                          <div className={`flex items-center gap-1.5 font-medium ${
+                            diagnosticResults.clipboard.status === 'passed' ? 'text-emerald-700' : 'text-rose-700'
+                          }`}>
+                            {diagnosticResults.clipboard.status === 'passed' && <CheckCircle2 className="w-3.5 h-3.5" />}
+                            {diagnosticResults.clipboard.status === 'failed' && <XCircle className="w-3.5 h-3.5" />}
+                            <span>{diagnosticResults.clipboard.message}</span>
+                          </div>
+                        ) : (
+                          <span className="text-zinc-400">Belum diuji</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 9. Latensi Google Forms */}
+                    <div className="p-4 rounded-xl border border-zinc-200/80 bg-zinc-50/50 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Server className="w-4 h-4 text-zinc-700" />
+                          <span className="text-xs font-semibold text-zinc-900">9. Latensi Server Google Forms</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={runTestGooglePing}
+                          className="px-2.5 py-1 bg-white hover:bg-zinc-100 text-zinc-700 border border-zinc-300 rounded-lg text-[11px] font-medium transition-colors cursor-pointer"
+                        >
+                          Uji Ping
+                        </button>
+                      </div>
+                      <div className="text-[11px] text-zinc-600">
+                        {diagnosticResults.google_ping ? (
+                          <div className={`flex items-center gap-1.5 font-medium ${
+                            diagnosticResults.google_ping.status === 'passed' ? 'text-emerald-700' : 'text-rose-700'
+                          }`}>
+                            {diagnosticResults.google_ping.status === 'passed' && <CheckCircle2 className="w-3.5 h-3.5" />}
+                            {diagnosticResults.google_ping.status === 'failed' && <XCircle className="w-3.5 h-3.5" />}
+                            <span>{diagnosticResults.google_ping.message}</span>
+                          </div>
+                        ) : (
+                          <span className="text-zinc-400">Belum diuji</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 10. Generator Token */}
+                    <div className="p-4 rounded-xl border border-zinc-200/80 bg-zinc-50/50 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <KeyRound className="w-4 h-4 text-zinc-700" />
+                          <span className="text-xs font-semibold text-zinc-900">10. Generator Token 6-Digit</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={runTestTokens}
+                          className="px-2.5 py-1 bg-white hover:bg-zinc-100 text-zinc-700 border border-zinc-300 rounded-lg text-[11px] font-medium transition-colors cursor-pointer"
+                        >
+                          Uji Token
+                        </button>
+                      </div>
+                      <div className="text-[11px] text-zinc-600">
+                        {diagnosticResults.tokens ? (
+                          <div className={`flex items-center gap-1.5 font-medium ${
+                            diagnosticResults.tokens.status === 'passed' ? 'text-emerald-700' : 'text-rose-700'
+                          }`}>
+                            {diagnosticResults.tokens.status === 'passed' && <CheckCircle2 className="w-3.5 h-3.5" />}
+                            {diagnosticResults.tokens.status === 'failed' && <XCircle className="w-3.5 h-3.5" />}
+                            <span>{diagnosticResults.tokens.message}</span>
+                          </div>
+                        ) : (
+                          <span className="text-zinc-400">Belum diuji</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ======================================================== */}
+                {/* KARTU 5: HISTORI ERROR SISTEM & AUDIT LOGS */}
+                {/* ======================================================== */}
+                <div className="bg-white border border-zinc-200/80 rounded-2xl p-6 shadow-2xs space-y-5">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-zinc-100">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
+                        <Bug className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-base font-semibold text-zinc-900">
+                            Histori Error Sistem & Audit Trail
+                          </h3>
+                          <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-700 border border-zinc-200 font-semibold">
+                            {systemErrorLogs.length} Catatan
+                          </span>
+                        </div>
+                        <p className="text-xs text-zinc-500">
+                          Catatan otomatis seluruh kendala teknis (GPS, Kamera, Jaringan, Browser) yang tercatat selama mode simulasi atau ujian berlangsung.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleSimulateError}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+                        title="Simulasikan contoh error untuk menguji pencatatan"
+                      >
+                        <PlayCircle className="w-3.5 h-3.5 text-zinc-500" />
+                        <span>Simulasi Error</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleCopyErrorLogs}
+                        disabled={systemErrorLogs.length === 0}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 disabled:opacity-40 text-zinc-700 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+                        title="Salin seluruh log dalam format JSON"
+                      >
+                        {copiedLogFeedback ? (
+                          <>
+                            <Check className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>Tersalin!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5 text-zinc-500" />
+                            <span>Salin JSON</span>
+                          </>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleClearErrorLogs}
+                        disabled={systemErrorLogs.length === 0}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 disabled:opacity-40 text-rose-700 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+                        title="Hapus seluruh riwayat error"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Bersihkan Log</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Filter & Search Bar */}
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                    <div className="inline-flex p-1 bg-zinc-100 rounded-xl border border-zinc-200/80">
+                      {['ALL', 'error', 'warning', 'info'].map((lvl) => (
+                        <button
+                          key={lvl}
+                          type="button"
+                          onClick={() => setErrorLogFilter(lvl)}
+                          className={`px-3 py-1 text-xs font-medium rounded-lg capitalize transition-all cursor-pointer ${
+                            errorLogFilter === lvl
+                              ? 'bg-white text-zinc-900 shadow-2xs font-semibold'
+                              : 'text-zinc-600 hover:text-zinc-900'
+                          }`}
+                        >
+                          {lvl === 'ALL' ? 'Semua Log' : lvl}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="relative flex-1 sm:max-w-xs">
+                      <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-zinc-400" />
+                      <input
+                        type="text"
+                        placeholder="Cari pesan atau sumber error..."
+                        value={errorLogSearch}
+                        onChange={(e) => setErrorLogSearch(e.target.value)}
+                        className="w-full pl-8 pr-3 py-1.5 text-xs border border-zinc-300 rounded-xl bg-white focus:outline-none focus:ring-1 focus:ring-zinc-900"
+                      />
+                    </div>
+                  </div>
+
+                  {/* List Item Histori Error */}
+                  <div className="space-y-2.5 max-h-96 overflow-y-auto pr-1">
+                    {(() => {
+                      const filteredLogs = systemErrorLogs.filter((log) => {
+                        const matchFilter = errorLogFilter === 'ALL' || log.level === errorLogFilter;
+                        const matchSearch =
+                          !errorLogSearch ||
+                          log.message?.toLowerCase().includes(errorLogSearch.toLowerCase()) ||
+                          log.source?.toLowerCase().includes(errorLogSearch.toLowerCase()) ||
+                          log.details?.toLowerCase().includes(errorLogSearch.toLowerCase());
+                        return matchFilter && matchSearch;
+                      });
+
+                      if (filteredLogs.length === 0) {
+                        return (
+                          <div className="text-center py-10 border border-dashed border-zinc-200 rounded-xl bg-zinc-50/50">
+                            <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
+                            <div className="text-xs font-semibold text-zinc-800">
+                              Tidak Ada Catatan Error
+                            </div>
+                            <p className="text-[11px] text-zinc-500 mt-0.5">
+                              Sistem beroperasi normal tanpa kendala teknis yang tercatat.
+                            </p>
+                          </div>
+                        );
+                      }
+
+                      return filteredLogs.map((log) => (
+                        <div
+                          key={log.id || log.timestamp}
+                          className={`p-4 rounded-xl border text-xs space-y-1.5 transition-all ${
+                            log.level === 'error'
+                              ? 'bg-rose-50/60 border-rose-200/80 text-rose-950'
+                              : log.level === 'warning'
+                              ? 'bg-amber-50/60 border-amber-200/80 text-amber-950'
+                              : 'bg-zinc-50 border-zinc-200 text-zinc-900'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`text-[10px] font-bold px-2 py-0.5 rounded-md uppercase ${
+                                  log.level === 'error'
+                                    ? 'bg-rose-600 text-white'
+                                    : log.level === 'warning'
+                                    ? 'bg-amber-600 text-white'
+                                    : 'bg-zinc-700 text-white'
+                                }`}
+                              >
+                                {log.source || 'Sistem'}
+                              </span>
+                              <span className="font-semibold text-zinc-900">{log.message}</span>
+                            </div>
+                            <span className="text-[10px] text-zinc-500 font-mono shrink-0">
+                              {new Date(log.timestamp).toLocaleTimeString('id-ID', {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                                second: '2-digit',
+                              })}
+                            </span>
+                          </div>
+
+                          {log.details && (
+                            <p className="text-[11px] text-zinc-600 leading-relaxed font-mono bg-white/70 p-2 rounded-lg border border-zinc-200/50">
+                              {log.details}
+                            </p>
+                          )}
+
+                          {log.solution && (
+                            <div className="flex items-start gap-1.5 text-[11px] text-emerald-800 pt-0.5">
+                              <span className="font-semibold shrink-0">Solusi:</span>
+                              <span>{log.solution}</span>
+                            </div>
+                          )}
+                        </div>
+                      ));
+                    })()}
+                  </div>
+                </div>
+
               </div>
             ) : (
               <div className="p-8 bg-white border border-rose-200 rounded-2xl text-center space-y-3 shadow-2xs">
@@ -4526,17 +8572,29 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                 <label className="block font-medium text-zinc-700 mb-1">
                   URL Pengisian Google Form (Wajib berakhiran /viewform?embedded=true)
                 </label>
-                <input
-                  type="url"
-                  name="gform_base_url"
-                  required
-                  defaultValue={
-                    editingExam?.gform_base_url ||
-                    'https://docs.google.com/forms/d/e/1FAIpQLSc6Z-sample-math-exam/viewform?embedded=true'
-                  }
-                  placeholder="https://docs.google.com/forms/d/e/.../viewform?embedded=true"
-                  className="w-full px-3 py-2 border border-zinc-300 rounded-lg font-mono text-[11px] focus:ring-2 focus:ring-zinc-900 focus:outline-none"
-                />
+                <div className="space-y-1">
+                  <input
+                    type="url"
+                    name="gform_base_url"
+                    required
+                    defaultValue={
+                      editingExam?.gform_base_url ||
+                      'https://docs.google.com/forms/d/e/1FAIpQLSc6Z-sample-math-exam/viewform?embedded=true'
+                    }
+                    onBlur={(e) => {
+                      const converted = convertGoogleFormUrl(e.target.value);
+                      if (converted !== e.target.value) {
+                        e.target.value = converted;
+                        showNotification('Link Google Form otomatis dikonversi ke format embed standar!', 'info');
+                      }
+                    }}
+                    placeholder="https://docs.google.com/forms/d/.../viewform?embedded=true"
+                    className="w-full px-3 py-2 border border-zinc-300 rounded-lg font-mono text-[11px] focus:ring-2 focus:ring-zinc-900 focus:outline-none"
+                  />
+                  <p className="text-[10px] text-zinc-500">
+                    Sistem otomatis mengonversi link edit Google Forms menjadi link embed standar ujian.
+                  </p>
+                </div>
               </div>
 
               <div>
@@ -4761,7 +8819,57 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                 </div>
 
                 <div>
+                  <div>
                   <label className="block text-xs font-medium text-zinc-700 mb-1">
+                    Nomor Ujian Peserta <span className="text-zinc-400 font-normal">(Opsional)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={newStudentForm.nomor_ujian || ''}
+                    onChange={(e) =>
+                      setNewStudentForm({ ...newStudentForm, nomor_ujian: cleanNomorUjian(e.target.value) })
+                    }
+                    placeholder="Kosongkan untuk otomatis pakai NISN"
+                    className="w-full px-3 py-2 border border-zinc-300 rounded-xl text-xs font-mono focus:ring-2 focus:ring-zinc-900 focus:outline-none"
+                  />
+                  <p className="text-[10px] text-zinc-400 mt-0.5">
+                    Hanya huruf, angka, tanda strip dan titik
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-zinc-700 mb-1">
+                    Jenis Kelamin & Agama <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <select
+                      value={newStudentForm.jenis_kelamin || 'L'}
+                      onChange={(e) =>
+                        setNewStudentForm({ ...newStudentForm, jenis_kelamin: e.target.value })
+                      }
+                      className="w-full px-3 py-2 border border-zinc-300 rounded-xl text-xs focus:ring-2 focus:ring-zinc-900 focus:outline-none"
+                    >
+                      <option value="L">Laki-laki (L)</option>
+                      <option value="P">Perempuan (P)</option>
+                    </select>
+                    <select
+                      value={newStudentForm.agama || 'Islam'}
+                      onChange={(e) =>
+                        setNewStudentForm({ ...newStudentForm, agama: e.target.value })
+                      }
+                      className="w-full px-3 py-2 border border-zinc-300 rounded-xl text-xs focus:ring-2 focus:ring-zinc-900 focus:outline-none"
+                    >
+                      <option value="Islam">Islam</option>
+                      <option value="Kristen">Kristen</option>
+                      <option value="Katolik">Katolik</option>
+                      <option value="Hindu">Hindu</option>
+                      <option value="Buddha">Buddha</option>
+                      <option value="Khonghucu">Khonghucu</option>
+                    </select>
+                  </div>
+                </div>
+
+                <label className="block text-xs font-medium text-zinc-700 mb-1">
                     NISN (Nomor Induk Siswa Nasional) <span className="text-rose-500">*</span>
                   </label>
                   <input

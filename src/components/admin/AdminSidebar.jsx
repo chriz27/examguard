@@ -14,6 +14,8 @@ import {
   PanelLeftOpen,
   Database,
   Info,
+  ClipboardCheck,
+  RotateCcw,
 } from 'lucide-react';
 
 export default function AdminSidebar({
@@ -51,6 +53,20 @@ export default function AdminSidebar({
       description: 'Pemantauan & reset siswa',
     },
     {
+      id: 'reset-exam',
+      label: 'Reset Status Ujian',
+      icon: RotateCcw,
+      badge: 'Mapel',
+      description: 'Reset login & status per mapel',
+    },
+    {
+      id: 'attendance',
+      label: 'Presensi Ujian',
+      icon: ClipboardCheck,
+      description: 'Rekap kehadiran & status selesai',
+      superAdminOnly: false,
+    },
+    {
       id: 'users',
       label: 'Manajemen Siswa',
       icon: Users,
@@ -60,7 +76,7 @@ export default function AdminSidebar({
       id: 'account',
       label: 'Akun Administrator',
       icon: UserCheck,
-      description: 'Kredensial login admin & proktor',
+      description: 'Kredensial, Mode Demo & Diagnostik',
       superAdminOnly: true, // Hanya Super Admin yang dapat melihat/mengedit
     },
     {

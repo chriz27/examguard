@@ -30,3 +30,85 @@
   background: #a1a1aa;
 }
 
+/* Print optimization for Berita Acara & Presensi (Isolasi Cetak Bersih Standar Kertas A4) */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 10mm;
+  }
+
+  html, body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Isolasi Total: Sembunyikan seluruh elemen dashboard luar jika modal terbuka */
+  body:has(#printable-berita-acara) > *:not(:has(#printable-berita-acara)),
+  body:has(#printable-daftar-hadir) > *:not(:has(#printable-daftar-hadir)),
+  .no-print,
+  button,
+  input,
+  select,
+  textarea,
+  nav,
+  aside,
+  header {
+    display: none !important;
+  }
+
+  /* Hilangkan backdrop hitam, padding modal, dan tombol kontrol */
+  .fixed.inset-0.z-50 {
+    position: static !important;
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    inset: auto !important;
+  }
+
+  .fixed.inset-0.z-50 > div {
+    box-shadow: none !important;
+    border: none !important;
+    max-height: none !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    padding: 0 !important;
+  }
+
+  /* Sembunyikan topbar kontrol modal, selektor margin, formulir edit, dan tombol footer saat dicetak */
+  .fixed.inset-0.z-50 > div > div:first-child,
+  .fixed.inset-0.z-50 > div > div:last-child,
+  .fixed.inset-0.z-50 .p-4.bg-zinc-50 {
+    display: none !important;
+  }
+
+  #printable-berita-acara,
+  #printable-daftar-hadir {
+    display: block !important;
+    visibility: visible !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 auto !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    background: #ffffff !important;
+  }
+
+  #printable-berita-acara {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  thead {
+    display: table-header-group !important;
+  }
+
+  tr {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+}
+

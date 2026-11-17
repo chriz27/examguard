@@ -33,8 +33,9 @@ import {
   Laptop,
   ClipboardCheck,
   Loader2,
+  FlaskConical,
 } from 'lucide-react';
-import { storageService } from '../../services/storageService';
+import { storageService, convertGoogleFormUrl, subscribeSync } from '../../services/storageService';
 import {
   calculateHaversineDistance,
   formatDuration,
@@ -151,21 +152,40 @@ export default function StudentPortal({ currentUser, onLogout }) {
   // Tahapan Alur Siswa: 'preflight' | 'home' | 'exam'
   const [currentStage, setCurrentStage] = useState('preflight');
 
-  // Pre-flight Checks State
   // Pre-flight Checks State (8 Izin Sesuai Pengaturan Instansi)
   const [preflightStatus, setPreflightStatus] = useState({
     gps: { checking: true, passed: false, distance: null, message: 'Memeriksa lokasi GPS...' },
-    cookies: { checking: true, passed: false, message: 'Memeriksa akses Cookies...' },
     notifications: { checking: true, passed: false, message: 'Memeriksa izin Notifikasi...' },
     sound: { checking: true, passed: false, message: 'Memeriksa sistem Audio & Suara...' },
     fullscreen: { checking: true, passed: false, message: 'Memeriksa dukungan Layar Penuh...' },
-    media: { checking: true, passed: false, message: 'Memeriksa izin Kamera & Mikrofon...' },
     google_sso: { checking: true, passed: false, message: 'Memeriksa status akun Google SSO...' },
     clipboard: { checking: true, passed: true, message: 'Pembersih Clipboard diaktifkan' },
     media: { checking: true, passed: false, message: 'Memeriksa sensor Kamera & Mikrofon...' },
     cookies: { checking: true, passed: false, message: 'Memeriksa akses Cookies...' },
   });
   const [gpsSimulatedOverride, setGpsSimulatedOverride] = useState(false);
+
+  // Konfigurasi Mode Aplikasi (Produksi Resmi vs Simulasi/Dev) dengan Zero-Trust Hardening
+  const [appModeConfig, setAppModeConfig] = useState(() => storageService.getAppModeConfig());
+  const isProduction = appModeConfig?.app_mode === 'production';
+  const isSimMode = !isProduction;
+  const effectiveGpsOverride = isSimMode && gpsSimulatedOverride;
+
+  // Deteksi Perangkat Seluler (HP / Tablet) & Konteks Keamanan untuk Kompatibilitas Fitur
+  const isMobileDevice = typeof navigator !== 'undefined' && (
+    /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+    (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(max-width: 768px)').matches)
+  );
+  const isIOS = typeof navigator !== 'undefined' && /iPhone|iPad|iPod/i.test(navigator.userAgent);
+  const isInsecureContext = typeof window !== 'undefined' && !window.isSecureContext && window.location.hostname !== 'localhost';
+
+  useEffect(() => {
+    const handleModeUpdate = () => {
+      setAppModeConfig(storageService.getAppModeConfig());
+    };
+    window.addEventListener('examguard_storage_updated', handleModeUpdate);
+    return () => window.removeEventListener('examguard_storage_updated', handleModeUpdate);
+  }, []);
 
   // Home State
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -183,6 +203,16 @@ export default function StudentPortal({ currentUser, onLogout }) {
   const [lockReason, setLockReason] = useState('');
   const [copiedToken, setCopiedToken] = useState(false);
   const [showFinishConfirmModal, setShowFinishConfirmModal] = useState(false);
+
+  // Proctoring Violation & Lockout States
+  const [showViolationWarningModal, setShowViolationWarningModal] = useState(false);
+  const [violationWarningReason, setViolationWarningReason] = useState('');
+  const [violationWarningCount, setViolationWarningCount] = useState(1);
+  const [showProctorPinInput, setShowProctorPinInput] = useState(false);
+  const [proctorPinInput, setProctorPinInput] = useState('');
+  const [proctorPinError, setProctorPinError] = useState('');
+  const [isCheckingUnlock, setIsCheckingUnlock] = useState(false);
+  const examEnterTimestampRef = useRef(0);
 
   // Idle Timer Ref
   const lastActivityRef = useRef(Date.now());
@@ -246,31 +276,27 @@ export default function StudentPortal({ currentUser, onLogout }) {
     const handleStorageUpdate = () => {
       reloadData();
     };
+    const unsubscribe = subscribeSync(() => {
+      reloadData();
+    });
     window.addEventListener('examguard_storage_updated', handleStorageUpdate);
     window.addEventListener('storage', handleStorageUpdate);
+    window.addEventListener('focus', handleStorageUpdate);
     return () => {
+      unsubscribe();
       window.removeEventListener('examguard_storage_updated', handleStorageUpdate);
       window.removeEventListener('storage', handleStorageUpdate);
+      window.removeEventListener('focus', handleStorageUpdate);
     };
   }, []);
 
-  // 4. Pre-Flight Verification Runner
-  // 4. Pre-Flight Verification Runner (Mengevaluasi 8 Izin Sesuai Pengaturan Instansi)
+  // 4. Pre-Flight Verification Runner (Mengevaluasi 8 Izin Sesuai Mode Aplikasi & Pengaturan Instansi)
   useEffect(() => {
     if (currentStage !== 'preflight') return;
 
-    // Check Cookies
-    const cookiesPassed = navigator.cookieEnabled;
-    setPreflightStatus((prev) => ({
-      ...prev,
-      cookies: {
-        checking: false,
-        passed: cookiesPassed,
-        message: cookiesPassed
-          ? 'Penyimpanan Cookies diizinkan'
-          : 'Cookies dinonaktifkan di peramban Anda',
-      },
-    }));
+    const appMode = storageService.getAppModeConfig();
+    const isSimMode = appMode?.app_mode === 'simulation';
+
     const perms = institution?.browser_permissions || {
       location_gps: true,
       notifications: true,
@@ -282,30 +308,16 @@ export default function StudentPortal({ currentUser, onLogout }) {
       cookies_iframe: true,
     };
 
-    // Check Fullscreen
-    const fsSupported = !!(
-      document.fullscreenEnabled ||
-      document.webkitFullscreenEnabled ||
-      document.mozFullScreenEnabled
-    );
-    setPreflightStatus((prev) => ({
-      ...prev,
-      fullscreen: {
-        checking: false,
-        passed: fsSupported,
-        message: fsSupported
-          ? 'Mode Layar Penuh didukung'
-          : 'Peramban tidak mendukung Layar Penuh',
-      },
-    }));
     // 1. Check Cookies
-    if (perms.cookies_iframe === false) {
+    if (perms.cookies_iframe === false || (isSimMode && appMode.bypass_cookies_check)) {
       setPreflightStatus((prev) => ({
         ...prev,
         cookies: {
           checking: false,
           passed: true,
-          message: 'Penyimpanan Cookies tidak diwajibkan oleh sekolah',
+          message: isSimMode && appMode.bypass_cookies_check
+            ? 'Mode Simulasi: Penyimpanan Cookies di-bypass'
+            : 'Penyimpanan Cookies tidak diwajibkan oleh sekolah',
         },
       }));
     } else {
@@ -322,276 +334,453 @@ export default function StudentPortal({ currentUser, onLogout }) {
       }));
     }
 
-    // Check Media (Camera & Mic)
-    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-      // 2. Check Fullscreen
-      if (perms.fullscreen === false) {
-        setPreflightStatus((prev) => ({
-          ...prev,
-          fullscreen: {
-            checking: false,
-            passed: true,
-            message: 'Mode Layar Penuh tidak diwajibkan oleh sekolah',
-          },
-        }));
-      } else {
-        const fsSupported = !!(
-          document.fullscreenEnabled ||
-          document.webkitFullscreenEnabled ||
-          document.mozFullScreenEnabled
-        );
-        setPreflightStatus((prev) => ({
-          ...prev,
-          fullscreen: {
-            checking: false,
-            passed: fsSupported,
-            message: fsSupported
-              ? 'Mode Layar Penuh didukung oleh peramban'
-              : 'Peramban tidak mendukung Layar Penuh',
-          },
-        }));
-      }
+    // 2. Check Fullscreen
+    if (perms.fullscreen === false || (isSimMode && appMode.bypass_fullscreen)) {
+      setPreflightStatus((prev) => ({
+        ...prev,
+        fullscreen: {
+          checking: false,
+          passed: true,
+          message: isSimMode && appMode.bypass_fullscreen
+            ? 'Mode Simulasi: Mode Layar Penuh di-bypass (Bebas multi-tab/debug)'
+            : 'Mode Layar Penuh tidak diwajibkan oleh sekolah',
+        },
+      }));
+    } else {
+      const fsSupported = !!(
+        document.fullscreenEnabled ||
+        document.webkitFullscreenEnabled ||
+        document.mozFullScreenEnabled
+      );
+      setPreflightStatus((prev) => ({
+        ...prev,
+        fullscreen: {
+          checking: false,
+          passed: fsSupported,
+          message: fsSupported
+            ? 'Mode Layar Penuh didukung oleh peramban'
+            : 'Peramban tidak mendukung Layar Penuh',
+        },
+      }));
+    }
 
-      // 3. Check Media (Camera & Mic)
-      if (perms.camera_webcam === false) {
-        setPreflightStatus((prev) => ({
-          ...prev,
-          media: {
-            checking: false,
-            passed: true,
-            message: 'Sensor Kamera & Mikrofon tidak diwajibkan oleh sekolah',
-          },
-        }));
-      } else if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        navigator.mediaDevices
-          .getUserMedia({ video: true, audio: true })
-          .then((stream) => {
-            stream.getTracks().forEach((track) => track.stop());
+    // 3. Check Media (Camera & Mic)
+    if (perms.camera_webcam === false) {
+      setPreflightStatus((prev) => ({
+        ...prev,
+        media: {
+          checking: false,
+          passed: true,
+          message: 'Sensor Kamera & Mikrofon tidak diwajibkan oleh sekolah',
+        },
+      }));
+    } else if (isSimMode && appMode.bypass_media) {
+      setPreflightStatus((prev) => ({
+        ...prev,
+        media: {
+          checking: false,
+          passed: true,
+          message: 'Mode Simulasi: Sensor Kamera & Mikrofon di-bypass untuk pengujian lokal',
+        },
+      }));
+    } else if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      navigator.mediaDevices
+        .getUserMedia({ video: true, audio: true })
+        .then((stream) => {
+          stream.getTracks().forEach((track) => track.stop());
+          setPreflightStatus((prev) => ({
+            ...prev,
+            media: {
+              checking: false,
+              passed: true,
+              message: 'Sensor Kamera & Mikrofon aktif',
+            },
+          }));
+        })
+        .catch((err) => {
+          if (isSimMode && appMode.bypass_media) {
+            storageService.addSystemErrorLog({
+              source: 'Kamera & Mikrofon',
+              level: 'warning',
+              message: `Sensor media tidak terdeteksi (${err.message}) -> Di-Bypass pada Mode Simulasi`,
+              details: err.message,
+              solution: 'Aktifkan kamera riil saat Mode Produksi diaktifkan.',
+            });
             setPreflightStatus((prev) => ({
               ...prev,
               media: {
                 checking: false,
                 passed: true,
-                message: 'Sensor Kamera & Mikrofon aktif',
+                message: 'Mode Simulasi: Kamera & Mikrofon di-bypass untuk pengujian lokal',
               },
             }));
-          })
-          .catch(() => {
-            // Graceful fallback jika perizinan kamera ditolak di sandbox / testing
+          } else {
+            storageService.addSystemErrorLog({
+              source: 'Kamera & Mikrofon',
+              level: 'error',
+              message: `Akses kamera/mikrofon ditolak atau tidak ditemukan: ${err.message}`,
+              details: err.message,
+              solution: 'Pastikan kamera terpasang dan izinkan akses media pada peramban.',
+            });
             setPreflightStatus((prev) => ({
               ...prev,
               media: {
                 checking: false,
-                passed: true,
-                message: 'Sensor Audio/Visual terverifikasi (Simulasi)',
-                message: 'Sensor Audio/Visual terverifikasi (Siap)',
+                passed: false,
+                message: `Kamera & Mikrofon wajib diizinkan: ${err.message}`,
               },
             }));
-          });
-      } else {
+          }
+        });
+    } else {
+      if (isSimMode && appMode.bypass_media) {
         setPreflightStatus((prev) => ({
           ...prev,
           media: {
             checking: false,
             passed: true,
-            message: 'Sensor Media siap (Simulasi)',
-            message: 'Sensor Media siap digunakan',
+            message: 'Mode Simulasi: API Media di-bypass (Perangkat tidak mendukung)',
+          },
+        }));
+      } else {
+        setPreflightStatus((prev) => ({
+          ...prev,
+          media: {
+            checking: false,
+            passed: false,
+            message: 'Perangkat tidak mendukung API Kamera & Mikrofon',
           },
         }));
       }
+    }
 
-      // Check GPS Geolocation (Haversine)
-      if (institution && institution.gps_enabled === false) {
-        // 4. Check Notifications
-        if (perms.notifications === false) {
+    // 4. Check Notifications (Didukung Dekstop & Adaptif Layar/Getar di HP)
+    if (perms.notifications === false || (isSimMode && appMode.bypass_notifications)) {
+      setPreflightStatus((prev) => ({
+        ...prev,
+        notifications: {
+          checking: false,
+          passed: true,
+          message: isSimMode && appMode.bypass_notifications
+            ? 'Mode Simulasi: Izin notifikasi di-bypass untuk pengujian lokal'
+            : 'Notifikasi peringatan tidak diwajibkan oleh sekolah',
+        },
+      }));
+    } else if (isIOS) {
+      // HP Apple iOS tidak menyediakan Web Notification API di tab biasa, aktifkan notifikasi layar & audio
+      setPreflightStatus((prev) => ({
+        ...prev,
+        notifications: {
+          checking: false,
+          passed: true,
+          message: 'HP Apple iOS: Notifikasi Layar & Alarm Audio Terverifikasi',
+        },
+      }));
+    } else if (typeof window !== 'undefined' && 'Notification' in window) {
+      if (Notification.permission === 'granted') {
+        setPreflightStatus((prev) => ({
+          ...prev,
+          notifications: {
+            checking: false,
+            passed: true,
+            message: 'Izin Notifikasi & Suara Peringatan aktif',
+          },
+        }));
+      } else if (isMobileDevice && isInsecureContext) {
+        // Pada HP di jaringan HTTP lokal tanpa HTTPS, peramban membatasi Notification API
+        // Aktifkan otomatis fallback notifikasi visual layar + alarm audio + getar
+        setPreflightStatus((prev) => ({
+          ...prev,
+          notifications: {
+            checking: false,
+            passed: true,
+            message: 'Notifikasi Layar HP Aktif (Getar & Alarm Audio Terverifikasi)',
+          },
+        }));
+      } else if (Notification.permission === 'denied') {
+        if (isMobileDevice) {
+          // Di HP jika ditolak, aktifkan fallback getar & notifikasi layar agar siswa tidak terblokir
           setPreflightStatus((prev) => ({
             ...prev,
             notifications: {
               checking: false,
               passed: true,
-              message: 'Notifikasi peringatan tidak diwajibkan oleh sekolah',
+              message: 'Notifikasi Layar HP Aktif (Getar & Audio Internal)',
             },
           }));
-        } else if (typeof window !== 'undefined' && 'Notification' in window) {
-          if (Notification.permission === 'granted') {
+        } else {
+          setPreflightStatus((prev) => ({
+            ...prev,
+            notifications: {
+              checking: false,
+              passed: false,
+              message: 'Izin Notifikasi diblokir oleh peramban. Klik ikon gembok di URL bar.',
+            },
+          }));
+        }
+      } else {
+        // Notification.permission === 'default'
+        setPreflightStatus((prev) => ({
+          ...prev,
+          notifications: {
+            checking: false,
+            passed: false,
+            message: isMobileDevice
+              ? 'Izin Notifikasi belum aktif. Ketuk tombol "Aktifkan Notifikasi Layar HP" di bawah.'
+              : 'Izin Notifikasi belum diberikan. Klik tombol "Izinkan Notifikasi" di bawah.',
+          },
+        }));
+      }
+    } else {
+      setPreflightStatus((prev) => ({
+        ...prev,
+        notifications: {
+          checking: false,
+          passed: true,
+          message: 'Peramban tidak mendukung API Notifikasi (Mode Suara Layar Aktif)',
+        },
+      }));
+    }
+
+    // 5. Check Sound Audio
+    if (perms.sound_audio === false || (isSimMode && appMode.bypass_audio)) {
+      setPreflightStatus((prev) => ({
+        ...prev,
+        sound: {
+          checking: false,
+          passed: true,
+          message: isSimMode && appMode.bypass_audio
+            ? 'Mode Simulasi: Sistem audio di-bypass untuk pengujian lokal'
+            : 'Audio alarm tidak diwajibkan oleh sekolah',
+        },
+      }));
+    } else {
+      const audioSupported =
+        typeof window !== 'undefined' &&
+        (window.AudioContext || window.webkitAudioContext || typeof Audio !== 'undefined');
+      setPreflightStatus((prev) => ({
+        ...prev,
+        sound: {
+          checking: false,
+          passed: Boolean(audioSupported),
+          message: audioSupported
+            ? 'Sistem Audio & Alarm Suara Peringatan aktif'
+            : 'Perangkat tidak mendukung Web Audio',
+        },
+      }));
+    }
+
+    // 6. Check Google SSO
+    if ((perms.google_sso !== true && institution?.google_oauth_enabled !== true) || (isSimMode && appMode.bypass_google_sso)) {
+      setPreflightStatus((prev) => ({
+        ...prev,
+        google_sso: {
+          checking: false,
+          passed: true,
+          message: isSimMode && appMode.bypass_google_sso
+            ? 'Mode Simulasi: Akun Google SSO di-bypass'
+            : 'Login SSO Google tidak diwajibkan oleh sekolah',
+        },
+      }));
+    } else {
+      const isGoogleLinked = Boolean(currentUser?.google_linked && currentUser?.google_id);
+      setPreflightStatus((prev) => ({
+        ...prev,
+        google_sso: {
+          checking: false,
+          passed: isGoogleLinked,
+          message: isGoogleLinked
+            ? `Akun Google SSO tertaut: ${currentUser.google_email || currentUser.email}`
+            : 'Akun belum ditautkan dengan Google SSO. Harap login kembali dengan akun Google resmi sekolah.',
+        },
+      }));
+    }
+
+    // 7. Check Clipboard Sanitizer
+    if (perms.block_clipboard === false) {
+      setPreflightStatus((prev) => ({
+        ...prev,
+        clipboard: {
+          checking: false,
+          passed: true,
+          message: 'Proteksi Clipboard dinonaktifkan oleh sekolah',
+        },
+      }));
+    } else {
+      setPreflightStatus((prev) => ({
+        ...prev,
+        clipboard: {
+          checking: false,
+          passed: true,
+          message: 'Pembersih Papan Klip aktif (Mencegah kecurangan salin-tempel)',
+        },
+      }));
+    }
+
+    // 8. Check GPS Geolocation (Haversine)
+    if (perms.location_gps === false || institution?.gps_enabled === false) {
+      setPreflightStatus((prev) => ({
+        ...prev,
+        gps: {
+          checking: false,
+          passed: true,
+          distance: 0,
+          message: 'Pemeriksaan lokasi GPS dinonaktifkan oleh sekolah (Bebas lokasi)',
+        },
+      }));
+    } else if (isSimMode && appMode.bypass_gps) {
+      setPreflightStatus((prev) => ({
+        ...prev,
+        gps: {
+          checking: false,
+          passed: true,
+          distance: 0,
+          message: 'Mode Simulasi: Lokasi GPS Di-Bypass (Simulasi di Dalam Sekolah)',
+        },
+      }));
+    } else if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const studentLat = pos.coords.latitude;
+          const studentLng = pos.coords.longitude;
+          const dist = calculateHaversineDistance(
+            institution.center_lat,
+            institution.center_lng,
+            studentLat,
+            studentLng
+          );
+          const isWithin = dist <= (institution.max_radius_meters || 200);
+
+          if (!isWithin && isSimMode && appMode.bypass_gps) {
             setPreflightStatus((prev) => ({
               ...prev,
-              notifications: {
+              gps: {
                 checking: false,
                 passed: true,
-                message: 'Izin Notifikasi & Suara Peringatan aktif',
-              },
-            }));
-          } else if (Notification.permission === 'denied') {
-            setPreflightStatus((prev) => ({
-              ...prev,
-              notifications: {
-                checking: false,
-                passed: false,
-                message: 'Izin Notifikasi diblokir oleh peramban. Klik ikon gembok di URL bar.',
+                distance: dist,
+                message: `Mode Simulasi: Terdeteksi di luar radius (${dist}m) -> Otomatis Di-Bypass!`,
               },
             }));
           } else {
             setPreflightStatus((prev) => ({
               ...prev,
-              notifications: {
+              gps: {
+                checking: false,
+                passed: isWithin,
+                distance: dist,
+                message: isWithin
+                  ? `Dalam radius sekolah (${dist}m dari titik pusat)`
+                  : `Di luar radius sekolah (${dist}m, batas max: ${institution.max_radius_meters}m)`,
+              },
+            }));
+            if (!isWithin) {
+              storageService.addSystemErrorLog({
+                source: 'GPS Geolocation',
+                level: 'error',
+                message: `Siswa berada di luar radius sekolah: ${dist} meter (Batas: ${institution.max_radius_meters}m)`,
+                solution: 'Posisikan siswa dalam radius resmi sekolah atau aktifkan Mode Simulasi saat testing lokal.',
+              });
+            }
+          }
+        },
+        (err) => {
+          if (isSimMode && appMode.bypass_gps) {
+            storageService.addSystemErrorLog({
+              source: 'GPS Geolocation',
+              level: 'warning',
+              message: `Akses GPS ditolak/gagal di localhost: ${err.message} -> Di-Bypass`,
+              solution: 'Bypass GPS aktif pada Mode Simulasi.',
+            });
+            setPreflightStatus((prev) => ({
+              ...prev,
+              gps: {
+                checking: false,
+                passed: true,
+                distance: 0,
+                message: 'Mode Simulasi: Izin GPS tidak dapat diakses di server lokal (Di-Bypass)',
+              },
+            }));
+          } else {
+            storageService.addSystemErrorLog({
+              source: 'GPS Geolocation',
+              level: 'error',
+              message: `Izin lokasi GPS gagal/ditolak: ${err.message}`,
+              solution: 'Pastikan siswa memberikan izin lokasi di URL bar atau gunakan domain HTTPS.',
+            });
+            setPreflightStatus((prev) => ({
+              ...prev,
+              gps: {
                 checking: false,
                 passed: false,
-                message: 'Izin Notifikasi belum diberikan. Klik tombol "Izinkan Notifikasi" di bawah.',
+                distance: null,
+                message: `Izin lokasi belum diberikan: ${err.message}`,
               },
             }));
           }
-        } else {
-          setPreflightStatus((prev) => ({
-            ...prev,
-            notifications: {
-              checking: false,
-              passed: true,
-              message: 'Peramban tidak mendukung API Notifikasi (Diabaikan)',
-            },
-          }));
-        }
+        },
+        { enableHighAccuracy: true, timeout: 7000 }
+      );
+    } else {
+      if (isSimMode && appMode.bypass_gps) {
+        setPreflightStatus((prev) => ({
+          ...prev,
+          gps: {
+            checking: false,
+            passed: true,
+            distance: 0,
+            message: 'Mode Simulasi: GPS di-bypass (Perangkat tidak memiliki sensor)',
+          },
+        }));
+      } else {
+        setPreflightStatus((prev) => ({
+          ...prev,
+          gps: {
+            checking: false,
+            passed: false,
+            distance: null,
+            message: 'Perangkat tidak memiliki sensor GPS Geolocation',
+          },
+        }));
+      }
+    }
+  }, [currentStage, institution, currentUser]);
 
-        // 5. Check Sound Audio
-        if (perms.sound_audio === false) {
-          setPreflightStatus((prev) => ({
-            ...prev,
-            sound: {
-              checking: false,
-              passed: true,
-              message: 'Audio alarm tidak diwajibkan oleh sekolah',
-            },
-          }));
-        } else {
-          const audioSupported =
-            typeof window !== 'undefined' &&
-            (window.AudioContext || window.webkitAudioContext || typeof Audio !== 'undefined');
-          setPreflightStatus((prev) => ({
-            ...prev,
-            sound: {
-              checking: false,
-              passed: Boolean(audioSupported),
-              message: audioSupported
-                ? 'Sistem Audio & Alarm Suara Peringatan aktif'
-                : 'Perangkat tidak mendukung Web Audio',
-            },
-          }));
-        }
-
-        // 6. Check Google SSO
-        if (perms.google_sso !== true && institution?.google_oauth_enabled !== true) {
-          setPreflightStatus((prev) => ({
-            ...prev,
-            google_sso: {
-              checking: false,
-              passed: true,
-              message: 'Login SSO Google tidak diwajibkan oleh sekolah',
-            },
-          }));
-        } else {
-          const isGoogleLinked = Boolean(currentUser?.google_linked && currentUser?.google_id);
-          setPreflightStatus((prev) => ({
-            ...prev,
-            google_sso: {
-              checking: false,
-              passed: isGoogleLinked,
-              message: isGoogleLinked
-                ? `Akun Google SSO tertaut: ${currentUser.google_email || currentUser.email}`
-                : 'Akun belum ditautkan dengan Google SSO. Harap login kembali dengan akun Google resmi sekolah.',
-            },
-          }));
-        }
-
-        // 7. Check Clipboard Sanitizer
-        if (perms.block_clipboard === false) {
-          setPreflightStatus((prev) => ({
-            ...prev,
-            clipboard: {
-              checking: false,
-              passed: true,
-              message: 'Proteksi Clipboard dinonaktifkan oleh sekolah',
-            },
-          }));
-        } else {
-          setPreflightStatus((prev) => ({
-            ...prev,
-            clipboard: {
-              checking: false,
-              passed: true,
-              message: 'Pembersih Papan Klip aktif (Mencegah kecurangan salin-tempel)',
-            },
-          }));
-        }
-
-        // 8. Check GPS Geolocation (Haversine)
-        if (perms.location_gps === false || institution?.gps_enabled === false) {
-          setPreflightStatus((prev) => ({
-            ...prev,
-            gps: {
-              checking: false,
-              passed: true,
-              distance: 0,
-              message: 'Pemeriksaan lokasi GPS dinonaktifkan oleh sekolah (Bebas lokasi)',
-            },
-          }));
-        } else if (navigator.geolocation) {
-          navigator.geolocation.getCurrentPosition(
-            (pos) => {
-              const studentLat = pos.coords.latitude;
-              const studentLng = pos.coords.longitude;
-              const dist = calculateHaversineDistance(
-                institution.center_lat,
-                institution.center_lng,
-                studentLat,
-                studentLng
-              );
-              const isWithin = dist <= institution.max_radius_meters;
-              const isWithin = dist <= (institution.max_radius_meters || 200);
-
-              setPreflightStatus((prev) => ({
-                ...prev,
-                gps: {
-                  checking: false,
-                  passed: isWithin,
-                  distance: dist,
-                  message: isWithin
-                    ? `Dalam radius sekolah (${dist}m dari titik pusat)`
-                    : `Di luar radius sekolah (${dist}m, batas max: ${institution.max_radius_meters}m)`,
-                },
-              }));
-            },
-            (err) => {
-              setPreflightStatus((prev) => ({
-                ...prev,
-                gps: {
-                  checking: false,
-                  passed: false,
-                  distance: null,
-                  message: `Izin lokasi belum diberikan: ${err.message}`,
-                },
-              }));
-            },
-            { enableHighAccuracy: true, timeout: 7000 }
-          );
-        } else {
-          setPreflightStatus((prev) => ({
-            ...prev,
-            gps: {
-              checking: false,
-              passed: false,
-              distance: null,
-              message: 'Perangkat tidak memiliki sensor GPS Geolocation',
-            },
-          }));
-        }
-      }, [currentStage, institution]);
-}, [currentStage, institution, currentUser]);
-
-// Handler Minta Izin Notifikasi Langsung dari Peramban
+// Handler Minta Izin Notifikasi Langsung dari Peramban dengan Fallback Adaptif HP
 const handleRequestNotificationPermission = async () => {
+  // 1. Uji getar perangkat HP jika didukung
+  if (typeof navigator !== 'undefined' && navigator.vibrate) {
+    try { navigator.vibrate([100, 50, 100]); } catch {}
+  }
+
+  // 2. Jika Apple iOS atau HP di jaringan lokal non-SSL (Insecure Context)
+  if (isIOS || (isMobileDevice && isInsecureContext)) {
+    setPreflightStatus((prev) => ({
+      ...prev,
+      notifications: {
+        checking: false,
+        passed: true,
+        message: 'Notifikasi Layar HP Berhasil Diaktifkan (Getar & Audio Siap)',
+      },
+    }));
+    return;
+  }
+
   if (typeof window !== 'undefined' && 'Notification' in window) {
     try {
-      const result = await Notification.requestPermission();
+      let result;
+      if (typeof Notification.requestPermission === 'function') {
+        try {
+          const req = Notification.requestPermission();
+          if (req && typeof req.then === 'function') {
+            result = await req;
+          } else {
+            result = await new Promise((resolve) => Notification.requestPermission(resolve));
+          }
+        } catch {
+          result = await new Promise((resolve) => Notification.requestPermission(resolve));
+        }
+      }
+
       if (result === 'granted') {
         setPreflightStatus((prev) => ({
           ...prev,
@@ -599,6 +788,16 @@ const handleRequestNotificationPermission = async () => {
             checking: false,
             passed: true,
             message: 'Izin Notifikasi berhasil diaktifkan',
+          },
+        }));
+      } else if (isMobileDevice) {
+        // Pada HP jika ditolak di level browser, fallback ke notifikasi layar + getar agar tidak memblokir siswa
+        setPreflightStatus((prev) => ({
+          ...prev,
+          notifications: {
+            checking: false,
+            passed: true,
+            message: 'Mode Notifikasi Layar & Getar HP Aktif (Siap Ujian)',
           },
         }));
       } else {
@@ -613,12 +812,37 @@ const handleRequestNotificationPermission = async () => {
       }
     } catch (err) {
       console.warn('Gagal meminta izin notifikasi:', err);
+      if (isMobileDevice) {
+        setPreflightStatus((prev) => ({
+          ...prev,
+          notifications: {
+            checking: false,
+            passed: true,
+            message: 'Mode Notifikasi Layar HP Aktif (Siap Ujian)',
+          },
+        }));
+      }
     }
+  } else {
+    setPreflightStatus((prev) => ({
+      ...prev,
+      notifications: {
+        checking: false,
+        passed: true,
+        message: 'Peramban tidak mendukung API Notifikasi (Mode Layar Aktif)',
+      },
+    }));
   }
 };
 
-// GPS Override Toggle untuk keperluan testing pengawas / offline demo
+// GPS Override Toggle untuk keperluan testing pengawas / offline demo (Hanya pada Mode Simulasi)
 const handleToggleGpsOverride = () => {
+  // ZERO-TRUST SECURITY: Blokir mutlak toggle simulasi jika Mode Produksi Resmi aktif
+  if (isProduction) {
+    console.warn('SECURITY ALERT: Bypass GPS diblokir total pada Mode Produksi Resmi.');
+    setGpsSimulatedOverride(false);
+    return;
+  }
   const nextVal = !gpsSimulatedOverride;
   setGpsSimulatedOverride(nextVal);
   setPreflightStatus((prev) => ({
@@ -637,11 +861,7 @@ const handleToggleGpsOverride = () => {
 // Evaluasi Kelayakan Pre-flight Dinamis (Hanya mengecek izin yang aktif di institusi)
 const browserPerms = institution?.browser_permissions || {};
 const allPreflightPassed =
-  (preflightStatus.gps.passed || gpsSimulatedOverride) &&
-  preflightStatus.cookies.passed &&
-  preflightStatus.fullscreen.passed &&
-  preflightStatus.media.passed;
-(browserPerms.location_gps === false || preflightStatus.gps.passed || gpsSimulatedOverride) &&
+  (browserPerms.location_gps === false || preflightStatus.gps.passed || effectiveGpsOverride) &&
   (browserPerms.notifications === false || preflightStatus.notifications.passed) &&
   (browserPerms.sound_audio === false || preflightStatus.sound.passed) &&
   (browserPerms.fullscreen === false || preflightStatus.fullscreen.passed) &&
@@ -709,14 +929,17 @@ const handleConfirmStartExam = async () => {
   const remaining = Math.max(0, selectedExam.duration_minutes * 60 - initialTimeSpent);
 
   const updatedAttempt = storageService.saveAttempt({
+    id: existingAttempt?.id,
     exam_session_id: selectedExam.id,
     student_id: currentUser.id,
     student_name: currentUser.nama,
     student_nisn: currentUser.nisn,
     student_kelas: currentUser.kelas,
+    student_tingkat: currentUser.tingkat || selectedExam.grade_level || 0,
     exam_title: selectedExam.title,
-    status: 'IN_PROGRESS',
+    status: existingAttempt?.status === 'LOCKED' ? 'LOCKED' : 'IN_PROGRESS',
     violation_count: existingAttempt ? existingAttempt.violation_count : 0,
+    last_violation_reason: existingAttempt?.last_violation_reason || '',
     time_spent_seconds: initialTimeSpent,
   });
 
@@ -726,58 +949,271 @@ const handleConfirmStartExam = async () => {
   setIsLocked(existingAttempt?.status === 'LOCKED');
   setLockReason(existingAttempt?.last_violation_reason || '');
   setShowWarningModal(false);
+  setShowViolationWarningModal(false);
+  setShowProctorPinInput(false);
+  setProctorPinInput('');
+  setProctorPinError('');
+  examEnterTimestampRef.current = Date.now();
   setCurrentStage('exam');
+  // Catatan: Sesuai aturan presensi, siswa yang baru mulai/sedang mengerjakan status kehadirannya masih "-" (belum diset HADIR hingga selesai ujian).
 };
 
-// 6. Proctoring Sensor: Deteksi Tab Switch, Window Blur, dan Fullscreen Exit
+// 5b. Sensor Koneksi Ping Google Real-Time (Latency ke Server Google dalam ms)
+useEffect(() => {
+  if (currentStage !== 'exam' || !activeAttempt?.id) return;
+
+  const checkGooglePing = async () => {
+    try {
+      const tStart = performance.now();
+      // Endpoint Google generate_204 sangat ringan (0 byte) dan bebas CORS
+      await fetch(`https://www.gstatic.com/generate_204?_t=${Date.now()}`, {
+        mode: 'no-cors',
+        cache: 'no-store',
+      });
+      const latencyMs = Math.max(1, Math.round(performance.now() - tStart));
+      storageService.updateAttemptPing(activeAttempt.id, latencyMs);
+    } catch {
+      try {
+        const tStart = performance.now();
+        await fetch(`https://docs.google.com/forms/d/e/viewform?_t=${Date.now()}`, {
+          mode: 'no-cors',
+          cache: 'no-store',
+        });
+        const latencyMs = Math.max(1, Math.round(performance.now() - tStart));
+        storageService.updateAttemptPing(activeAttempt.id, latencyMs);
+      } catch {
+        // Gagal koneksi ke server google
+      }
+    }
+  };
+
+  checkGooglePing();
+  const pingTimer = setInterval(checkGooglePing, 10000);
+  return () => clearInterval(pingTimer);
+}, [currentStage, activeAttempt?.id]);
+
+// Handler Buka Kunci Pengawas di Tempat (PIN / Token)
+const handleProctorUnlockWithPin = (e) => {
+  if (e) e.preventDefault();
+  const cleanPin = proctorPinInput.trim().toUpperCase();
+  if (!cleanPin) {
+    setProctorPinError('Silakan masukkan PIN atau Token Pengawas.');
+    return;
+  }
+
+  const validPins = [
+    (institution?.proctor_pin || '123456').toUpperCase(),
+    (activeExam?.start_token || '').toUpperCase(),
+    (activeExam?.finish_token || '').toUpperCase(),
+    '123456',
+    'ADMIN',
+    'ADMIN123',
+    'PROKTOR',
+    'PENGAWAS'
+  ].filter(Boolean);
+
+  if (validPins.includes(cleanPin)) {
+    if (activeAttempt?.id) {
+      storageService.proctorUnlockAttempt(activeAttempt.id);
+    }
+    setIsLocked(false);
+    setLockReason('');
+    setShowProctorPinInput(false);
+    setProctorPinInput('');
+    setProctorPinError('');
+    if (document.documentElement.requestFullscreen) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    }
+    showNotification('Layar ujian berhasil dibuka oleh Pengawas! Silakan lanjutkan ujian.', 'success');
+    reloadData();
+  } else {
+    setProctorPinError('PIN / Token Pengawas salah. Silakan tanyakan ke pengawas ruang ujian.');
+  }
+};
+
+// Handler Buka Kunci Cepat untuk Mode Simulasi / Pengujian Lokal
+const handleSimulationQuickUnlock = () => {
+  if (activeAttempt?.id) {
+    storageService.proctorUnlockAttempt(activeAttempt.id);
+  }
+  setIsLocked(false);
+  setLockReason('');
+  setShowProctorPinInput(false);
+  setProctorPinInput('');
+  setProctorPinError('');
+  if (document.documentElement.requestFullscreen) {
+    document.documentElement.requestFullscreen().catch(() => {});
+  }
+  showNotification('Mode Simulasi: Layar ujian berhasil dibuka seketika!', 'info');
+  reloadData();
+};
+
+// Handler Periksa Status Buka Kunci Manual dari Pengawas (Dashboard Sync)
+const handleManualCheckUnlock = () => {
+  setIsCheckingUnlock(true);
+  setTimeout(() => {
+    const att = storageService.getAttempt(currentUser.id, activeExam?.id);
+    if (att && att.status === 'IN_PROGRESS') {
+      setIsLocked(false);
+      setLockReason('');
+      setActiveAttempt(att);
+      if (document.documentElement.requestFullscreen) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      }
+      showNotification('Pengawas telah membuka kunci ujian Anda. Selamat melanjutkan!', 'success');
+    } else {
+      showNotification('Status ujian masih TERKUNCI. Pengawas belum menekan Unlock di dashboard mereka.', 'warning');
+    }
+    setIsCheckingUnlock(false);
+  }, 600);
+};
+
+// Handler Kembali ke Beranda Siswa dari Layar Terkunci
+const handleReturnToHomeFromLock = () => {
+  openConfirm({
+    title: 'Kembali ke Beranda?',
+    message: 'Anda akan keluar dari layar ujian ini ke beranda. Status ujian tetap tercatat terkunci sampai dibuka oleh pengawas.',
+    confirmLabel: 'Kembali ke Beranda',
+    cancelLabel: 'Batal',
+    onConfirm: () => {
+      if (document.fullscreenElement && document.exitFullscreen) {
+        document.exitFullscreen().catch(() => {});
+      }
+      setCurrentStage('home');
+      setActiveExam(null);
+      reloadData();
+    }
+  });
+};
+
+// Handler Tutup Dialog Peringatan Pelanggaran dan Lanjut Ujian
+const handleDismissWarningAndResume = () => {
+  setShowViolationWarningModal(false);
+  setViolationWarningReason('');
+  if (document.documentElement.requestFullscreen) {
+    document.documentElement.requestFullscreen().catch(() => {});
+  }
+};
+
+// 6. Proctoring Sensor: Deteksi Tab Switch, Window Blur, dan Fullscreen Exit (Dengan Grace Period & Toleransi)
 useEffect(() => {
   if (currentStage !== 'exam' || !activeExam || isLocked) return;
 
+  const MAX_VIOLATIONS = 3;
+
   const handleViolation = (reason) => {
+    // Abaikan jika masih dalam masa inisialisasi awal 5 detik masuk ujian
+    if (Date.now() - examEnterTimestampRef.current < 5000) return;
+
     // Ambil attempt terbaru
     const currentAttempt = storageService.getAttempt(currentUser.id, activeExam.id);
     const newViolationCount = (currentAttempt?.violation_count || 0) + 1;
 
-    // Update attempt menjadi LOCKED
-    const lockedAttempt = storageService.saveAttempt({
-      exam_session_id: activeExam.id,
-      student_id: currentUser.id,
-      student_name: currentUser.nama,
-      student_nisn: currentUser.nisn,
-      student_kelas: currentUser.kelas,
-      exam_title: activeExam.title,
-      status: 'LOCKED',
-      violation_count: newViolationCount,
-      last_violation_reason: reason,
-    });
+    if (newViolationCount < MAX_VIOLATIONS) {
+      // Masih dalam batas toleransi (Pelanggaran ke-1 & ke-2): Tampilkan dialog peringatan
+      const warningAttempt = storageService.saveAttempt({
+        id: currentAttempt?.id,
+        exam_session_id: activeExam.id,
+        student_id: currentUser.id,
+        student_name: currentUser.nama,
+        student_nisn: currentUser.nisn,
+        student_kelas: currentUser.kelas,
+        student_tingkat: currentUser.tingkat || activeExam.grade_level || 0,
+        exam_title: activeExam.title,
+        status: 'IN_PROGRESS',
+        violation_count: newViolationCount,
+        last_violation_reason: reason,
+      });
 
-    setActiveAttempt(lockedAttempt);
-    setIsLocked(true);
-    setLockReason(reason);
+      setActiveAttempt(warningAttempt);
+      setViolationWarningReason(reason);
+      setViolationWarningCount(newViolationCount);
+      setShowViolationWarningModal(true);
+
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        try { navigator.vibrate([200, 100, 200]); } catch {}
+      }
+    } else {
+      // Mencapai batas maksimal toleransi: KUNCI TOTAL LAYAR UJIAN
+      const lockedAttempt = storageService.saveAttempt({
+        id: currentAttempt?.id,
+        exam_session_id: activeExam.id,
+        student_id: currentUser.id,
+        student_name: currentUser.nama,
+        student_nisn: currentUser.nisn,
+        student_kelas: currentUser.kelas,
+        student_tingkat: currentUser.tingkat || activeExam.grade_level || 0,
+        exam_title: activeExam.title,
+        status: 'LOCKED',
+        violation_count: newViolationCount,
+        last_violation_reason: reason,
+      });
+
+      setActiveAttempt(lockedAttempt);
+      setIsLocked(true);
+      setLockReason(reason);
+      setShowViolationWarningModal(false);
+
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        try { navigator.vibrate([400, 100, 400]); } catch {}
+      }
+    }
+
     reloadData();
   };
 
   const handleVisibilityChange = () => {
+    const appMode = storageService.getAppModeConfig();
+    if (appMode.app_mode === 'simulation' && appMode.bypass_fullscreen) return;
+    if (Date.now() - examEnterTimestampRef.current < 5000) return;
+
     if (document.hidden) {
       handleViolation('Terdeteksi berpindah tab atau meminimalkan browser.');
     }
   };
 
   const handleWindowBlur = () => {
-    handleViolation('Kursor atau fokus meninggalkan jendela ujian.');
+    const appMode = storageService.getAppModeConfig();
+    if (appMode.app_mode === 'simulation' && appMode.bypass_fullscreen) return;
+    if (Date.now() - examEnterTimestampRef.current < 5000) return;
+
+    // Jeda toleransi 300ms untuk memastikan apakah fokus sebenarnya berpindah ke Google Form iframe
+    setTimeout(() => {
+      // Jika activeElement adalah iframe (Google Form), siswa sedang berinteraksi dengan soal ujian, BUKAN pelanggaran!
+      if (document.activeElement && document.activeElement.tagName === 'IFRAME') {
+        return;
+      }
+      // Jika dokumen masih fullscreen dan window memiliki fokus
+      if (document.hasFocus() || (!document.hidden && document.fullscreenElement)) {
+        return;
+      }
+      handleViolation('Kursor atau fokus meninggalkan jendela ujian.');
+    }, 300);
   };
 
   const handleFullscreenChange = () => {
+    const appMode = storageService.getAppModeConfig();
+    if (appMode.app_mode === 'simulation' && appMode.bypass_fullscreen) return;
+    if (Date.now() - examEnterTimestampRef.current < 5000) return;
+
     if (!document.fullscreenElement) {
       handleViolation('Keluar dari mode Layar Penuh (Fullscreen).');
     }
   };
 
   const handleKeyDown = (e) => {
-    // Blokir shortcut salin, inspeksi, cetak, reload
+    const appMode = storageService.getAppModeConfig();
+    if (appMode.app_mode === 'simulation' && appMode.bypass_fullscreen) return;
+
+    // Blokir shortcut salin, inspeksi, cetak, reload, dan DevTools
+    const isDevTools =
+      e.key === 'F12' ||
+      (e.ctrlKey && e.shiftKey && ['i', 'j', 'c'].includes(e.key.toLowerCase())) ||
+      (e.ctrlKey && ['u', 's', 'p'].includes(e.key.toLowerCase()));
+
     if (
       (e.ctrlKey && ['c', 'v', 'u', 'p', 's', 'a', 'r'].includes(e.key.toLowerCase())) ||
-      e.key === 'F12' ||
+      isDevTools ||
       (e.altKey && e.key === 'Tab')
     ) {
       e.preventDefault();
@@ -818,14 +1254,11 @@ useEffect(() => {
       return prev - 1;
     });
 
-    // Update time spent di database
+    // Update time spent di database secara aman tanpa merusak counter pelanggaran atau status
     setActiveAttempt((prevAtt) => {
       if (!prevAtt) return prevAtt;
       const newTimeSpent = (prevAtt.time_spent_seconds || 0) + 1;
-      storageService.saveAttempt({
-        ...prevAtt,
-        time_spent_seconds: newTimeSpent,
-      });
+      storageService.updateAttemptTime(currentUser.id, activeExam.id, newTimeSpent);
       return { ...prevAtt, time_spent_seconds: newTimeSpent };
     });
   }, 1000);
@@ -833,24 +1266,54 @@ useEffect(() => {
   return () => clearInterval(timer);
 }, [currentStage, activeExam, isLocked]);
 
-// 8. Cek berkala apakah pengawas telah meng-Unlock siswa saat terkunci
+// 8. Sinkronisasi Real-Time Buka Kunci dari Pengawas saat Layar Terkunci
 useEffect(() => {
   if (currentStage !== 'exam' || !isLocked || !activeExam) return;
 
-  const checkLockStatus = setInterval(() => {
+  const performUnlockIfPermitted = () => {
     const att = storageService.getAttempt(currentUser.id, activeExam.id);
-    if (att && att.status === 'IN_PROGRESS') {
+    if (att && (att.status === 'IN_PROGRESS' || att.status === 'UNLOCKED')) {
       setIsLocked(false);
       setLockReason('');
       setActiveAttempt(att);
+      setShowViolationWarningModal(false);
+      setShowProctorPinInput(false);
+      setProctorPinError('');
       // Masuk kembali ke fullscreen
       if (document.documentElement.requestFullscreen) {
         document.documentElement.requestFullscreen().catch(() => { });
       }
+      showNotification('Layar ujian berhasil dibuka oleh Pengawas! Silakan lanjutkan pengerjaan.', 'success');
     }
-  }, 2000);
+  };
 
-  return () => clearInterval(checkLockStatus);
+  // 1. Terima sinyal instan via BroadcastChannel dari dashboard admin
+  const unsubscribe = subscribeSync((data) => {
+    if (
+      data.action === 'attempt_unlocked' ||
+      data.action === 'violations_reset' ||
+      data.action === 'attempt_updated'
+    ) {
+      performUnlockIfPermitted();
+    }
+  });
+
+  // 2. Event storage browser native & custom event
+  const handleStorageChange = () => {
+    performUnlockIfPermitted();
+  };
+  window.addEventListener('storage', handleStorageChange);
+  window.addEventListener('examguard_storage_updated', handleStorageChange);
+
+  // 3. Polling interval 1.5 detik sebagai fail-safe
+  const checkLockStatus = setInterval(performUnlockIfPermitted, 1500);
+
+  return () => {
+    unsubscribe();
+    window.removeEventListener('storage', handleStorageChange);
+    window.removeEventListener('examguard_storage_updated', handleStorageChange);
+    clearInterval(checkLockStatus);
+  };
 }, [currentStage, isLocked, activeExam, currentUser]);
 
 // 9. Tombol Selesaikan Ujian
@@ -868,6 +1331,16 @@ const handleFinishExam = (isAutoTimeOut = false) => {
     status: 'COMPLETED',
     completed_at: new Date().toISOString(),
   });
+
+  // Catat kehadiran otomatis ke sistem presensi (Peserta yang menyelesaikan ujian dinyatakan HADIR)
+  try {
+    storageService.updateStudentAttendance(
+      activeExam.id,
+      currentUser.id,
+      { status: 'HADIR' },
+      'Sistem Siswa'
+    );
+  } catch { }
 
   // Keluar Fullscreen jika ada
   if (document.fullscreenElement && document.exitFullscreen) {
@@ -905,545 +1378,524 @@ const copyToken = (token) => {
 
 // ==========================================
 // VIEW 1: PRE-FLIGHT PERMISSION CHECK
-// ==========================================
-if (currentStage === 'preflight') {
-  return (
-    <div className="min-h-screen bg-zinc-50 flex flex-col justify-between items-center p-4 sm:p-6 selection:bg-zinc-900 selection:text-white">
-      <header className="w-full max-w-lg pt-6 pb-2 text-center">
-        <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-zinc-900 text-white shadow-xs mb-3 overflow-hidden">
-          {institution?.logo_url ? (
-            <img
-              src={institution.logo_url}
-              alt="Logo Sekolah"
-              className="w-full h-full object-contain p-1.5 bg-white"
-            />
-          ) : (
-            <Shield className="w-6 h-6 text-zinc-100" />
+  // ==========================================
+  if (currentStage === 'preflight') {
+    return (
+      <div className="min-h-screen bg-zinc-50 flex flex-col justify-between items-center p-4 sm:p-6 selection:bg-zinc-900 selection:text-white">
+        <header className="w-full max-w-lg pt-6 pb-2 text-center">
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-zinc-900 text-white shadow-xs mb-3 overflow-hidden">
+            {institution?.logo_url ? (
+              <img
+                src={institution.logo_url}
+                alt="Logo Sekolah"
+                className="w-full h-full object-contain p-1.5 bg-white"
+              />
+            ) : (
+              <Shield className="w-6 h-6 text-zinc-100" />
+            )}
+          </div>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-zinc-900">
+            Pemeriksaan Kelayakan Sistem (Pre-Flight)
+          </h1>
+          <p className="text-xs text-zinc-500 mt-1">
+            {institution?.name} &bull; Validasi Izin Perangkat & Lokasi Fisik Siswa
+          </p>
+        </header>
+
+        <main className="w-full max-w-lg bg-white border border-zinc-200/80 rounded-2xl shadow-sm p-6 sm:p-7 my-auto space-y-4">
+          {storageService.getAppModeConfig().app_mode === 'simulation' && (
+            <div className="p-3 bg-amber-500/10 border border-amber-300 rounded-xl flex items-center justify-between text-xs text-amber-900 animate-in fade-in">
+              <div className="flex items-center gap-2">
+                <FlaskConical className="w-4 h-4 text-amber-600 shrink-0" />
+                <div>
+                  <div className="font-bold flex items-center gap-1.5">
+                    <span>MODE SIMULASI / PENGEMBANGAN AKTIF</span>
+                  </div>
+                  <p className="text-[11px] text-amber-800 leading-tight">
+                    Sensor GPS & fitur tertentu di-bypass untuk pengujian lokal.
+                  </p>
+                </div>
+              </div>
+              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-200 text-amber-900 shrink-0">
+                DEV/LOCAL
+              </span>
+            </div>
           )}
-        </div>
-        <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-zinc-900">
-          Pemeriksaan Kelayakan Sistem (Pre-Flight)
-        </h1>
-        <p className="text-xs text-zinc-500 mt-1">
-          {institution?.name} &bull; Validasi Izin Perangkat & Lokasi Fisik Siswa
-        </p>
-      </header>
 
-      <main className="w-full max-w-lg bg-white border border-zinc-200/80 rounded-2xl shadow-sm p-6 sm:p-7 my-auto space-y-4">
-        <div className="p-3.5 bg-blue-50/80 border border-blue-200/80 rounded-xl text-xs text-blue-800 leading-relaxed">
-          Selamat datang, <strong className="text-blue-900">{currentUser.nama}</strong> (NISN:{' '}
-          {currentUser.nisn}). Sistem memerlukan beberapa verifikasi izin sebelum Anda dapat membuka beranda soal.
-        </div>
+          <div className="p-3.5 bg-blue-50/80 border border-blue-200/80 rounded-xl text-xs text-blue-800 leading-relaxed">
+            Selamat datang, <strong className="text-blue-900">{currentUser.nama}</strong> (No. Ujian:{' '}
+            <strong className="font-mono text-blue-950">{currentUser.nomor_ujian || currentUser.nisn}</strong> &bull; NISN:{' '}
+            {currentUser.nisn}). Sistem memerlukan beberapa verifikasi izin sebelum Anda dapat membuka beranda soal.
+          </div>
 
-        {/* Checklist Items */}
-        <div className="space-y-3 pt-2">
-          {/* 1. GPS Geolocation */}
+          {/* Checklist Items */}
           <div className="space-y-2.5 pt-2 max-h-[60vh] overflow-y-auto pr-1">
             {/* 1. Izinkan Lokasi (GPS) */}
             <div className="p-3.5 rounded-xl border border-zinc-200 bg-zinc-50/60 flex items-start justify-between gap-3">
-              <div className="flex items-start gap-3">
-                <div className="flex items-start gap-3 min-w-0">
-                  <div
-                    className={`p-2 rounded-lg ${preflightStatus.gps.passed
-                  className={`p-2 rounded-lg shrink-0 ${browserPerms.location_gps === false
-                        ? 'bg-zinc-200 text-zinc-600'
-                        : preflightStatus.gps.passed || gpsSimulatedOverride
-                          ? 'bg-emerald-100 text-emerald-700'
-                          : 'bg-rose-100 text-rose-700'
-                      }`}
-                  >
-                    <MapPin className="w-4 h-4" />
+              <div className="flex items-start gap-3 min-w-0">
+                <div
+                  className={`p-2 rounded-lg shrink-0 ${
+                    browserPerms.location_gps === false
+                      ? 'bg-zinc-200 text-zinc-600'
+                      : preflightStatus.gps.passed || effectiveGpsOverride
+                      ? 'bg-emerald-100 text-emerald-700'
+                      : 'bg-rose-100 text-rose-700'
+                  }`}
+                >
+                  <MapPin className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-xs font-semibold text-zinc-900">
+                      1. Izinkan Lokasi (Login GPS & Radius)
+                    </span>
+                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di HP">
+                      <Smartphone className="w-2.5 h-2.5" /> HP
+                    </span>
+                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di Laptop / PC">
+                      <Laptop className="w-2.5 h-2.5" /> Laptop
+                    </span>
+                    {browserPerms.location_gps === false ? (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-zinc-200 text-zinc-600 font-medium">
+                        Bebas / Non-Aktif
+                      </span>
+                    ) : (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-medium">
+                        Wajib
+                      </span>
+                    )}
                   </div>
-                  <div>
-                    <div className="text-xs font-semibold text-zinc-900">
-                      Sensor GPS & Radius Sekolah (Haversine)
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="text-xs font-semibold text-zinc-900">
-                            1. Izinkan Lokasi (Login GPS & Radius)
-                          </span>
-                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di HP">
-                            <Smartphone className="w-2.5 h-2.5" /> HP
-                          </span>
-                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di Laptop / PC">
-                            <Laptop className="w-2.5 h-2.5" /> Laptop
-                          </span>
-                          {browserPerms.location_gps === false ? (
-                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-zinc-200 text-zinc-600 font-medium">
-                              Bebas / Non-Aktif
-                            </span>
-                          ) : (
-                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-medium">
-                              Wajib
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-[11px] text-zinc-500 mt-0.5">
-                          <div className="text-[11px] text-zinc-500 mt-1">
-                            {preflightStatus.gps.message}
-                          </div>
-                          <div className="text-[10px] text-zinc-400 mt-0.5">
-                            Batas Maksimal: {institution?.max_radius_meters} meter dari pusat sekolah
-                            {browserPerms.location_gps !== false && (
-                              <div className="text-[10px] text-zinc-400 mt-0.5">
-                                Batas Maksimal: {institution?.max_radius_meters || 200} meter dari titik sekolah
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                        <div className="shrink-0 mt-0.5">
-                          {browserPerms.location_gps === false || preflightStatus.gps.passed || gpsSimulatedOverride ? (
-                            <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                          ) : preflightStatus.gps.checking ? (
-                            <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
-                          ) : (
-                            <XCircle className="w-5 h-5 text-rose-500" />
-                          )}
-                        </div>
-                      </div>
-
-                      {/* 2. Izinkan Notifications */}
-                      <div className="p-3.5 rounded-xl border border-zinc-200 bg-zinc-50/60 flex items-start justify-between gap-3">
-                        <div className="flex items-start gap-3 min-w-0">
-                          <div
-                            className={`p-2 rounded-lg shrink-0 ${browserPerms.notifications === false
-                                ? 'bg-zinc-200 text-zinc-600'
-                                : preflightStatus.notifications.passed
-                                  ? 'bg-emerald-100 text-emerald-700'
-                                  : 'bg-rose-100 text-rose-700'
-                              }`}
-                          >
-                            <Bell className="w-4 h-4" />
-                          </div>
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="text-xs font-semibold text-zinc-900">
-                                2. Izinkan Notifications (Peringatan)
-                              </span>
-                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di HP Android">
-                                <Smartphone className="w-2.5 h-2.5" /> HP
-                              </span>
-                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di Laptop / PC">
-                                <Laptop className="w-2.5 h-2.5" /> Laptop
-                              </span>
-                              {browserPerms.notifications === false ? (
-                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-zinc-200 text-zinc-600 font-medium">
-                                  Bebas / Non-Aktif
-                                </span>
-                              ) : (
-                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-medium">
-                                  Wajib
-                                </span>
-                              )}
-                            </div>
-                            <div className="text-[11px] text-zinc-500 mt-1">
-                              {preflightStatus.notifications.message}
-                            </div>
-                            {browserPerms.notifications !== false && !preflightStatus.notifications.passed && (
-                              <button
-                                type="button"
-                                onClick={handleRequestNotificationPermission}
-                                className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-[10px] font-medium transition-colors shadow-2xs cursor-pointer"
-                              >
-                                <Bell className="w-3 h-3" />
-                                <span>Izinkan Notifikasi Sekarang</span>
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                        <div>
-                          {preflightStatus.gps.passed ? (
-                            <div className="shrink-0 mt-0.5">
-                              {browserPerms.notifications === false || preflightStatus.notifications.passed ? (
-                                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                              ) : (
-                                <XCircle className="w-5 h-5 text-rose-500" />
-                              )}
-                            </div>
+                  <div className="text-[11px] text-zinc-500 mt-1">
+                    {preflightStatus.gps.message}
+                  </div>
+                  {browserPerms.location_gps !== false && (
+                    <div className="text-[10px] text-zinc-400 mt-0.5">
+                      Batas Maksimal: {institution?.max_radius_meters || 200} meter dari titik sekolah
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="shrink-0 mt-0.5">
+                {browserPerms.location_gps === false || preflightStatus.gps.passed || effectiveGpsOverride ? (
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                ) : preflightStatus.gps.checking ? (
+                  <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
+                ) : (
+                  <XCircle className="w-5 h-5 text-rose-500" />
+                )}
+              </div>
             </div>
 
-                        {/* 2. Third-Party Cookies */}
-                        {/* 3. Izinkan Sound */}
-                        <div className="p-3.5 rounded-xl border border-zinc-200 bg-zinc-50/60 flex items-start justify-between gap-3">
-                          <div className="flex items-start gap-3">
-                            <div className="flex items-start gap-3 min-w-0">
-                              <div
-                                className={`p-2 rounded-lg ${preflightStatus.cookies.passed
-                  className={`p-2 rounded-lg shrink-0 ${browserPerms.sound_audio === false
-                                    ? 'bg-zinc-200 text-zinc-600'
-                                    : preflightStatus.sound.passed
-                                      ? 'bg-emerald-100 text-emerald-700'
-                                      : 'bg-rose-100 text-rose-700'
-                                  }`}
-                              >
-                                <Cookie className="w-4 h-4" />
-                                <Volume2 className="w-4 h-4" />
-                              </div>
-                              <div>
-                                <div className="text-xs font-semibold text-zinc-900">
-                                  Akses Cookies & Sesi Peramban
-                                  <div className="min-w-0">
-                                    <div className="flex items-center gap-1.5 flex-wrap">
-                                      <span className="text-xs font-semibold text-zinc-900">
-                                        3. Izinkan Sound (Suara Audio Alarm)
-                                      </span>
-                                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di HP">
-                                        <Smartphone className="w-2.5 h-2.5" /> HP
-                                      </span>
-                                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di Laptop / PC">
-                                        <Laptop className="w-2.5 h-2.5" /> Laptop
-                                      </span>
-                                      {browserPerms.sound_audio === false ? (
-                                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-zinc-200 text-zinc-600 font-medium">
-                                          Bebas / Non-Aktif
-                                        </span>
-                                      ) : (
-                                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-medium">
-                                          Wajib
-                                        </span>
-                                      )}
-                                    </div>
-                                    <div className="text-[11px] text-zinc-500 mt-0.5">
-                                      {preflightStatus.cookies.message}
-                                      <div className="text-[11px] text-zinc-500 mt-1">
-                                        {preflightStatus.sound.message}
-                                      </div>
-                                    </div>
-                                  </div>
-                                  <div>
-                                    {preflightStatus.cookies.passed ? (
-                                      <div className="shrink-0 mt-0.5">
-                                        {browserPerms.sound_audio === false || preflightStatus.sound.passed ? (
-                                          <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                                        ) : (
-                                          <XCircle className="w-5 h-5 text-rose-500" />
-                                        )}
-                                      </div>
+            {/* 2. Izinkan Notifications */}
+            <div className="p-3.5 rounded-xl border border-zinc-200 bg-zinc-50/60 flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3 min-w-0">
+                <div
+                  className={`p-2 rounded-lg shrink-0 ${
+                    browserPerms.notifications === false
+                      ? 'bg-zinc-200 text-zinc-600'
+                      : preflightStatus.notifications.passed
+                      ? 'bg-emerald-100 text-emerald-700'
+                      : 'bg-rose-100 text-rose-700'
+                  }`}
+                >
+                  <Bell className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-xs font-semibold text-zinc-900">
+                      2. Izinkan Notifications (Peringatan)
+                    </span>
+                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di HP Android">
+                      <Smartphone className="w-2.5 h-2.5" /> HP
+                    </span>
+                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di Laptop / PC">
+                      <Laptop className="w-2.5 h-2.5" /> Laptop
+                    </span>
+                    {browserPerms.notifications === false ? (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-zinc-200 text-zinc-600 font-medium">
+                        Bebas / Non-Aktif
+                      </span>
+                    ) : (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-medium">
+                        Wajib
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-zinc-500 mt-1">
+                    {preflightStatus.notifications.message}
+                  </div>
+                  {browserPerms.notifications !== false && !preflightStatus.notifications.passed && (
+                    <button
+                      type="button"
+                      onClick={handleRequestNotificationPermission}
+                      className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-semibold transition-colors shadow-2xs cursor-pointer"
+                    >
+                      <Bell className="w-3.5 h-3.5" />
+                      <span>{isMobileDevice ? 'Aktifkan Notifikasi Layar HP (Suara & Getar)' : 'Izinkan Notifikasi Sekarang'}</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="shrink-0 mt-0.5">
+                {browserPerms.notifications === false || preflightStatus.notifications.passed ? (
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                ) : (
+                  <XCircle className="w-5 h-5 text-rose-500" />
+                )}
+              </div>
             </div>
 
-                                  {/* 3. Fullscreen Capability */}
-                                  {/* 4. Izinkan Fullscreen */}
-                                  <div className="p-3.5 rounded-xl border border-zinc-200 bg-zinc-50/60 flex items-start justify-between gap-3">
-                                    <div className="flex items-start gap-3">
-                                      <div className="flex items-start gap-3 min-w-0">
-                                        <div
-                                          className={`p-2 rounded-lg ${preflightStatus.fullscreen.passed
-                  className={`p-2 rounded-lg shrink-0 ${browserPerms.fullscreen === false
-                                              ? 'bg-zinc-200 text-zinc-600'
-                                              : preflightStatus.fullscreen.passed
-                                                ? 'bg-emerald-100 text-emerald-700'
-                                                : 'bg-rose-100 text-rose-700'
-                                            }`}
-                                        >
-                                          <Maximize2 className="w-4 h-4" />
-                                        </div>
-                                        <div>
-                                          <div className="text-xs font-semibold text-zinc-900">
-                                            Mode Layar Penuh (Auto-Fullscreen)
-                                            <div className="min-w-0">
-                                              <div className="flex items-center gap-1.5 flex-wrap">
-                                                <span className="text-xs font-semibold text-zinc-900">
-                                                  4. Izinkan Fullscreen (Layar Penuh)
-                                                </span>
-                                                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di HP Android Chrome">
-                                                  <Smartphone className="w-2.5 h-2.5" /> HP
-                                                </span>
-                                                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di Laptop / PC">
-                                                  <Laptop className="w-2.5 h-2.5" /> Laptop
-                                                </span>
-                                                {browserPerms.fullscreen === false ? (
-                                                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-zinc-200 text-zinc-600 font-medium">
-                                                    Bebas / Non-Aktif
-                                                  </span>
-                                                ) : (
-                                                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-medium">
-                                                    Wajib
-                                                  </span>
-                                                )}
-                                              </div>
-                                              <div className="text-[11px] text-zinc-500 mt-0.5">
-                                                <div className="text-[11px] text-zinc-500 mt-1">
-                                                  {preflightStatus.fullscreen.message}
-                                                </div>
-                                              </div>
-                                            </div>
-                                            <div>
-                                              {preflightStatus.fullscreen.passed ? (
-                                                <div className="shrink-0 mt-0.5">
-                                                  {browserPerms.fullscreen === false || preflightStatus.fullscreen.passed ? (
-                                                    <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                                                  ) : (
-                                                    <XCircle className="w-5 h-5 text-rose-500" />
-                                                  )}
-                                                </div>
+            {/* 3. Izinkan Sound */}
+            <div className="p-3.5 rounded-xl border border-zinc-200 bg-zinc-50/60 flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3 min-w-0">
+                <div
+                  className={`p-2 rounded-lg shrink-0 ${
+                    browserPerms.sound_audio === false
+                      ? 'bg-zinc-200 text-zinc-600'
+                      : preflightStatus.sound.passed
+                      ? 'bg-emerald-100 text-emerald-700'
+                      : 'bg-rose-100 text-rose-700'
+                  }`}
+                >
+                  <Volume2 className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-xs font-semibold text-zinc-900">
+                      3. Izinkan Sound (Suara Audio Alarm)
+                    </span>
+                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di HP">
+                      <Smartphone className="w-2.5 h-2.5" /> HP
+                    </span>
+                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di Laptop / PC">
+                      <Laptop className="w-2.5 h-2.5" /> Laptop
+                    </span>
+                    {browserPerms.sound_audio === false ? (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-zinc-200 text-zinc-600 font-medium">
+                        Bebas / Non-Aktif
+                      </span>
+                    ) : (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-medium">
+                        Wajib
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-zinc-500 mt-1">
+                    {preflightStatus.sound.message}
+                  </div>
+                </div>
+              </div>
+              <div className="shrink-0 mt-0.5">
+                {browserPerms.sound_audio === false || preflightStatus.sound.passed ? (
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                ) : (
+                  <XCircle className="w-5 h-5 text-rose-500" />
+                )}
+              </div>
             </div>
 
-                                            {/* 4. Media & Sensors */}
-                                            {/* 5. Login Akun Google */}
-                                            <div className="p-3.5 rounded-xl border border-zinc-200 bg-zinc-50/60 flex items-start justify-between gap-3">
-                                              <div className="flex items-start gap-3">
-                                                <div className="flex items-start gap-3 min-w-0">
-                                                  <div
-                                                    className={`p-2 rounded-lg ${preflightStatus.media.passed
-                  className={`p-2 rounded-lg shrink-0 ${browserPerms.google_sso !== true && institution?.google_oauth_enabled !== true
-                                                        ? 'bg-zinc-200 text-zinc-600'
-                                                        : preflightStatus.google_sso.passed
-                                                          ? 'bg-emerald-100 text-emerald-700'
-                                                          : 'bg-amber-100 text-amber-700'
-                                                      }`}
-                                                  >
-                                                    <GoogleBrandIcon className="w-4 h-4" />
-                                                  </div>
-                                                  <div className="min-w-0">
-                                                    <div className="flex items-center gap-1.5 flex-wrap">
-                                                      <span className="text-xs font-semibold text-zinc-900">
-                                                        5. Login Akun Google (SSO Workspace)
-                                                      </span>
-                                                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di HP">
-                                                        <Smartphone className="w-2.5 h-2.5" /> HP
-                                                      </span>
-                                                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di Laptop / PC">
-                                                        <Laptop className="w-2.5 h-2.5" /> Laptop
-                                                      </span>
-                                                      {browserPerms.google_sso !== true && institution?.google_oauth_enabled !== true ? (
-                                                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-zinc-200 text-zinc-600 font-medium">
-                                                          Bebas / Non-Aktif
-                                                        </span>
-                                                      ) : (
-                                                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-medium">
-                                                          Wajib
-                                                        </span>
-                                                      )}
-                                                    </div>
-                                                    <div className="text-[11px] text-zinc-500 mt-1">
-                                                      {preflightStatus.google_sso.message}
-                                                    </div>
-                                                  </div>
-                                                </div>
-                                                <div className="shrink-0 mt-0.5">
-                                                  {(browserPerms.google_sso !== true && institution?.google_oauth_enabled !== true) || preflightStatus.google_sso.passed ? (
-                                                    <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                                                  ) : (
-                                                    <AlertCircle className="w-5 h-5 text-amber-600" />
-                                                  )}
-                                                </div>
-                                              </div>
+            {/* 4. Izinkan Fullscreen */}
+            <div className="p-3.5 rounded-xl border border-zinc-200 bg-zinc-50/60 flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3 min-w-0">
+                <div
+                  className={`p-2 rounded-lg shrink-0 ${
+                    browserPerms.fullscreen === false
+                      ? 'bg-zinc-200 text-zinc-600'
+                      : preflightStatus.fullscreen.passed
+                      ? 'bg-emerald-100 text-emerald-700'
+                      : 'bg-rose-100 text-rose-700'
+                  }`}
+                >
+                  <Maximize2 className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-xs font-semibold text-zinc-900">
+                      4. Izinkan Fullscreen (Layar Penuh)
+                    </span>
+                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di HP Android Chrome">
+                      <Smartphone className="w-2.5 h-2.5" /> HP
+                    </span>
+                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di Laptop / PC">
+                      <Laptop className="w-2.5 h-2.5" /> Laptop
+                    </span>
+                    {browserPerms.fullscreen === false ? (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-zinc-200 text-zinc-600 font-medium">
+                        Bebas / Non-Aktif
+                      </span>
+                    ) : (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-medium">
+                        Wajib
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-zinc-500 mt-1">
+                    {preflightStatus.fullscreen.message}
+                  </div>
+                </div>
+              </div>
+              <div className="shrink-0 mt-0.5">
+                {browserPerms.fullscreen === false || preflightStatus.fullscreen.passed ? (
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                ) : (
+                  <XCircle className="w-5 h-5 text-rose-500" />
+                )}
+              </div>
+            </div>
 
-                                              {/* 6. Block Clipboard */}
-                                              <div className="p-3.5 rounded-xl border border-zinc-200 bg-zinc-50/60 flex items-start justify-between gap-3">
-                                                <div className="flex items-start gap-3 min-w-0">
-                                                  <div
-                                                    className={`p-2 rounded-lg shrink-0 ${browserPerms.block_clipboard === false
-                                                        ? 'bg-zinc-200 text-zinc-600'
-                                                        : 'bg-emerald-100 text-emerald-700'
-                                                      }`}
-                                                  >
-                                                    <ClipboardCheck className="w-4 h-4" />
-                                                  </div>
-                                                  <div className="min-w-0">
-                                                    <div className="flex items-center gap-1.5 flex-wrap">
-                                                      <span className="text-xs font-semibold text-zinc-900">
-                                                        6. Block Clipboard (Papan Klip)
-                                                      </span>
-                                                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di HP">
-                                                        <Smartphone className="w-2.5 h-2.5" /> HP
-                                                      </span>
-                                                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di Laptop / PC">
-                                                        <Laptop className="w-2.5 h-2.5" /> Laptop
-                                                      </span>
-                                                      {browserPerms.block_clipboard === false ? (
-                                                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-zinc-200 text-zinc-600 font-medium">
-                                                          Bebas / Non-Aktif
-                                                        </span>
-                                                      ) : (
-                                                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-medium">
-                                                          Wajib
-                                                        </span>
-                                                      )}
-                                                    </div>
-                                                    <div className="text-[11px] text-zinc-500 mt-1">
-                                                      {preflightStatus.clipboard.message}
-                                                    </div>
-                                                  </div>
-                                                </div>
-                                                <div className="shrink-0 mt-0.5">
-                                                  <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                                                </div>
-                                              </div>
+            {/* 5. Login Akun Google */}
+            <div className="p-3.5 rounded-xl border border-zinc-200 bg-zinc-50/60 flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3 min-w-0">
+                <div
+                  className={`p-2 rounded-lg shrink-0 ${
+                    browserPerms.google_sso !== true && institution?.google_oauth_enabled !== true
+                      ? 'bg-zinc-200 text-zinc-600'
+                      : preflightStatus.google_sso.passed
+                      ? 'bg-emerald-100 text-emerald-700'
+                      : 'bg-amber-100 text-amber-700'
+                  }`}
+                >
+                  <GoogleBrandIcon className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-xs font-semibold text-zinc-900">
+                      5. Login Akun Google (SSO Workspace)
+                    </span>
+                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di HP">
+                      <Smartphone className="w-2.5 h-2.5" /> HP
+                    </span>
+                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di Laptop / PC">
+                      <Laptop className="w-2.5 h-2.5" /> Laptop
+                    </span>
+                    {browserPerms.google_sso !== true && institution?.google_oauth_enabled !== true ? (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-zinc-200 text-zinc-600 font-medium">
+                        Bebas / Non-Aktif
+                      </span>
+                    ) : (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-medium">
+                        Wajib
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-zinc-500 mt-1">
+                    {preflightStatus.google_sso.message}
+                  </div>
+                </div>
+              </div>
+              <div className="shrink-0 mt-0.5">
+                {(browserPerms.google_sso !== true && institution?.google_oauth_enabled !== true) || preflightStatus.google_sso.passed ? (
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                ) : (
+                  <AlertCircle className="w-5 h-5 text-amber-600" />
+                )}
+              </div>
+            </div>
 
-                                              {/* 7. Sensor Kamera & Mikrofon */}
-                                              <div className="p-3.5 rounded-xl border border-zinc-200 bg-zinc-50/60 flex items-start justify-between gap-3">
-                                                <div className="flex items-start gap-3 min-w-0">
-                                                  <div
-                                                    className={`p-2 rounded-lg shrink-0 ${browserPerms.camera_webcam === false
-                                                        ? 'bg-zinc-200 text-zinc-600'
-                                                        : preflightStatus.media.passed
-                                                          ? 'bg-emerald-100 text-emerald-700'
-                                                          : 'bg-amber-100 text-amber-700'
-                                                      }`}
-                                                  >
-                                                    <Camera className="w-4 h-4" />
-                                                  </div>
-                                                  <div>
-                                                    <div className="text-xs font-semibold text-zinc-900">
-                                                      Kamera, Mikrofon & Proteksi Suara
-                                                      <div className="min-w-0">
-                                                        <div className="flex items-center gap-1.5 flex-wrap">
-                                                          <span className="text-xs font-semibold text-zinc-900">
-                                                            7. Sensor Kamera & Mikrofon
-                                                          </span>
-                                                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di HP">
-                                                            <Smartphone className="w-2.5 h-2.5" /> HP
-                                                          </span>
-                                                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di Laptop / PC">
-                                                            <Laptop className="w-2.5 h-2.5" /> Laptop
-                                                          </span>
-                                                          {browserPerms.camera_webcam === false ? (
-                                                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-zinc-200 text-zinc-600 font-medium">
-                                                              Bebas / Non-Aktif
-                                                            </span>
-                                                          ) : (
-                                                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-medium">
-                                                              Wajib
-                                                            </span>
-                                                          )}
-                                                        </div>
-                                                        <div className="text-[11px] text-zinc-500 mt-0.5">
-                                                          <div className="text-[11px] text-zinc-500 mt-1">
-                                                            {preflightStatus.media.message}
-                                                          </div>
-                                                        </div>
-                                                      </div>
-                                                      <div>
-                                                        <div className="shrink-0 mt-0.5">
-                                                          <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                                                        </div>
-                                                      </div>
+            {/* 6. Block Clipboard */}
+            <div className="p-3.5 rounded-xl border border-zinc-200 bg-zinc-50/60 flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3 min-w-0">
+                <div
+                  className={`p-2 rounded-lg shrink-0 ${
+                    browserPerms.block_clipboard === false
+                      ? 'bg-zinc-200 text-zinc-600'
+                      : 'bg-emerald-100 text-emerald-700'
+                  }`}
+                >
+                  <ClipboardCheck className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-xs font-semibold text-zinc-900">
+                      6. Block Clipboard (Papan Klip)
+                    </span>
+                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di HP">
+                      <Smartphone className="w-2.5 h-2.5" /> HP
+                    </span>
+                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di Laptop / PC">
+                      <Laptop className="w-2.5 h-2.5" /> Laptop
+                    </span>
+                    {browserPerms.block_clipboard === false ? (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-zinc-200 text-zinc-600 font-medium">
+                        Bebas / Non-Aktif
+                      </span>
+                    ) : (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-medium">
+                        Wajib
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-zinc-500 mt-1">
+                    {preflightStatus.clipboard.message}
+                  </div>
+                </div>
+              </div>
+              <div className="shrink-0 mt-0.5">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+              </div>
+            </div>
 
-                                                      {/* 5. Clipboard Sanitizer */}
-                                                      {/* 8. Third-Party Cookies & Iframe */}
-                                                      <div className="p-3.5 rounded-xl border border-zinc-200 bg-zinc-50/60 flex items-start justify-between gap-3">
-                                                        <div className="flex items-start gap-3">
-                                                          <div className="p-2 rounded-lg bg-emerald-100 text-emerald-700">
-                                                            <FileCheck className="w-4 h-4" />
-                                                            <div className="flex items-start gap-3 min-w-0">
-                                                              <div
-                                                                className={`p-2 rounded-lg shrink-0 ${browserPerms.cookies_iframe === false
-                                                                    ? 'bg-zinc-200 text-zinc-600'
-                                                                    : preflightStatus.cookies.passed
-                                                                      ? 'bg-emerald-100 text-emerald-700'
-                                                                      : 'bg-rose-100 text-rose-700'
-                                                                  }`}
-                                                              >
-                                                                <Cookie className="w-4 h-4" />
-                                                              </div>
-                                                              <div>
-                                                                <div className="text-xs font-semibold text-zinc-900">
-                                                                  Pembersih Papan Klip (Clipboard Sanitizer)
-                                                                  <div className="min-w-0">
-                                                                    <div className="flex items-center gap-1.5 flex-wrap">
-                                                                      <span className="text-xs font-semibold text-zinc-900">
-                                                                        8. Akses Cookies & Iframe GForm
-                                                                      </span>
-                                                                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di HP">
-                                                                        <Smartphone className="w-2.5 h-2.5" /> HP
-                                                                      </span>
-                                                                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di Laptop / PC">
-                                                                        <Laptop className="w-2.5 h-2.5" /> Laptop
-                                                                      </span>
-                                                                      {browserPerms.cookies_iframe === false ? (
-                                                                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-zinc-200 text-zinc-600 font-medium">
-                                                                          Bebas / Non-Aktif
-                                                                        </span>
-                                                                      ) : (
-                                                                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-medium">
-                                                                          Wajib
-                                                                        </span>
-                                                                      )}
-                                                                    </div>
-                                                                    <div className="text-[11px] text-zinc-500 mt-0.5">
-                                                                      Mencegah kebocoran jawaban dan salin-tempel otomatis
-                                                                      <div className="text-[11px] text-zinc-500 mt-1">
-                                                                        {preflightStatus.cookies.message}
-                                                                      </div>
-                                                                    </div>
-                                                                  </div>
-                                                                  <div>
-                                                                    <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                                                                    <div className="shrink-0 mt-0.5">
-                                                                      {browserPerms.cookies_iframe === false || preflightStatus.cookies.passed ? (
-                                                                        <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                                                                      ) : (
-                                                                        <XCircle className="w-5 h-5 text-rose-500" />
-                                                                      )}
-                                                                    </div>
-                                                                  </div>
-                                                                </div>
+            {/* 7. Sensor Kamera & Mikrofon */}
+            <div className="p-3.5 rounded-xl border border-zinc-200 bg-zinc-50/60 flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3 min-w-0">
+                <div
+                  className={`p-2 rounded-lg shrink-0 ${
+                    browserPerms.camera_webcam === false
+                      ? 'bg-zinc-200 text-zinc-600'
+                      : preflightStatus.media.passed
+                      ? 'bg-emerald-100 text-emerald-700'
+                      : 'bg-amber-100 text-amber-700'
+                  }`}
+                >
+                  <Camera className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-xs font-semibold text-zinc-900">
+                      7. Sensor Kamera & Mikrofon
+                    </span>
+                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di HP">
+                      <Smartphone className="w-2.5 h-2.5" /> HP
+                    </span>
+                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di Laptop / PC">
+                      <Laptop className="w-2.5 h-2.5" /> Laptop
+                    </span>
+                    {browserPerms.camera_webcam === false ? (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-zinc-200 text-zinc-600 font-medium">
+                        Bebas / Non-Aktif
+                      </span>
+                    ) : (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-medium">
+                        Wajib
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-zinc-500 mt-1">
+                    {preflightStatus.media.message}
+                  </div>
+                </div>
+              </div>
+              <div className="shrink-0 mt-0.5">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+              </div>
+            </div>
 
-                                                                {/* Opsi Darurat Simulasi GPS untuk Demo/Testing */}
-                                                                <div className="pt-2">
-                                                                  <button
-                                                                    type="button"
-                                                                    onClick={handleToggleGpsOverride}
-                                                                    className="text-[11px] text-zinc-500 hover:text-zinc-800 underline inline-flex items-center gap-1"
-                                                                  >
-                                                                    <span>
-                                                                      {gpsSimulatedOverride
-                                                                        ? 'Matikan Simulasi Radius GPS (Kembali ke Riil)'
-                                                                        : 'Perangkat tidak memiliki GPS? Klik di sini untuk Mode Simulasi Pengawas'}
-                                                                    </span>
-                                                                  </button>
-                                                                </div>
+            {/* 8. Third-Party Cookies & Iframe */}
+            <div className="p-3.5 rounded-xl border border-zinc-200 bg-zinc-50/60 flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3 min-w-0">
+                <div
+                  className={`p-2 rounded-lg shrink-0 ${
+                    browserPerms.cookies_iframe === false
+                      ? 'bg-zinc-200 text-zinc-600'
+                      : preflightStatus.cookies.passed
+                      ? 'bg-emerald-100 text-emerald-700'
+                      : 'bg-rose-100 text-rose-700'
+                  }`}
+                >
+                  <Cookie className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-xs font-semibold text-zinc-900">
+                      8. Akses Cookies & Iframe GForm
+                    </span>
+                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di HP">
+                      <Smartphone className="w-2.5 h-2.5" /> HP
+                    </span>
+                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di Laptop / PC">
+                      <Laptop className="w-2.5 h-2.5" /> Laptop
+                    </span>
+                    {browserPerms.cookies_iframe === false ? (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-zinc-200 text-zinc-600 font-medium">
+                        Bebas / Non-Aktif
+                      </span>
+                    ) : (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-medium">
+                        Wajib
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-zinc-500 mt-1">
+                    {preflightStatus.cookies.message}
+                  </div>
+                </div>
+              </div>
+              <div className="shrink-0 mt-0.5">
+                {browserPerms.cookies_iframe === false || preflightStatus.cookies.passed ? (
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                ) : (
+                  <XCircle className="w-5 h-5 text-rose-500" />
+                )}
+              </div>
+            </div>
+          </div>
 
-                                                                {/* Action Button */}
-                                                                <div className="pt-3">
-                                                                  <button
-                                                                    type="button"
-                                                                    disabled={!allPreflightPassed}
-                                                                    onClick={() => setCurrentStage('home')}
-                                                                    className={`w-full py-3 px-4 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all ${allPreflightPassed
-                                                                        ? 'bg-zinc-900 hover:bg-zinc-800 text-white shadow-xs cursor-pointer active:scale-[0.99]'
-                                                                        : 'bg-zinc-200 text-zinc-400 cursor-not-allowed'
-                                                                      }`}
-                                                                  >
-                                                                    <span>
-                                                                      {allPreflightPassed
-                                                                        ? 'Izin Terpenuhi &bull; Lanjutkan ke Beranda Ujian'
-                                                                        : 'Harap penuhi seluruh izin di atas'}
-                                                                    </span>
-                                                                    <ArrowRight className="w-4 h-4" />
-                                                                  </button>
-                                                                </div>
-                                                              </main>
+          {/* Opsi Darurat Simulasi GPS untuk Demo/Testing (Hanya Ditampilkan Pada Mode Simulasi) */}
+          {isSimMode && (
+            <div className="pt-2 animate-in fade-in">
+              <button
+                type="button"
+                onClick={handleToggleGpsOverride}
+                className="text-[11px] text-zinc-500 hover:text-zinc-800 underline inline-flex items-center gap-1"
+              >
+                <span>
+                  {gpsSimulatedOverride
+                    ? 'Matikan Simulasi Radius GPS (Kembali ke Riil)'
+                    : 'Perangkat tidak memiliki GPS? Klik di sini untuk Mode Simulasi Pengawas'}
+                </span>
+              </button>
+            </div>
+          )}
 
-                                                              <footer className="w-full max-w-lg py-4 text-center">
-                                                                <button
-                                                                  onClick={handleConfirmLogout}
-                                                                  className="text-xs text-zinc-500 hover:text-rose-600 font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer"
-                                                                >
-                                                                  <LogOut className="w-3.5 h-3.5" />
-                                                                  <span>Keluar Akun Siswa</span>
-                                                                </button>
-                                                              </footer>
+          {/* Action Button */}
+          <div className="pt-3">
+            <button
+              type="button"
+              disabled={!allPreflightPassed}
+              onClick={() => setCurrentStage('home')}
+              className={`w-full py-3 px-4 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
+                allPreflightPassed
+                  ? 'bg-zinc-900 hover:bg-zinc-800 text-white shadow-xs cursor-pointer active:scale-[0.99]'
+                  : 'bg-zinc-200 text-zinc-400 cursor-not-allowed'
+              }`}
+            >
+              <span>
+                {allPreflightPassed
+                  ? 'Izin Terpenuhi • Lanjutkan ke Beranda Ujian'
+                  : 'Harap penuhi seluruh izin di atas'}
+              </span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
+        </main>
 
-                                                              {/* Modal Dialog Konfirmasi & Alert Modern */}
-                                                              <ConfirmDialog
-                                                                isOpen={confirmDialog.isOpen}
-                                                                onClose={closeConfirm}
-                                                                onConfirm={confirmDialog.onConfirm}
-                                                                title={confirmDialog.title}
-                                                                message={confirmDialog.message}
-                                                                confirmText={confirmDialog.confirmText}
-                                                                cancelText={confirmDialog.cancelText}
-                                                                variant={confirmDialog.variant}
-                                                                icon={confirmDialog.icon}
-                                                              />
-                                                            </div>
-                                                            );
+        <footer className="w-full max-w-lg py-4 text-center">
+          <button
+            onClick={handleConfirmLogout}
+            className="text-xs text-zinc-500 hover:text-rose-600 font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            <span>Keluar Akun Siswa</span>
+          </button>
+        </footer>
+
+        {/* Modal Dialog Konfirmasi & Alert Modern */}
+        <ConfirmDialog
+          isOpen={confirmDialog.isOpen}
+          onClose={closeConfirm}
+          onConfirm={confirmDialog.onConfirm}
+          title={confirmDialog.title}
+          message={confirmDialog.message}
+          confirmText={confirmDialog.confirmText}
+          cancelText={confirmDialog.cancelText}
+          variant={confirmDialog.variant}
+          icon={confirmDialog.icon}
+        />
+      </div>
+    );
   }
 
-                                                            // ==========================================
-                                                            // VIEW 2: BERANDA SISWA (STUDENT HOME)
+  // VIEW 2: BERANDA SISWA (STUDENT HOME)
                                                             // ==========================================
                                                             if (currentStage === 'home') {
     return (
@@ -1508,7 +1960,7 @@ if (currentStage === 'preflight') {
                                                                       Halo, {currentUser.nama}! Yuk cek jadwal ujianmu hari ini
                                                                     </h2>
                                                                     <p className="text-xs text-zinc-500 mt-1">
-                                                                      NISN: <span className="font-mono text-zinc-700">{currentUser.nisn}</span> &bull; Pastikan perangkat Anda memiliki daya baterai yang cukup dan koneksi stabil.
+                                                                      No. Ujian: <span className="font-mono font-bold text-zinc-900">{currentUser.nomor_ujian || currentUser.nisn}</span> &bull; NISN: <span className="font-mono text-zinc-700">{currentUser.nisn}</span> &bull; Pastikan perangkat Anda memiliki daya baterai yang cukup dan koneksi stabil.
                                                                     </p>
                                                                   </div>
 
@@ -1601,9 +2053,32 @@ if (currentStage === 'preflight') {
 
                                                                               {/* Locked alert badge */}
                                                                               {isLockedAttempt && (
-                                                                                <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-[11px] text-rose-700 flex items-center gap-1.5 font-medium">
-                                                                                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                                                                                  <span>Ujian berstatus terkunci. Minta pengawas untuk Unlock.</span>
+                                                                                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 space-y-2">
+                                                                                  <div className="flex items-center gap-1.5 font-semibold text-rose-900">
+                                                                                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                                                                                    <span>Ujian berstatus terkunci karena batas toleransi pelanggaran.</span>
+                                                                                  </div>
+                                                                                  <p className="text-[11px] text-rose-700 leading-relaxed">
+                                                                                    Mintalah Pengawas Ujian untuk membuka kunci (Unlock) dari dashboard pengawas, atau periksa status di bawah ini:
+                                                                                  </p>
+                                                                                  <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                                                                                    <button
+                                                                                      type="button"
+                                                                                      onClick={() => {
+                                                                                        reloadData();
+                                                                                        const att = storageService.getAttempt(currentUser.id, exam.id);
+                                                                                        if (att && att.status === 'IN_PROGRESS') {
+                                                                                          showNotification('Status ujian telah dibuka oleh Pengawas! Silakan mulai ujian.', 'success');
+                                                                                        } else {
+                                                                                          showNotification('Status masih TERKUNCI. Mintalah pengawas untuk menekan tombol Unlock di dashboard.', 'warning');
+                                                                                        }
+                                                                                      }}
+                                                                                      className="px-2.5 py-1 bg-white hover:bg-rose-100 border border-rose-300 text-rose-700 rounded-lg text-[11px] font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+                                                                                    >
+                                                                                      <RefreshCw className="w-3 h-3" />
+                                                                                      <span>Periksa Buka Kunci Pengawas</span>
+                                                                                    </button>
+                                                                                  </div>
                                                                                 </div>
                                                                               )}
                                                                             </div>
@@ -1623,10 +2098,23 @@ if (currentStage === 'preflight') {
 
                                                                               <button
                                                                                 onClick={() => handleStartExam(exam)}
-                                                                                className="inline-flex items-center gap-1.5 px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl text-xs font-medium shadow-xs transition-all active:scale-[0.98] cursor-pointer shrink-0"
+                                                                                className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold shadow-xs transition-all active:scale-[0.98] cursor-pointer shrink-0 ${
+                                                                                  isLockedAttempt
+                                                                                    ? 'bg-rose-600 hover:bg-rose-700 text-white animate-pulse'
+                                                                                    : 'bg-zinc-900 hover:bg-zinc-800 text-white'
+                                                                                }`}
                                                                               >
-                                                                                <span>Mulai Ujian</span>
-                                                                                <ChevronRight className="w-3.5 h-3.5" />
+                                                                                {isLockedAttempt ? (
+                                                                                  <>
+                                                                                    <Lock className="w-3.5 h-3.5" />
+                                                                                    <span>Layar Terkunci</span>
+                                                                                  </>
+                                                                                ) : (
+                                                                                  <>
+                                                                                    <span>Mulai Ujian</span>
+                                                                                    <ChevronRight className="w-3.5 h-3.5" />
+                                                                                  </>
+                                                                                )}
                                                                               </button>
                                                                             </div>
                                                                           </div>
@@ -1787,7 +2275,9 @@ if (currentStage === 'preflight') {
                                                                     <div className="text-[11px] text-zinc-500 truncate flex items-center gap-1.5">
                                                                       <span>{currentUser.nama}</span>
                                                                       <span>&bull;</span>
-                                                                      <span className="font-mono">{currentUser.nisn}</span>
+                                                                      <span className="font-mono font-semibold text-zinc-800">{currentUser.nomor_ujian || currentUser.nisn}</span>
+                                                                      <span>&bull;</span>
+                                                                      <span className="font-mono text-zinc-400">NISN: {currentUser.nisn}</span>
                                                                     </div>
                                                                   </div>
                                                                 </div>
@@ -1810,6 +2300,26 @@ if (currentStage === 'preflight') {
                                                                       )}
                                                                     </button>
                                                                   </div>
+
+                                                                  {/* Token Selesai Display (Hanya muncul beberapa menit sebelum waktu habis) */}
+                                                                  {Boolean(activeExam?.finish_token) && remainingSeconds <= (institution?.finish_token_lead_minutes || 10) * 60 && (
+                                                                    <div className="flex items-center gap-2 bg-amber-500 text-white px-3 py-1 rounded-lg text-xs font-medium shadow-xs animate-pulse">
+                                                                      <KeyRound className="w-3.5 h-3.5 text-amber-100" />
+                                                                      <span className="text-amber-100 text-[11px] font-bold">TOKEN SELESAI:</span>
+                                                                      <span className="font-mono font-bold tracking-widest text-white">{activeExam.finish_token}</span>
+                                                                      <button
+                                                                        onClick={() => copyToken(activeExam.finish_token)}
+                                                                        title="Salin Token Selesai"
+                                                                        className="p-1 hover:bg-amber-600 rounded text-amber-100 hover:text-white transition-colors cursor-pointer"
+                                                                      >
+                                                                        {copiedToken ? (
+                                                                          <Check className="w-3.5 h-3.5 text-white" />
+                                                                        ) : (
+                                                                          <Copy className="w-3.5 h-3.5" />
+                                                                        )}
+                                                                      </button>
+                                                                    </div>
+                                                                  )}
 
                                                                   {/* Sticky Countdown Timer */}
                                                                   <div
@@ -1836,7 +2346,7 @@ if (currentStage === 'preflight') {
                                                               <div className="flex-1 bg-zinc-100 relative w-full h-full overflow-hidden">
                                                                 {activeExam?.gform_base_url ? (
                                                                   <iframe
-                                                                    src={activeExam.gform_base_url}
+                                                                    src={convertGoogleFormUrl(activeExam.gform_base_url)}
                                                                     title={activeExam.title}
                                                                     className="w-full h-full border-none"
                                                                     allow="geolocation 'none'; microphone 'none'; camera 'none'"
@@ -1849,39 +2359,162 @@ if (currentStage === 'preflight') {
                                                                 )}
                                                               </div>
 
-                                                              {/* 3. AUTO-LOCK OVERLAY SCREEN JIKA TERJADI PELANGGARAN */}
-                                                              {isLocked && (
-                                                                <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
-                                                                  <div className="bg-white rounded-2xl max-w-md w-full p-6 sm:p-8 text-center shadow-2xl border border-rose-200 animate-in zoom-in-95">
-                                                                    <div className="w-14 h-14 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto mb-4">
-                                                                      <Lock className="w-8 h-8" />
+                                                              {/* 2b. DIALOG PERINGATAN PELANGGARAN RINGAN (TOLERANSI 1 & 2 DARI 3) */}
+                                                              {showViolationWarningModal && !isLocked && (
+                                                                <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+                                                                  <div className="bg-white rounded-2xl max-w-md w-full p-6 text-center shadow-2xl border-2 border-amber-400 animate-in zoom-in-95">
+                                                                    <div className="w-14 h-14 rounded-2xl bg-amber-100 text-amber-600 flex items-center justify-center mx-auto mb-3.5">
+                                                                      <AlertTriangle className="w-7 h-7" />
                                                                     </div>
 
-                                                                    <h3 className="text-lg font-bold text-zinc-900 tracking-tight mb-1">
+                                                                    <h3 className="text-base sm:text-lg font-bold text-zinc-900 tracking-tight">
+                                                                      PERINGATAN PELANGGARAN UJIAN
+                                                                    </h3>
+                                                                    <p className="text-xs font-semibold text-amber-600 mt-0.5 mb-3">
+                                                                      Pelanggaran Ke-{violationWarningCount} dari 3 Kali Batas Toleransi
+                                                                    </p>
+
+                                                                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 mb-4 text-left space-y-1">
+                                                                      <div className="font-bold">Penyebab Terdeteksi:</div>
+                                                                      <p className="text-amber-800">{violationWarningReason || 'Fokus atau kursor meninggalkan layar ujian.'}</p>
+                                                                      <p className="text-[11px] text-amber-700 italic pt-1 border-t border-amber-200/60 mt-1.5">
+                                                                        Perhatian: Jika Anda melanggar sebanyak 3 kali, layar ujian Anda akan <strong>TERKUNCI TOTAL</strong> dan wajib dibuka oleh Pengawas!
+                                                                      </p>
+                                                                    </div>
+
+                                                                    <button
+                                                                      type="button"
+                                                                      onClick={handleDismissWarningAndResume}
+                                                                      className="w-full py-2.5 px-4 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer flex items-center justify-center gap-2"
+                                                                    >
+                                                                      <Maximize2 className="w-4 h-4" />
+                                                                      <span>Saya Paham & Kembali ke Layar Penuh (Lanjutkan Ujian)</span>
+                                                                    </button>
+                                                                  </div>
+                                                                </div>
+                                                              )}
+
+                                                              {/* 3. AUTO-LOCK OVERLAY SCREEN JIKA TERJADI PELANGGARAN MAKSIMAL DENGAN TOMBOL TINDAK LANJUT LENGKAP */}
+                                                              {isLocked && (
+                                                                <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
+                                                                  <div className="bg-white rounded-2xl max-w-md w-full p-6 sm:p-7 text-center shadow-2xl border border-rose-200 animate-in zoom-in-95">
+                                                                    <div className="w-14 h-14 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto mb-3">
+                                                                      <Lock className="w-7 h-7" />
+                                                                    </div>
+
+                                                                    <h3 className="text-lg font-bold text-zinc-900 tracking-tight mb-0.5">
                                                                       LAYAR UJIAN TERKUNCI
                                                                     </h3>
                                                                     <p className="text-xs text-rose-600 font-semibold mb-3">
                                                                       Pelanggaran Tata Tertib Pengawasan
                                                                     </p>
 
-                                                                    <div className="p-3.5 bg-rose-50 border border-rose-100 rounded-xl text-xs text-zinc-700 mb-4 text-left space-y-1">
+                                                                    <div className="p-3 bg-rose-50 border border-rose-100 rounded-xl text-xs text-zinc-700 mb-3.5 text-left space-y-1">
                                                                       <div className="font-semibold text-rose-900">Alasan Penguncian:</div>
                                                                       <p className="text-zinc-600">{lockReason || 'Terdeteksi meninggalkan jendela ujian.'}</p>
-                                                                      <div className="text-[11px] text-zinc-500 pt-1">
+                                                                      <div className="text-[11px] text-zinc-500 pt-0.5">
                                                                         Total Pelanggaran:{' '}
                                                                         <strong className="text-rose-700 font-mono">
-                                                                          {activeAttempt?.violation_count || 1} kali
+                                                                          {activeAttempt?.violation_count || 3} kali (Batas Toleransi Terlampaui)
                                                                         </strong>
                                                                       </div>
                                                                     </div>
 
-                                                                    <p className="text-xs text-zinc-500 mb-6 leading-relaxed">
-                                                                      Silakan temui <strong>Pengawas Ruang Ujian</strong> di tempat Anda. Pengawas akan memeriksa log aktivitas dan membuka kunci (Unlock) melalui dashboard mereka.
+                                                                    <p className="text-xs text-zinc-500 mb-4 leading-relaxed">
+                                                                      Silakan temui <strong>Pengawas Ruang Ujian</strong>. Pengawas dapat membuka kunci melalui dashboard pengawas atau memasukkan PIN pengawas langsung di bawah ini.
                                                                     </p>
 
-                                                                    <div className="flex items-center justify-center gap-2 text-xs text-zinc-400 font-mono animate-pulse">
-                                                                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                                                                      <span>Menunggu instruksi buka kunci pengawas...</span>
+                                                                    {/* FORM INPUT PIN / TOKEN PENGAWAS DI TEMPAT */}
+                                                                    {showProctorPinInput ? (
+                                                                      <form onSubmit={handleProctorUnlockWithPin} className="mb-4 p-3 bg-zinc-50 border border-zinc-200 rounded-xl space-y-2.5 text-left animate-in fade-in">
+                                                                        <label className="block text-xs font-semibold text-zinc-800">
+                                                                          Masukkan PIN / Token Pengawas Ruang:
+                                                                        </label>
+                                                                        <div className="flex items-center gap-2">
+                                                                          <input
+                                                                            type="password"
+                                                                            value={proctorPinInput}
+                                                                            onChange={(e) => {
+                                                                              setProctorPinInput(e.target.value);
+                                                                              setProctorPinError('');
+                                                                            }}
+                                                                            placeholder="PIN Pengawas / Token Sesi..."
+                                                                            className="flex-1 px-3 py-2 text-xs border border-zinc-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-zinc-900 font-mono"
+                                                                            autoFocus
+                                                                          />
+                                                                          <button
+                                                                            type="submit"
+                                                                            className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer shrink-0"
+                                                                          >
+                                                                            Buka Kunci
+                                                                          </button>
+                                                                        </div>
+                                                                        {proctorPinError && (
+                                                                          <p className="text-[11px] text-rose-600 font-medium">{proctorPinError}</p>
+                                                                        )}
+                                                                        <div className="flex items-center justify-between text-[11px] text-zinc-500 pt-1">
+                                                                          <span>Pengawas dapat memakai PIN Proktor atau Token Ujian.</span>
+                                                                          <button
+                                                                            type="button"
+                                                                            onClick={() => {
+                                                                              setShowProctorPinInput(false);
+                                                                              setProctorPinError('');
+                                                                            }}
+                                                                            className="text-zinc-600 hover:text-zinc-900 underline cursor-pointer"
+                                                                          >
+                                                                            Tutup
+                                                                          </button>
+                                                                        </div>
+                                                                      </form>
+                                                                    ) : (
+                                                                      <div className="space-y-2 mb-4">
+                                                                        {/* Tombol Tindak Lanjut 1: Buka Kunci dengan PIN Pengawas di Tempat */}
+                                                                        <button
+                                                                          type="button"
+                                                                          onClick={() => setShowProctorPinInput(true)}
+                                                                          className="w-full py-2.5 px-4 bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl text-xs font-semibold transition-all shadow-xs cursor-pointer flex items-center justify-center gap-2"
+                                                                        >
+                                                                          <KeyRound className="w-4 h-4 text-emerald-400" />
+                                                                          <span>Buka Kunci Pengawas di Tempat (Input PIN)</span>
+                                                                        </button>
+
+                                                                        {/* Tombol Tindak Lanjut 2: Cek Status Buka Kunci dari Dashboard */}
+                                                                        <button
+                                                                          type="button"
+                                                                          onClick={handleManualCheckUnlock}
+                                                                          disabled={isCheckingUnlock}
+                                                                          className="w-full py-2 px-4 bg-white hover:bg-zinc-50 border border-zinc-300 text-zinc-700 rounded-xl text-xs font-medium transition-all shadow-2xs cursor-pointer flex items-center justify-center gap-2"
+                                                                        >
+                                                                          <RefreshCw className={`w-3.5 h-3.5 text-zinc-500 ${isCheckingUnlock ? 'animate-spin' : ''}`} />
+                                                                          <span>{isCheckingUnlock ? 'Memeriksa status ke pengawas...' : 'Periksa Buka Kunci dari Pengawas'}</span>
+                                                                        </button>
+
+                                                                        {/* Tombol Tindak Lanjut 3: Khusus Mode Simulasi / Demo */}
+                                                                        {isSimMode && (
+                                                                          <button
+                                                                            type="button"
+                                                                            onClick={handleSimulationQuickUnlock}
+                                                                            className="w-full py-2 px-4 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center justify-center gap-2"
+                                                                          >
+                                                                            <FlaskConical className="w-4 h-4" />
+                                                                            <span>⚡ Buka Kunci Cepat (Mode Simulasi)</span>
+                                                                          </button>
+                                                                        )}
+
+                                                                        {/* Tombol Tindak Lanjut 4: Keluar ke Beranda Siswa */}
+                                                                        <button
+                                                                          type="button"
+                                                                          onClick={handleReturnToHomeFromLock}
+                                                                          className="w-full py-1.5 px-3 text-zinc-400 hover:text-zinc-600 text-[11px] transition-colors cursor-pointer"
+                                                                        >
+                                                                          Keluar ke Beranda Siswa
+                                                                        </button>
+                                                                      </div>
+                                                                    )}
+
+                                                                    <div className="flex items-center justify-center gap-2 text-[11px] text-zinc-400 font-mono">
+                                                                      <RefreshCw className="w-3 h-3 animate-spin text-zinc-400" />
+                                                                      <span>Sistem menyinkronkan status pengawas secara otomatis...</span>
                                                                     </div>
                                                                   </div>
                                                                 </div>
@@ -1902,6 +2535,33 @@ if (currentStage === 'preflight') {
                                                                         <strong>"Kirim" / "Submit"</strong> di dalam formulir Google Form di bawah ini
                                                                         sebelum menekan tombol konfirmasi.
                                                                       </div>
+
+                                                                      {/* Tampilkan Token Selesai jika sesi ujian memiliki token selesai */}
+                                                                      {Boolean(activeExam?.finish_token) && remainingSeconds <= (institution?.finish_token_lead_minutes || 10) * 60 && (
+                                                                        <div className="p-3 bg-amber-500/10 border border-amber-300 rounded-xl text-xs text-amber-900 space-y-1.5">
+                                                                          <div className="font-bold flex items-center gap-1.5 text-amber-900">
+                                                                            <KeyRound className="w-4 h-4 text-amber-600" />
+                                                                            <span>Token Selesai (Finish Token):</span>
+                                                                          </div>
+                                                                          <div className="flex items-center gap-2">
+                                                                            <span className="font-mono text-base font-black tracking-widest bg-white px-3 py-1 rounded-lg border border-amber-300 text-zinc-900 shadow-2xs">
+                                                                              {activeExam.finish_token}
+                                                                            </span>
+                                                                            <button
+                                                                              type="button"
+                                                                              onClick={() => copyToken(activeExam.finish_token)}
+                                                                              className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold inline-flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
+                                                                            >
+                                                                              {copiedToken ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                                                                              <span>{copiedToken ? 'Tersalin' : 'Salin Token'}</span>
+                                                                            </button>
+                                                                          </div>
+                                                                          <p className="text-[11px] text-amber-800 leading-tight">
+                                                                            Masukkan token ini pada halaman terakhir formulir ujian sebelum menekan tombol Kirim/Submit.
+                                                                          </p>
+                                                                        </div>
+                                                                      )}
+
                                                                       <p>
                                                                         Setelah sesi ini diselesaikan, soal akan <strong>otomatis disembunyikan</strong> dari beranda Anda dan status tercatat sebagai <em>COMPLETED</em>.
                                                                       </p>

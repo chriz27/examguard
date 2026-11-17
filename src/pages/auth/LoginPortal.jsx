@@ -15,9 +15,13 @@ import {
 import { storageService, getOrCreateDeviceId } from '../../services/storageService';
 
 export default function LoginPortal({ institution, onLoginSuccess }) {
-  const [activeTab, setActiveTab] = useState('admin'); // Default ke Admin / Pengawas sesuai alur
-  const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('admin');
+  const appModeConfig = storageService.getAppModeConfig();
+  const isProduction = appModeConfig?.app_mode === 'production';
+  const isSimulation = !isProduction;
+
+  const [activeTab, setActiveTab] = useState(isProduction ? 'student' : 'admin'); // Mode produksi langsung siap untuk login siswa
+  const [username, setUsername] = useState(isProduction ? '' : 'admin');
+  const [password, setPassword] = useState(isProduction ? '' : 'admin');
   const [showPassword, setShowPassword] = useState(false);
   const [isCaptchaVerified, setIsCaptchaVerified] = useState(!institution?.recaptcha_enabled);
   const [captchaLoading, setCaptchaLoading] = useState(false);
@@ -28,6 +32,10 @@ export default function LoginPortal({ institution, onLoginSuccess }) {
   const currentDeviceId = getOrCreateDeviceId();
 
   const handleFillDemo = (type) => {
+    if (isProduction) {
+      console.warn('SECURITY ALERT: Akun demo dinonaktifkan pada Mode Produksi Resmi.');
+      return;
+    }
     setErrorMsg('');
     if (type === 'admin') {
       setActiveTab('admin');
@@ -76,7 +84,7 @@ export default function LoginPortal({ institution, onLoginSuccess }) {
     if (!user) {
       setErrorMsg(
         activeTab === 'student'
-          ? 'Data NISN tidak ditemukan di sistem sekolah. Pastikan nomor NISN benar atau hubungi Admin/Pengawas.'
+          ? 'Data Siswa (No. Ujian / NISN) tidak ditemukan di sistem sekolah. Pastikan nomor benar atau hubungi Admin/Pengawas.'
           : 'Nama Pengguna Administrator tidak ditemukan.'
       );
       return;
@@ -298,7 +306,7 @@ export default function LoginPortal({ institution, onLoginSuccess }) {
           <form onSubmit={handleCredentialsLogin} className="space-y-4">
             <div>
               <label className="block text-xs font-medium text-zinc-700 mb-1.5">
-                {activeTab === 'student' ? 'NISN / Username Siswa' : 'Username Administrator'}
+                {activeTab === 'student' ? 'Nomor Ujian / NISN Siswa' : 'Username Administrator'}
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-zinc-400">
@@ -309,13 +317,13 @@ export default function LoginPortal({ institution, onLoginSuccess }) {
                   required
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  placeholder={activeTab === 'student' ? 'Contoh: 0058291021' : 'admin'}
+                  placeholder={activeTab === 'student' ? 'Contoh: UJN-12-001 atau 0058291021' : 'admin'}
                   className="w-full pl-10 pr-3.5 py-2.5 bg-white border border-zinc-300 rounded-xl text-sm text-zinc-900 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:border-zinc-900 transition-all"
                 />
               </div>
               {activeTab === 'student' && (
                 <p className="mt-1 text-[11px] text-zinc-500 flex items-center justify-between">
-                  <span>Username: <strong>NISN</strong> &bull; Password: <strong>NIS Siswa</strong></span>
+                  <span>Login: <strong>No. Ujian / NISN</strong> &bull; Password: <strong>NIS Siswa</strong></span>
                   <span className="text-zinc-400">Reset lapor proktor</span>
                 </p>
               )}
@@ -471,34 +479,39 @@ export default function LoginPortal({ institution, onLoginSuccess }) {
               Pilih atau masukkan email akun siswa Google Workspace Anda:
             </p>
 
-            <div className="space-y-2 mb-4">
-              <button
-                type="button"
-                onClick={() => handleGoogleSsoSimulated('ahmad.fauzi@student.sch.id')}
-                className="w-full text-left p-2.5 rounded-lg border border-zinc-200 hover:bg-zinc-50 flex items-center justify-between text-xs"
-              >
-                <div>
-                  <div className="font-medium text-zinc-800">Ahmad Fauzi (XII MIPA 1)</div>
-                  <div className="text-zinc-400">ahmad.fauzi@student.sch.id</div>
+            {isSimulation && (
+              <div className="space-y-2 mb-4">
+                <div className="text-[10px] text-amber-700 font-semibold uppercase tracking-wider">
+                  Pilihan Cepat Akun Demo (Mode Simulasi)
                 </div>
-                <ArrowRight className="w-3.5 h-3.5 text-zinc-400" />
-              </button>
-              <button
-                type="button"
-                onClick={() => handleGoogleSsoSimulated('siti.rahma@student.sch.id')}
-                className="w-full text-left p-2.5 rounded-lg border border-zinc-200 hover:bg-zinc-50 flex items-center justify-between text-xs"
-              >
-                <div>
-                  <div className="font-medium text-zinc-800">Siti Rahmawati (XII MIPA 2)</div>
-                  <div className="text-zinc-400">siti.rahma@student.sch.id</div>
-                </div>
-                <ArrowRight className="w-3.5 h-3.5 text-zinc-400" />
-              </button>
-            </div>
+                <button
+                  type="button"
+                  onClick={() => handleGoogleSsoSimulated('ahmad.fauzi@student.sch.id')}
+                  className="w-full text-left p-2.5 rounded-lg border border-zinc-200 hover:bg-zinc-50 flex items-center justify-between text-xs"
+                >
+                  <div>
+                    <div className="font-medium text-zinc-800">Ahmad Fauzi (XII MIPA 1)</div>
+                    <div className="text-zinc-400">ahmad.fauzi@student.sch.id</div>
+                  </div>
+                  <ArrowRight className="w-3.5 h-3.5 text-zinc-400" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleGoogleSsoSimulated('siti.rahma@student.sch.id')}
+                  className="w-full text-left p-2.5 rounded-lg border border-zinc-200 hover:bg-zinc-50 flex items-center justify-between text-xs"
+                >
+                  <div>
+                    <div className="font-medium text-zinc-800">Siti Rahmawati (XII MIPA 2)</div>
+                    <div className="text-zinc-400">siti.rahma@student.sch.id</div>
+                  </div>
+                  <ArrowRight className="w-3.5 h-3.5 text-zinc-400" />
+                </button>
+              </div>
+            )}
 
             <div className="mb-4">
               <label className="block text-[11px] font-medium text-zinc-700 mb-1">
-                Atau Ketik Email Akun Sekolah
+                {isSimulation ? 'Atau Ketik Email Akun Sekolah' : 'Ketik Email Akun Google Siswa'}
               </label>
               <input
                 type="email"
@@ -531,35 +544,40 @@ export default function LoginPortal({ institution, onLoginSuccess }) {
 
       {/* Footer Hak Cipta & Info Kredensial Pengujian */}
       <footer className="w-full max-w-md py-4 text-center">
-        <div className="p-3 bg-zinc-100/90 rounded-xl border border-zinc-200/80 text-[11px] text-zinc-600 mb-2 shadow-2xs">
-          <p className="font-semibold text-zinc-800 mb-1.5">Klik Cepat Akun Demo Pengujian:</p>
-          <div className="grid grid-cols-3 gap-1.5">
-            <button
-              type="button"
-              onClick={() => handleFillDemo('admin')}
-              className="py-1.5 px-2 bg-white hover:bg-zinc-50 border border-zinc-300 rounded-lg text-left transition-all hover:border-zinc-400 cursor-pointer"
-            >
-              <div className="text-[9.5px] text-zinc-500 font-medium">Super Admin:</div>
-              <div className="font-mono font-bold text-zinc-900 text-[10.5px]">admin</div>
-            </button>
-            <button
-              type="button"
-              onClick={() => handleFillDemo('proctor')}
-              className="py-1.5 px-2 bg-white hover:bg-zinc-50 border border-emerald-300 bg-emerald-50/30 rounded-lg text-left transition-all hover:border-emerald-400 cursor-pointer"
-            >
-              <div className="text-[9.5px] text-emerald-700 font-medium">Proktor:</div>
-              <div className="font-mono font-bold text-zinc-900 text-[10.5px]">proktor</div>
-            </button>
-            <button
-              type="button"
-              onClick={() => handleFillDemo('student')}
-              className="py-1.5 px-2 bg-white hover:bg-zinc-50 border border-zinc-300 rounded-lg text-left transition-all hover:border-zinc-400 cursor-pointer"
-            >
-              <div className="text-[9.5px] text-zinc-500 font-medium">Siswa:</div>
-              <div className="font-mono font-bold text-zinc-900 text-[10.5px]">0068291033</div>
-            </button>
+        {isSimulation && (
+          <div className="p-3 bg-zinc-100/90 rounded-xl border border-zinc-200/80 text-[11px] text-zinc-600 mb-2 shadow-2xs animate-in fade-in">
+            <p className="font-semibold text-zinc-800 mb-1.5 flex items-center justify-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+              <span>Klik Cepat Akun Demo Pengujian (Mode Simulasi):</span>
+            </p>
+            <div className="grid grid-cols-3 gap-1.5">
+              <button
+                type="button"
+                onClick={() => handleFillDemo('admin')}
+                className="py-1.5 px-2 bg-white hover:bg-zinc-50 border border-zinc-300 rounded-lg text-left transition-all hover:border-zinc-400 cursor-pointer"
+              >
+                <div className="text-[9.5px] text-zinc-500 font-medium">Super Admin:</div>
+                <div className="font-mono font-bold text-zinc-900 text-[10.5px]">admin</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleFillDemo('proctor')}
+                className="py-1.5 px-2 bg-white hover:bg-zinc-50 border border-emerald-300 bg-emerald-50/30 rounded-lg text-left transition-all hover:border-emerald-400 cursor-pointer"
+              >
+                <div className="text-[9.5px] text-emerald-700 font-medium">Proktor:</div>
+                <div className="font-mono font-bold text-zinc-900 text-[10.5px]">proktor</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleFillDemo('student')}
+                className="py-1.5 px-2 bg-white hover:bg-zinc-50 border border-zinc-300 rounded-lg text-left transition-all hover:border-zinc-400 cursor-pointer"
+              >
+                <div className="text-[9.5px] text-zinc-500 font-medium">Siswa:</div>
+                <div className="font-mono font-bold text-zinc-900 text-[10.5px]">0068291033</div>
+              </button>
+            </div>
           </div>
-        </div>
+        )}
         <p className="text-[11px] text-zinc-400">
           ExamGuard &copy; {new Date().getFullYear()} &bull; Arsitektur Produksi Siap cPanel
         </p>
