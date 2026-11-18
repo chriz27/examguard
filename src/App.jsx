@@ -51,7 +51,7 @@ export default function App() {
     return <AdminDashboard currentUser={currentUser} onLogout={handleLogout} />;
   }
 
-  // Jika login sebagai Siswa (Student)
+  // Jika login sebagai Peserta (Student)
   return <StudentPortal currentUser={currentUser} onLogout={handleLogout} />;
 }
 

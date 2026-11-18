@@ -50,7 +50,7 @@ export default function AdminSidebar({
       label: 'Kontrol Pengawas',
       icon: ShieldAlert,
       badge: 'Live',
-      description: 'Pemantauan & reset siswa',
+      description: 'Pemantauan & reset peserta',
     },
     {
       id: 'reset-exam',
@@ -68,7 +68,7 @@ export default function AdminSidebar({
     },
     {
       id: 'users',
-      label: 'Manajemen Siswa',
+      label: 'Manajemen Peserta',
       icon: Users,
       description: 'Import CSV, NISN & Perangkat',
     },

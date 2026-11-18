@@ -19,7 +19,7 @@ export default function LoginPortal({ institution, onLoginSuccess }) {
   const isProduction = appModeConfig?.app_mode === 'production';
   const isSimulation = !isProduction;
 
-  const [activeTab, setActiveTab] = useState(isProduction ? 'student' : 'admin'); // Mode produksi langsung siap untuk login siswa
+  const [activeTab, setActiveTab] = useState(isProduction ? 'student' : 'admin'); // Mode produksi langsung siap untuk login peserta
   const [username, setUsername] = useState(isProduction ? '' : 'admin');
   const [password, setPassword] = useState(isProduction ? '' : 'admin');
   const [showPassword, setShowPassword] = useState(false);
@@ -49,8 +49,8 @@ export default function LoginPortal({ institution, onLoginSuccess }) {
       setIsCaptchaVerified(true);
     } else {
       setActiveTab('student');
-      setUsername('0068291033'); // Contoh akun siswa: Bambang Pamungkas (Non-SSO)
-      setPassword('23101'); // Password default NIS siswa
+      setUsername('0068291033'); // Contoh akun peserta: Bambang Pamungkas (Non-SSO)
+      setPassword('23101'); // Password default NIS peserta
       setIsCaptchaVerified(true);
     }
   };
@@ -84,17 +84,17 @@ export default function LoginPortal({ institution, onLoginSuccess }) {
     if (!user) {
       setErrorMsg(
         activeTab === 'student'
-          ? 'Data Siswa (No. Ujian / NISN) tidak ditemukan di sistem sekolah. Pastikan nomor benar atau hubungi Admin/Pengawas.'
+          ? 'Data Peserta (No. Ujian / NISN) tidak ditemukan di sistem sekolah. Pastikan nomor benar atau hubungi Admin/Pengawas.'
           : 'Nama Pengguna Administrator tidak ditemukan.'
       );
       return;
     }
 
-    // ATURAN WAJIB SSO: Jika Google OAuth aktif dan sudah terhubung Google SSO, siswa WAJIB login via Google SSO
+    // ATURAN WAJIB SSO: Jika Google OAuth aktif dan sudah terhubung Google SSO, peserta WAJIB login via Google SSO
     const isGoogleOAuthActive = institution?.google_oauth_enabled !== false;
     if (isGoogleOAuthActive && user.role === 'student' && user.google_linked && user.google_id) {
       setErrorMsg(
-        `Akun Anda (${user.nama}) telah terhubung ke Google SSO (${user.google_email || user.email}). Anda WAJIB masuk menggunakan tombol "Masuk dengan Google SSO Siswa" di bawah. Jika akses Google hilang, silakan lapor Admin/Proktor untuk Reset SSO.`
+        `Akun Anda (${user.nama}) telah terhubung ke Google SSO (${user.google_email || user.email}). Anda WAJIB masuk menggunakan tombol "Masuk dengan Google SSO Peserta" di bawah. Jika akses Google hilang, silakan lapor Admin/Proktor untuk Reset SSO.`
       );
       return;
     }
@@ -102,7 +102,7 @@ export default function LoginPortal({ institution, onLoginSuccess }) {
     if (user.password !== password) {
       setErrorMsg(
         activeTab === 'student'
-          ? 'Password salah. Password default adalah nomor NIS siswa. Jika lupa, silakan lapor ke Admin/Proktor untuk Reset Password.'
+          ? 'Password salah. Password default adalah nomor NIS peserta. Jika lupa, silakan lapor ke Admin/Proktor untuk Reset Password.'
           : 'Kombinasi Pengguna / Administrator dan Password tidak cocok.'
       );
       return;
@@ -118,7 +118,7 @@ export default function LoginPortal({ institution, onLoginSuccess }) {
       return;
     }
 
-    // Cek penguncian 1 perangkat untuk siswa
+    // Cek penguncian 1 perangkat untuk peserta
     if (user.role === 'student') {
       if (user.active_device_id && user.active_device_id !== currentDeviceId) {
         setErrorMsg(
@@ -145,7 +145,7 @@ export default function LoginPortal({ institution, onLoginSuccess }) {
 
     const user = storageService.getUserByEmail(email);
     if (!user) {
-      setErrorMsg(`Email ${email} tidak terdaftar di database siswa/staf institusi ini.`);
+      setErrorMsg(`Email ${email} tidak terdaftar di database peserta/staf institusi ini.`);
       setSsoModalOpen(false);
       return;
     }
@@ -299,14 +299,14 @@ export default function LoginPortal({ institution, onLoginSuccess }) {
                   d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.34 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"
                 />
               </svg>
-              <span>Masuk dengan Akun Google Siswa</span>
+              <span>Masuk dengan Akun Google Peserta</span>
             </button>
           </div>
         ) : (
           <form onSubmit={handleCredentialsLogin} className="space-y-4">
             <div>
               <label className="block text-xs font-medium text-zinc-700 mb-1.5">
-                {activeTab === 'student' ? 'Nomor Ujian / NISN Siswa' : 'Username Administrator'}
+                {activeTab === 'student' ? 'Nomor Ujian / NISN Peserta' : 'Username Administrator'}
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-zinc-400">
@@ -323,7 +323,7 @@ export default function LoginPortal({ institution, onLoginSuccess }) {
               </div>
               {activeTab === 'student' && (
                 <p className="mt-1 text-[11px] text-zinc-500 flex items-center justify-between">
-                  <span>Login: <strong>No. Ujian / NISN</strong> &bull; Password: <strong>NIS Siswa</strong></span>
+                  <span>Login: <strong>No. Ujian / NISN</strong> &bull; Password: <strong>NIS Peserta</strong></span>
                   <span className="text-zinc-400">Reset lapor proktor</span>
                 </p>
               )}
@@ -476,7 +476,7 @@ export default function LoginPortal({ institution, onLoginSuccess }) {
               <h3 className="font-semibold text-zinc-900 text-sm">Google Workspace Sign-In</h3>
             </div>
             <p className="text-xs text-zinc-600 mb-4">
-              Pilih atau masukkan email akun siswa Google Workspace Anda:
+              Pilih atau masukkan email akun peserta Google Workspace Anda:
             </p>
 
             {isSimulation && (
@@ -511,7 +511,7 @@ export default function LoginPortal({ institution, onLoginSuccess }) {
 
             <div className="mb-4">
               <label className="block text-[11px] font-medium text-zinc-700 mb-1">
-                {isSimulation ? 'Atau Ketik Email Akun Sekolah' : 'Ketik Email Akun Google Siswa'}
+                {isSimulation ? 'Atau Ketik Email Akun Sekolah' : 'Ketik Email Akun Google Peserta'}
               </label>
               <input
                 type="email"
@@ -572,7 +572,7 @@ export default function LoginPortal({ institution, onLoginSuccess }) {
                 onClick={() => handleFillDemo('student')}
                 className="py-1.5 px-2 bg-white hover:bg-zinc-50 border border-zinc-300 rounded-lg text-left transition-all hover:border-zinc-400 cursor-pointer"
               >
-                <div className="text-[9.5px] text-zinc-500 font-medium">Siswa:</div>
+                <div className="text-[9.5px] text-zinc-500 font-medium">Peserta:</div>
                 <div className="font-mono font-bold text-zinc-900 text-[10.5px]">0068291033</div>
               </button>
             </div>

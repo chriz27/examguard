@@ -23,6 +23,11 @@ try {
   syncChannel = null;
 }
 
+// LAN Server Sync Channel: Memungkinkan sinkronisasi real-time antar perangkat via LAN (Laptop/PC Proktor <-> HP Peserta)
+const syncListeners = new Set();
+let lastProcessedServerTimestamp = 0;
+let isLanPollingActive = false;
+
 export function broadcastSync(action, payload = {}) {
   try {
     if (syncChannel) {
@@ -33,22 +38,102 @@ export function broadcastSync(action, payload = {}) {
     try {
       window.dispatchEvent(new CustomEvent('examguard_storage_updated', { detail: { action, ...payload } }));
     } catch {}
+
+    // Broadcast ke server LAN Vite jika tersedia
+    try {
+      const attempts = JSON.parse(localStorage.getItem(STORAGE_KEYS.STUDENT_ATTEMPTS) || '[]');
+      const attendance = JSON.parse(localStorage.getItem(STORAGE_KEYS.EXAM_ATTENDANCE) || '[]');
+      fetch('/api/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, payload, attempts, attendance }),
+      }).catch(() => {});
+    } catch {}
   }
 }
 
 export function subscribeSync(callback) {
-  if (!syncChannel) return () => {};
-  const handler = (event) => {
-    if (event && event.data) {
-      callback(event.data);
+  syncListeners.add(callback);
+  let handler = null;
+  if (syncChannel) {
+    handler = (event) => {
+      if (event && event.data) {
+        callback(event.data);
+      }
+    };
+    syncChannel.addEventListener('message', handler);
+  }
+  return () => {
+    syncListeners.delete(callback);
+    if (syncChannel && handler) {
+      try {
+        syncChannel.removeEventListener('message', handler);
+      } catch {}
     }
   };
-  syncChannel.addEventListener('message', handler);
-  return () => {
+}
+
+// Inisialisasi polling LAN sync secara otomatis di latar belakang
+function initLanSyncPoller() {
+  if (typeof window === 'undefined' || isLanPollingActive) return;
+  isLanPollingActive = true;
+
+  const poll = async () => {
     try {
-      syncChannel.removeEventListener('message', handler);
+      const res = await fetch('/api/sync', { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.lastUpdated && data.lastUpdated > lastProcessedServerTimestamp) {
+          lastProcessedServerTimestamp = data.lastUpdated;
+
+          let storageModified = false;
+          // Sinkronisasi daftar attempts pengerjaan peserta
+          if (Array.isArray(data.attempts) && data.attempts.length > 0) {
+            const currentAttempts = JSON.parse(localStorage.getItem(STORAGE_KEYS.STUDENT_ATTEMPTS) || '[]');
+            data.attempts.forEach((srvAtt) => {
+              const idx = currentAttempts.findIndex(
+                (loc) => loc.id === srvAtt.id || (loc.student_id === srvAtt.student_id && loc.exam_session_id === srvAtt.exam_session_id)
+              );
+              if (idx >= 0) {
+                // Bandingkan apakah ada pembaruan status, violations, atau waktu
+                if (
+                  currentAttempts[idx].status !== srvAtt.status ||
+                  currentAttempts[idx].violation_count !== srvAtt.violation_count ||
+                  currentAttempts[idx].time_spent_seconds !== srvAtt.time_spent_seconds ||
+                  currentAttempts[idx].unlocked_at !== srvAtt.unlocked_at
+                ) {
+                  currentAttempts[idx] = { ...currentAttempts[idx], ...srvAtt };
+                  storageModified = true;
+                }
+              } else {
+                currentAttempts.push(srvAtt);
+                storageModified = true;
+              }
+            });
+            if (storageModified) {
+              localStorage.setItem(STORAGE_KEYS.STUDENT_ATTEMPTS, JSON.stringify(currentAttempts));
+            }
+          }
+
+          // Proses event terbaru (misal: attempt_unlocked, attempt_updated, work_reset)
+          if (Array.isArray(data.events) && data.events.length > 0) {
+            const recentEvents = data.events.slice(-5);
+            recentEvents.forEach((ev) => {
+              syncListeners.forEach((listener) => {
+                try { listener(ev); } catch {}
+              });
+            });
+          }
+
+          if (storageModified) {
+            window.dispatchEvent(new CustomEvent('examguard_storage_updated'));
+          }
+        }
+      }
     } catch {}
   };
+
+  setInterval(poll, 1500);
 }
 
 /**
@@ -463,6 +548,8 @@ export const storageService = {
     if (!localStorage.getItem(STORAGE_KEYS.STUDENT_ATTEMPTS)) {
       localStorage.setItem(STORAGE_KEYS.STUDENT_ATTEMPTS, JSON.stringify([]));
     }
+    // Aktifkan sinkronisasi otomatis antar-perangkat LAN
+    initLanSyncPoller();
   },
 
   // 1. INSTITUSI
@@ -1610,6 +1697,30 @@ export const storageService = {
       window.dispatchEvent(new CustomEvent('examguard_storage_updated'));
     }
     return record;
+  },
+
+  // Simpan / update status presensi per siswa
+  saveExamAttendance(examSessionId, studentId, data) {
+    return this.updateStudentAttendance(
+      examSessionId,
+      studentId,
+      data,
+      data.updated_by || 'Admin'
+    );
+  },
+
+  // Reset catatan presensi khusus (kembali ke default otomatis)
+  removeExamAttendance(examSessionId, studentId) {
+    this.init();
+    const all = this.getExamAttendance();
+    const filtered = all.filter(
+      (a) => !(a.exam_session_id === examSessionId && a.student_id === studentId)
+    );
+    localStorage.setItem(STORAGE_KEYS.EXAM_ATTENDANCE, JSON.stringify(filtered));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('examguard_storage_updated'));
+    }
+    return true;
   },
 
   // 4c. BERITA ACARA UJIAN (KONFIGURASI PERSISTEN PENGATURAN KOP, PEJABAT & CATATAN)

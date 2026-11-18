@@ -1527,10 +1527,10 @@ export default function AdminDashboard({ currentUser, onLogout }) {
   // Aksi Pengawas 1: Reset Login Perangkat (Konfirmasi Modern)
   const handleProctorResetLogin = (studentId, studentName) => {
     openConfirm({
-      title: 'Reset Kunci Perangkat Siswa?',
+      title: 'Reset Kunci Perangkat Peserta?',
       message: (
         <span>
-          Hapus pengikatan perangkat (Active Device ID) untuk peserta <strong>{studentName}</strong>? Siswa akan diizinkan login kembali menggunakan perangkat lain.
+          Hapus pengikatan perangkat (Active Device ID) untuk peserta <strong>{studentName}</strong>? Peserta akan diizinkan login kembali menggunakan perangkat lain.
         </span>
       ),
       confirmText: 'Ya, Reset Perangkat',
@@ -1539,18 +1539,18 @@ export default function AdminDashboard({ currentUser, onLogout }) {
       onConfirm: () => {
         storageService.proctorResetStudentDevice(studentId);
         refreshData();
-        showNotification(`Perangkat ${studentName} berhasil direset. Siswa kini bisa login kembali.`);
+        showNotification(`Perangkat ${studentName} berhasil direset. Peserta kini bisa login kembali.`);
       },
     });
   };
 
-  // Aksi Pengawas 2: Unlock Siswa (Konfirmasi Modern)
+  // Aksi Pengawas 2: Unlock Peserta (Konfirmasi Modern)
   const handleProctorUnlock = (attemptId, studentName) => {
     openConfirm({
       title: 'Buka Kunci Ujian (Unlock)?',
       message: (
         <span>
-          Buka status terkunci siswa <strong>{studentName}</strong>? Status ujian akan dipulihkan menjadi <strong>SEDANG MENGERJAKAN</strong>, jumlah pelanggaran direset ke 0, dan siswa dapat segera melanjutkan lembar ujian.
+          Buka status terkunci peserta <strong>{studentName}</strong>? Status ujian akan dipulihkan menjadi <strong>SEDANG MENGERJAKAN</strong>, jumlah pelanggaran direset ke 0, dan peserta dapat segera melanjutkan lembar ujian.
         </span>
       ),
       confirmText: 'Ya, Buka Kunci',
@@ -1559,18 +1559,18 @@ export default function AdminDashboard({ currentUser, onLogout }) {
       onConfirm: () => {
         storageService.proctorUnlockAttempt(attemptId);
         refreshMonitoringData();
-        showNotification(`Status ujian ${studentName} berhasil dibuka (UNLOCKED). Siswa dapat lanjut mengerjakan.`);
+        showNotification(`Status ujian ${studentName} berhasil dibuka (UNLOCKED). Peserta dapat lanjut mengerjakan.`);
       },
     });
   };
 
-  // Aksi Pengawas 2b: Reset Hitungan Pelanggaran Siswa (Konfirmasi Modern)
+  // Aksi Pengawas 2b: Reset Hitungan Pelanggaran Peserta (Konfirmasi Modern)
   const handleProctorResetViolationCount = (attemptId, studentName) => {
     openConfirm({
-      title: 'Reset Pelanggaran Siswa ke 0?',
+      title: 'Reset Pelanggaran Peserta ke 0?',
       message: (
         <span>
-          Reset hitungan pelanggaran untuk siswa <strong>{studentName}</strong> kembali ke <strong>0 kali</strong>? Jika siswa sedang berstatus terkunci, status pengerjaannya akan otomatis dipulihkan menjadi aktif kembali.
+          Reset hitungan pelanggaran untuk peserta <strong>{studentName}</strong> kembali ke <strong>0 kali</strong>? Jika peserta sedang berstatus terkunci, status pengerjaannya akan otomatis dipulihkan menjadi aktif kembali.
         </span>
       ),
       confirmText: 'Ya, Reset ke 0',
@@ -1597,17 +1597,17 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     setTimeout(() => {
       setIsRefreshingProctor(false);
       const studentCount = currentUsers.filter((u) => u.role === 'student').length;
-      showNotification(`Tabel pengawas berhasil disegarkan (${currentAttempts.length} aktivitas pengerjaan, ${studentCount} siswa terpantau).`);
+      showNotification(`Tabel pengawas berhasil disegarkan (${currentAttempts.length} aktivitas pengerjaan, ${studentCount} peserta terpantau).`);
     }, 400);
   };
 
   // Aksi Pengawas 3: Reset Jawaban (Konfirmasi Modern)
   const handleProctorResetAnswer = (attemptId, studentName) => {
     openConfirm({
-      title: 'Reset Lembar Jawaban Siswa?',
+      title: 'Reset Lembar Jawaban Peserta?',
       message: (
         <span>
-          Reset jawaban untuk peserta <strong>{studentName}</strong>? Status pengerjaan akan diubah menjadi <strong>RESET_BY_PROCTOR</strong> dan soal akan muncul kembali di beranda siswa jika jawaban mereka belum masuk Google Sheets.
+          Reset jawaban untuk peserta <strong>{studentName}</strong>? Status pengerjaan akan diubah menjadi <strong>RESET_BY_PROCTOR</strong> dan soal akan muncul kembali di beranda peserta jika jawaban mereka belum masuk Google Sheets.
         </span>
       ),
       confirmText: 'Ya, Reset Jawaban',
@@ -1616,7 +1616,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
       onConfirm: () => {
         storageService.proctorResetAnswerAttempt(attemptId);
         refreshData();
-        showNotification(`Jawaban ${studentName} direset. Soal kembali aktif di portal siswa.`);
+        showNotification(`Jawaban ${studentName} direset. Soal kembali aktif di portal peserta.`);
       },
     });
   };
@@ -1625,13 +1625,13 @@ export default function AdminDashboard({ currentUser, onLogout }) {
   // HANDLERS: RESET LOGIN & STATUS PENGERJAAN PER MAPEL
   // ========================================================
 
-  // 1. Reset Login Siswa Tunggal
+  // 1. Reset Login Peserta Tunggal
   const handleResetLoginSingle = (studentId, studentName) => {
     openConfirm({
       title: 'Reset Login / Kunci Perangkat?',
       message: (
         <span>
-          Hapus penguncian perangkat untuk <strong>{studentName}</strong>? Siswa dapat segera login dari perangkat atau browser baru.
+          Hapus penguncian perangkat untuk <strong>{studentName}</strong>? Peserta dapat segera login dari perangkat atau browser baru.
         </span>
       ),
       confirmText: 'Ya, Reset Login',
@@ -1640,7 +1640,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
       onConfirm: () => {
         storageService.proctorResetStudentDevice(studentId);
         refreshMonitoringData();
-        showNotification(`Kunci login ${studentName} berhasil direset. Siswa dapat login kembali.`);
+        showNotification(`Kunci login ${studentName} berhasil direset. Peserta dapat login kembali.`);
       },
     });
   };
@@ -1652,7 +1652,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
       title: 'Ubah Status ke "Belum Masuk"?',
       message: (
         <span>
-          Kembalikan status pengerjaan <strong>{studentName}</strong> pada mapel <strong>{currentResetExam.title}</strong> menjadi <strong>BELUM MASUK</strong>? Catatan pengerjaan dan pelanggaran untuk mapel ini akan dihapus bersih, dan siswa dapat memulai ujian dari awal.
+          Kembalikan status pengerjaan <strong>{studentName}</strong> pada mapel <strong>{currentResetExam.title}</strong> menjadi <strong>BELUM MASUK</strong>? Catatan pengerjaan dan pelanggaran untuk mapel ini akan dihapus bersih, dan peserta dapat memulai ujian dari awal.
         </span>
       ),
       confirmText: 'Ya, Set Belum Masuk',
@@ -1673,7 +1673,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
       title: 'Ubah Status ke "Selesai"?',
       message: (
         <span>
-          Tandai sesi ujian <strong>{studentName}</strong> pada mapel <strong>{currentResetExam.title}</strong> sebagai <strong>SELESAI (COMPLETED)</strong>? Kehadiran siswa pada presensi akan otomatis dicatat sebagai <strong>HADIR</strong>.
+          Tandai sesi ujian <strong>{studentName}</strong> pada mapel <strong>{currentResetExam.title}</strong> sebagai <strong>SELESAI (COMPLETED)</strong>? Kehadiran peserta pada presensi akan otomatis dicatat sebagai <strong>HADIR</strong>.
         </span>
       ),
       confirmText: 'Ya, Tandai Selesai',
@@ -1691,10 +1691,10 @@ export default function AdminDashboard({ currentUser, onLogout }) {
   const handleResetWorkSingle = (studentId, studentName) => {
     if (!currentResetExam) return;
     openConfirm({
-      title: 'Reset Pekerjaan Ujian Siswa?',
+      title: 'Reset Pekerjaan Ujian Peserta?',
       message: (
         <span>
-          Reset pekerjaan <strong>{studentName}</strong> pada mapel <strong>{currentResetExam.title}</strong>? Waktu pengerjaan dan seluruh riwayat pelanggaran akan dikembalikan ke <strong>0</strong>, status diatur menjadi <strong>RESET OLEH PENGAWAS</strong>, dan siswa dapat mengerjakan lembar ujian kembali.
+          Reset pekerjaan <strong>{studentName}</strong> pada mapel <strong>{currentResetExam.title}</strong>? Waktu pengerjaan dan seluruh riwayat pelanggaran akan dikembalikan ke <strong>0</strong>, status diatur menjadi <strong>RESET OLEH PENGAWAS</strong>, dan peserta dapat mengerjakan lembar ujian kembali.
         </span>
       ),
       confirmText: 'Ya, Reset Pekerjaan',
@@ -1735,16 +1735,16 @@ export default function AdminDashboard({ currentUser, onLogout }) {
       : resetExamStudents;
 
     if (targetStudents.length === 0) {
-      showNotification('Tidak ada siswa yang dipilih.', 'warning');
+      showNotification('Tidak ada peserta yang dipilih.', 'warning');
       return;
     }
 
     const targetIds = targetStudents.map((s) => s.studentId);
     openConfirm({
-      title: `Reset Login untuk ${targetStudents.length} Siswa?`,
+      title: `Reset Login untuk ${targetStudents.length} Peserta?`,
       message: (
         <span>
-          Hapus penguncian perangkat untuk <strong>{targetStudents.length} siswa</strong> pada mapel <strong>{currentResetExam.title}</strong>? Seluruh siswa ini akan dapat login dari perangkat atau browser baru.
+          Hapus penguncian perangkat untuk <strong>{targetStudents.length} peserta</strong> pada mapel <strong>{currentResetExam.title}</strong>? Seluruh peserta ini akan dapat login dari perangkat atau browser baru.
         </span>
       ),
       confirmText: `Ya, Reset ${targetStudents.length} Login`,
@@ -1754,7 +1754,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
         const count = storageService.proctorResetBulkStudentDevices(targetIds);
         setSelectedStudentIdsForReset([]);
         refreshMonitoringData();
-        showNotification(`Berhasil mereset login perangkat untuk ${count} siswa.`);
+        showNotification(`Berhasil mereset login perangkat untuk ${count} peserta.`);
       },
     });
   };
@@ -1767,16 +1767,16 @@ export default function AdminDashboard({ currentUser, onLogout }) {
       : resetExamStudents;
 
     if (targetStudents.length === 0) {
-      showNotification('Tidak ada siswa yang dipilih.', 'warning');
+      showNotification('Tidak ada peserta yang dipilih.', 'warning');
       return;
     }
 
     const targetIds = targetStudents.map((s) => s.studentId);
     openConfirm({
-      title: `Set "Belum Masuk" untuk ${targetStudents.length} Siswa?`,
+      title: `Set "Belum Masuk" untuk ${targetStudents.length} Peserta?`,
       message: (
         <span>
-          Hapus seluruh catatan pengerjaan <strong>{targetStudents.length} siswa</strong> pada mapel <strong>{currentResetExam.title}</strong>? Status seluruh siswa ini akan kembali menjadi <strong>BELUM MASUK</strong> dan siap memulai ujian dari awal.
+          Hapus seluruh catatan pengerjaan <strong>{targetStudents.length} peserta</strong> pada mapel <strong>{currentResetExam.title}</strong>? Status seluruh peserta ini akan kembali menjadi <strong>BELUM MASUK</strong> dan siap memulai ujian dari awal.
         </span>
       ),
       confirmText: `Ya, Set ${targetStudents.length} Belum Masuk`,
@@ -1786,7 +1786,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
         const count = storageService.proctorSetBulkNotStarted(targetIds, currentResetExam.id);
         setSelectedStudentIdsForReset([]);
         refreshMonitoringData();
-        showNotification(`Berhasil mengatur ${count} siswa menjadi status Belum Masuk.`);
+        showNotification(`Berhasil mengatur ${count} peserta menjadi status Belum Masuk.`);
       },
     });
   };
@@ -1799,16 +1799,16 @@ export default function AdminDashboard({ currentUser, onLogout }) {
       : resetExamStudents;
 
     if (targetStudents.length === 0) {
-      showNotification('Tidak ada siswa yang dipilih.', 'warning');
+      showNotification('Tidak ada peserta yang dipilih.', 'warning');
       return;
     }
 
     const targetIds = targetStudents.map((s) => s.studentId);
     openConfirm({
-      title: `Tandai "Selesai" untuk ${targetStudents.length} Siswa?`,
+      title: `Tandai "Selesai" untuk ${targetStudents.length} Peserta?`,
       message: (
         <span>
-          Tandai pengerjaan <strong>{targetStudents.length} siswa</strong> pada mapel <strong>{currentResetExam.title}</strong> sebagai <strong>SELESAI (COMPLETED)</strong>? Kehadiran siswa pada presensi akan otomatis dicatat sebagai <strong>HADIR</strong>.
+          Tandai pengerjaan <strong>{targetStudents.length} peserta</strong> pada mapel <strong>{currentResetExam.title}</strong> sebagai <strong>SELESAI (COMPLETED)</strong>? Kehadiran peserta pada presensi akan otomatis dicatat sebagai <strong>HADIR</strong>.
         </span>
       ),
       confirmText: `Ya, Tandai ${targetStudents.length} Selesai`,
@@ -1818,7 +1818,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
         const count = storageService.proctorSetBulkCompleted(targetIds, currentResetExam.id, currentResetExam.title);
         setSelectedStudentIdsForReset([]);
         refreshMonitoringData();
-        showNotification(`Berhasil menandai ${count} siswa menjadi status Selesai.`);
+        showNotification(`Berhasil menandai ${count} peserta menjadi status Selesai.`);
       },
     });
   };
@@ -1831,16 +1831,16 @@ export default function AdminDashboard({ currentUser, onLogout }) {
       : resetExamStudents;
 
     if (targetStudents.length === 0) {
-      showNotification('Tidak ada siswa yang dipilih.', 'warning');
+      showNotification('Tidak ada peserta yang dipilih.', 'warning');
       return;
     }
 
     const targetIds = targetStudents.map((s) => s.studentId);
     openConfirm({
-      title: `Reset Pekerjaan untuk ${targetStudents.length} Siswa?`,
+      title: `Reset Pekerjaan untuk ${targetStudents.length} Peserta?`,
       message: (
         <span>
-          Reset pekerjaan ujian <strong>{targetStudents.length} siswa</strong> pada mapel <strong>{currentResetExam.title}</strong>? Seluruh waktu pengerjaan dan pelanggaran akan direset ke <strong>0</strong>, status diubah menjadi <strong>RESET OLEH PENGAWAS</strong>, dan siswa dapat mengerjakan kembali dari awal.
+          Reset pekerjaan ujian <strong>{targetStudents.length} peserta</strong> pada mapel <strong>{currentResetExam.title}</strong>? Seluruh waktu pengerjaan dan pelanggaran akan direset ke <strong>0</strong>, status diubah menjadi <strong>RESET OLEH PENGAWAS</strong>, dan peserta dapat mengerjakan kembali dari awal.
         </span>
       ),
       confirmText: `Ya, Reset ${targetStudents.length} Pekerjaan`,
@@ -1850,12 +1850,12 @@ export default function AdminDashboard({ currentUser, onLogout }) {
         const count = storageService.proctorResetBulkStudentWork(targetIds, currentResetExam.id, currentResetExam.title);
         setSelectedStudentIdsForReset([]);
         refreshMonitoringData();
-        showNotification(`Berhasil mereset pekerjaan ujian untuk ${count} siswa.`);
+        showNotification(`Berhasil mereset pekerjaan ujian untuk ${count} peserta.`);
       },
     });
   };
 
-  // Handler Import Siswa
+  // Handler Import Peserta
   const handleImportSubmit = (e) => {
     e.preventDefault();
     if (!importCsvText.trim()) {
@@ -1891,10 +1891,10 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     setShowImportModal(false);
     setImportCsvText('');
     refreshData();
-    showNotification(`Berhasil mengimpor ${count} siswa. Password awal otomatis diset ke NISN.`);
+    showNotification(`Berhasil mengimpor ${count} peserta. Password awal otomatis diset ke NISN.`);
   };
 
-  // Handler Tambah Siswa Manual
+  // Handler Tambah Peserta Manual
   const handleOpenAddModal = () => {
     setNewStudentForm({
       nama: '',
@@ -1914,7 +1914,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
   const handleAddStudentSubmit = (e) => {
     e.preventDefault();
     if (!newStudentForm.nama.trim() || !newStudentForm.nisn.trim()) {
-      showNotification('Nama Siswa dan NISN wajib diisi.', 'error');
+      showNotification('Nama Peserta dan NISN wajib diisi.', 'error');
       return;
     }
 
@@ -1923,7 +1923,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
       refreshData();
       setShowAddStudentModal(false);
       showNotification(
-        `Siswa ${res.user.nama} (NISN: ${res.user.nisn}) berhasil ditambahkan. Status SSO awal: OFF.`
+        `Peserta ${res.user.nama} (NISN: ${res.user.nisn}) berhasil ditambahkan. Status SSO awal: OFF.`
       );
     } else {
       showNotification(res.message, 'error');
@@ -1931,15 +1931,15 @@ export default function AdminDashboard({ currentUser, onLogout }) {
   };
 
   // ========================================================
-  // HANDLER MANAJEMEN SISWA & AKUN PESERTA
+  // HANDLER MANAJEMEN PESERTA & AKUN PESERTA
   // ========================================================
 
-  // Handler Reset Google SSO Siswa (Konfirmasi Modern)
+  // Handler Reset Google SSO Peserta (Konfirmasi Modern)
   const handleResetStudentSSO = (student) => {
     const isCurrentlyLinked = Boolean(student.google_linked && student.google_id);
 
     openConfirm({
-      title: isCurrentlyLinked ? 'Putuskan Tautan Google SSO?' : 'Reset Status Google SSO Siswa?',
+      title: isCurrentlyLinked ? 'Putuskan Tautan Google SSO?' : 'Reset Status Google SSO Peserta?',
       message: (
         <div className="space-y-2.5">
           <p>
@@ -1966,7 +1966,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
             )}
           </div>
           <p className="text-[11px] text-zinc-500">
-            Setelah direset, siswa dapat mengaitkan akun Google baru saat login berikutnya jika fitur SSO Google aktif.
+            Setelah direset, peserta dapat mengaitkan akun Google baru saat login berikutnya jika fitur SSO Google aktif.
           </p>
         </div>
       ),
@@ -1986,7 +1986,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     });
   };
 
-  // Handler Reset Password Siswa ke Default NIS (Konfirmasi Modern)
+  // Handler Reset Password Peserta ke Default NIS (Konfirmasi Modern)
   const handleResetStudentPassword = (student) => {
     const defaultPassword = student.nis || student.nisn;
     openConfirm({
@@ -2003,7 +2003,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
             </span>
           </div>
           <p className="text-[11px] text-zinc-500">
-            Siswa dapat langsung login ke portal ujian menggunakan NISN dan Password NIS default ini.
+            Peserta dapat langsung login ke portal ujian menggunakan NISN dan Password NIS default ini.
           </p>
         </div>
       ),
@@ -2024,7 +2024,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     });
   };
 
-  // Handler Edit Akun Siswa (jika email di-update dan berbeda dengan sebelumnya maka status SSO off)
+  // Handler Edit Akun Peserta (jika email di-update dan berbeda dengan sebelumnya maka status SSO off)
   const handleOpenEditModal = (student) => {
     setEditingStudent({
       ...student,
@@ -2036,7 +2036,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
   const handleSaveEditStudent = (e) => {
     e.preventDefault();
     if (!editingStudent?.nama?.trim() || !editingStudent?.nisn?.trim()) {
-      showNotification('Nama Siswa dan NISN tidak boleh kosong.', 'error');
+      showNotification('Nama Peserta dan NISN tidak boleh kosong.', 'error');
       return;
     }
 
@@ -2046,7 +2046,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
       setShowEditStudentModal(false);
       if (res.emailChanged) {
         showNotification(
-          `Data ${res.user.nama} diperbarui. Karena email diubah, status SSO Google otomatis direset ke OFF (siswa harus login ulang lewat Google SSO).`,
+          `Data ${res.user.nama} diperbarui. Karena email diubah, status SSO Google otomatis direset ke OFF (peserta harus login ulang lewat Google SSO).`,
           'success'
         );
       } else {
@@ -2057,7 +2057,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     }
   };
 
-  // Handler Hapus Siswa
+  // Handler Hapus Peserta
   const handleDeleteStudent = (id, name) => {
     openConfirm({
       title: 'Hapus Data Peserta?',
@@ -2800,6 +2800,43 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
           {/* TAB 1: OVERVIEW */}
           {activeTab === 'overview' && (
             <div className="space-y-6">
+              {/* LAN & Local Access Information Banner */}
+              <div className="bg-gradient-to-r from-blue-50/90 to-indigo-50/90 border border-blue-200 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-2xs">
+                <div className="flex items-start gap-3.5">
+                  <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                    <Smartphone className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-sm font-bold text-zinc-900">Akses Portal Peserta di HP via LAN / Wi-Fi</h3>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                        LAN SYNC AKTIF
+                      </span>
+                    </div>
+                    <p className="text-xs text-zinc-600 mt-0.5">
+                      Hubungkan HP peserta ke Wi-Fi / LAN yang sama dengan laptop ini, lalu buka alamat berikut di browser ponsel:
+                    </p>
+                    <div className="mt-2.5 flex items-center gap-2 flex-wrap">
+                      <span className="px-3 py-1 bg-white border border-blue-300 rounded-lg text-xs font-mono font-bold text-blue-900 shadow-2xs select-all">
+                        {typeof window !== 'undefined' ? `${window.location.protocol}//${window.location.hostname}:5173` : 'http://<IP-LAN>:5173'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const url = `${window.location.protocol}//${window.location.hostname}:5173`;
+                          navigator.clipboard.writeText(url);
+                          showNotification(`URL ${url} berhasil disalin ke clipboard!`);
+                        }}
+                        className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold inline-flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Salin Link</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {/* Stat Cards */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="bg-white border border-zinc-200/80 rounded-xl p-5 shadow-2xs">
@@ -2819,20 +2856,20 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
 
                 <div className="bg-white border border-zinc-200/80 rounded-xl p-5 shadow-2xs">
                   <div className="flex items-center justify-between text-zinc-500 mb-2">
-                    <span className="text-xs font-medium">Siswa Terdaftar</span>
+                    <span className="text-xs font-medium">Peserta Terdaftar</span>
                     <Users className="w-4 h-4 text-zinc-400" />
                   </div>
                   <div className="text-2xl font-bold text-zinc-900 font-mono-num">
                     {users.filter((u) => u.role === 'student').length}
                   </div>
                   <div className="text-[11px] text-emerald-600 font-medium mt-1">
-                    {users.filter((u) => u.role === 'student' && u.is_active).length} siswa status aktif
+                    {users.filter((u) => u.role === 'student' && u.is_active).length} peserta status aktif
                   </div>
                 </div>
 
                 <div className="bg-white border border-zinc-200/80 rounded-xl p-5 shadow-2xs">
                   <div className="flex items-center justify-between text-zinc-500 mb-2">
-                    <span className="text-xs font-medium">Siswa Terkunci (Locked)</span>
+                    <span className="text-xs font-medium">Peserta Terkunci (Locked)</span>
                     <ShieldAlert className="w-4 h-4 text-rose-500" />
                   </div>
                   <div className="text-2xl font-bold text-rose-600 font-mono-num">
@@ -2869,7 +2906,7 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                         Pemantauan Pengerjaan Ujian Terbaru
                       </h2>
                       <p className="text-[11px] text-zinc-500">
-                        Aktivitas sesi ujian dan status pengerjaan siswa secara real-time
+                        Aktivitas sesi ujian dan status pengerjaan peserta secara real-time
                       </p>
                     </div>
                   </div>
@@ -2885,9 +2922,9 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                 {attempts.length === 0 ? (
                   <div className="text-center py-12 border border-dashed border-zinc-200 rounded-xl">
                     <Shield className="w-8 h-8 text-zinc-300 mx-auto mb-2" />
-                    <p className="text-xs font-medium text-zinc-600">Belum ada aktivitas ujian siswa saat ini.</p>
+                    <p className="text-xs font-medium text-zinc-600">Belum ada aktivitas ujian peserta saat ini.</p>
                     <p className="text-[11px] text-zinc-400 mt-0.5">
-                      Siswa yang memulai tes akan otomatis muncul di sini secara real-time.
+                      Peserta yang memulai tes akan otomatis muncul di sini secara real-time.
                     </p>
                   </div>
                 ) : (
@@ -2895,7 +2932,7 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                     <table className="w-full text-left text-xs">
                       <thead>
                         <tr className="border-b border-zinc-200 text-zinc-400 font-medium">
-                          <th className="py-2.5 px-3">Siswa</th>
+                          <th className="py-2.5 px-3">Peserta</th>
                           <th className="py-2.5 px-3">Ujian</th>
                           <th className="py-2.5 px-3">Status</th>
                           <th className="py-2.5 px-3">Pelanggaran</th>
@@ -3245,7 +3282,7 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                       </h3>
                     </div>
                     <p className="text-xs text-zinc-500 mt-0.5">
-                      Memantau peserta ujian, siswa yang sedang online/login, dan kendali buka kunci (Unlock) / reset pelanggaran secara real-time.
+                      Memantau peserta ujian, peserta yang sedang online/login, dan kendali buka kunci (Unlock) / reset pelanggaran secara real-time.
                     </p>
                   </div>
 
@@ -3286,7 +3323,7 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                   </div>
                 </div>
 
-                {/* Banner Peringatan Siswa Terkunci di Luar Tingkat Terpilih */}
+                {/* Banner Peringatan Peserta Terkunci di Luar Tingkat Terpilih */}
                 {lockedOutsideGrade.length > 0 && (
                   <div className="p-3.5 bg-rose-50 border-2 border-rose-300 rounded-xl shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-rose-900 animate-in fade-in">
                     <div className="flex items-center gap-2.5">
@@ -3295,7 +3332,7 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                       </div>
                       <div>
                         <div className="text-xs font-bold flex items-center gap-1.5">
-                          <span>Ada {lockedOutsideGrade.length} Siswa Terkunci di Tingkat Lain!</span>
+                          <span>Ada {lockedOutsideGrade.length} Peserta Terkunci di Tingkat Lain!</span>
                           <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-rose-600 text-white font-mono">
                             Perlu Tindakan Pengawas
                           </span>
@@ -5369,7 +5406,7 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
             );
           })()}
 
-          {/* TAB 4: BASIS DATA SISWA & IMPORT CSV */}
+          {/* TAB 4: BASIS DATA PESERTA & IMPORT CSV */}
           {activeTab === 'users' && (
             <div className="space-y-4">
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
@@ -5379,7 +5416,7 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                     type="text"
                     value={userSearch}
                     onChange={(e) => setUserSearch(e.target.value)}
-                    placeholder="Cari siswa nama, NISN, atau kelas..."
+                    placeholder="Cari peserta nama, NISN, atau kelas..."
                     className="w-full pl-9 pr-3 py-2 text-xs border border-zinc-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-zinc-900"
                   />
                 </div>
@@ -5398,12 +5435,12 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                     className="inline-flex items-center justify-center gap-2 px-3.5 py-2 bg-white hover:bg-zinc-50 border border-zinc-200 text-zinc-700 text-xs font-medium rounded-xl shadow-2xs transition-all cursor-pointer"
                   >
                     <Upload className="w-4 h-4 text-zinc-500" />
-                    <span>Import Siswa (CSV/Excel)</span>
+                    <span>Import Peserta (CSV/Excel)</span>
                   </button>
                 </div>
               </div>
 
-              {/* Tabel Siswa */}
+              {/* Tabel Peserta */}
               <div className="bg-white border border-zinc-200/80 rounded-xl overflow-hidden shadow-2xs">
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs">
@@ -5411,7 +5448,7 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                       <tr className="bg-zinc-50/70 border-b border-zinc-200/80 text-zinc-500 font-medium">
                         <th className="py-3.5 px-3 text-center w-12">No</th>
                         <th className="py-3.5 px-3 w-32">No. Ujian</th>
-                        <th className="py-3.5 px-4">Nama Siswa</th>
+                        <th className="py-3.5 px-4">Nama Peserta</th>
                         <th className="py-3.5 px-3">NISN & NIS</th>
                         <th className="py-3.5 px-3">Kelas & Info</th>
                         <th className="py-3.5 px-3">Kunci Perangkat</th>
@@ -5424,7 +5461,7 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                       {filteredUsers.length === 0 ? (
                         <tr>
                           <td colSpan="9" className="text-center py-12 text-zinc-400 text-xs">
-                            Tidak ada siswa yang ditemukan.
+                            Tidak ada peserta yang ditemukan.
                           </td>
                         </tr>
                       ) : (
@@ -5442,7 +5479,7 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                               </span>
                             </td>
 
-                            {/* Kolom 3: Nama Siswa */}
+                            {/* Kolom 3: Nama Peserta */}
                             <td className="py-3.5 px-4">
                               <div className="font-semibold text-zinc-900">{stu.nama}</div>
                               <div className="text-[11px] text-zinc-500 flex items-center gap-1.5 mt-0.5">
@@ -5476,7 +5513,7 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                                   <button
                                     onClick={() => handleProctorResetLogin(stu.id, stu.nama)}
                                     className="p-1 text-zinc-400 hover:text-rose-600 rounded transition-colors cursor-pointer"
-                                    title="Reset Perangkat Siswa Ini"
+                                    title="Reset Perangkat Peserta Ini"
                                   >
                                     <RotateCcw className="w-3.5 h-3.5" />
                                   </button>
@@ -5618,7 +5655,7 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                                 <button
                                   onClick={() => handleOpenEditModal(stu)}
                                   className="p-1.5 text-zinc-700 hover:text-zinc-950 bg-white hover:bg-zinc-100 rounded-lg border border-zinc-200 transition-colors cursor-pointer shadow-2xs"
-                                  title="Edit Profil & Data Siswa"
+                                  title="Edit Profil & Data Peserta"
                                 >
                                   <Edit3 className="w-3.5 h-3.5 text-zinc-700" />
                                 </button>
@@ -7467,7 +7504,7 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                             </span>
                           </div>
                           <p className="text-[11px] text-zinc-500 mt-1 leading-relaxed">
-                            Memverifikasi koordinat siswa berada dalam radius geofencing sekolah ({institution.max_radius_meters}m).
+                            Memverifikasi koordinat peserta berada dalam radius geofencing sekolah ({institution.max_radius_meters}m).
                           </p>
                         </div>
                       </div>
@@ -7505,7 +7542,7 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                             </span>
                           </div>
                           <p className="text-[11px] text-zinc-500 mt-1 leading-relaxed">
-                            Meminta izin Notification API untuk memunculkan peringatan sistem darurat jika siswa melanggar aturan.
+                            Meminta izin Notification API untuk memunculkan peringatan sistem darurat jika peserta melanggar aturan.
                           </p>
                         </div>
                       </div>
@@ -8710,12 +8747,12 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
         </div>
       )}
 
-      {/* MODAL: IMPORT SISWA CSV */}
+      {/* MODAL: IMPORT PESERTA CSV */}
       {showImportModal && (
         <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-zinc-200">
             <div className="flex items-center justify-between pb-3 border-b border-zinc-100 mb-3">
-              <h3 className="font-semibold text-zinc-900 text-sm">Import Data Siswa (CSV / Excel)</h3>
+              <h3 className="font-semibold text-zinc-900 text-sm">Import Data Peserta (CSV / Excel)</h3>
               <button
                 onClick={() => setShowImportModal(false)}
                 className="text-zinc-400 hover:text-zinc-600 p-1"
@@ -8725,11 +8762,11 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
             </div>
 
             <p className="text-xs text-zinc-600 mb-3">
-              Tempel (paste) data teks siswa dengan format kolom:{' '}
+              Tempel (paste) data teks peserta dengan format kolom:{' '}
               <code className="bg-zinc-100 px-1 py-0.5 rounded font-mono text-[11px]">
                 nama, nisn, nis, kelas, tingkat (0-12), email
               </code>
-              . Username dan Password awal siswa otomatis diset ke <strong>NISN</strong>.
+              . Username dan Password awal peserta otomatis diset ke <strong>NISN</strong>.
             </p>
 
             <div className="mb-3 flex justify-between items-center">
@@ -8766,7 +8803,7 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                   type="submit"
                   className="flex-1 py-2.5 rounded-xl bg-zinc-900 text-white text-xs font-medium hover:bg-zinc-800 shadow-xs"
                 >
-                  Proses Import Siswa
+                  Proses Import Peserta
                 </button>
               </div>
             </form>
@@ -8804,7 +8841,7 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="sm:col-span-2">
                   <label className="block text-xs font-medium text-zinc-700 mb-1">
-                    Nama Lengkap Siswa <span className="text-rose-500">*</span>
+                    Nama Lengkap Peserta <span className="text-rose-500">*</span>
                   </label>
                   <input
                     type="text"
@@ -8942,7 +8979,7 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
 
                 <div className="sm:col-span-2">
                   <label className="block text-xs font-medium text-zinc-700 mb-1">
-                    Alamat Email Siswa <span className="text-zinc-400 font-normal">(Untuk Google SSO)</span>
+                    Alamat Email Peserta <span className="text-zinc-400 font-normal">(Untuk Google SSO)</span>
                   </label>
                   <input
                     type="email"
@@ -8950,11 +8987,11 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                     onChange={(e) =>
                       setNewStudentForm({ ...newStudentForm, email: e.target.value })
                     }
-                    placeholder="nama.siswa@student.sch.id"
+                    placeholder="nama.peserta@student.sch.id"
                     className="w-full px-3 py-2 border border-zinc-300 rounded-xl text-xs font-mono focus:ring-2 focus:ring-zinc-900 focus:outline-none"
                   />
                   <p className="text-[10px] text-zinc-400 mt-0.5">
-                    Status SSO awal adalah <strong>SSO Off</strong>. Centang hijau akan otomatis aktif setelah siswa login SSO dengan email ini.
+                    Status SSO awal adalah <strong>SSO Off</strong>. Centang hijau akan otomatis aktif setelah peserta login SSO dengan email ini.
                   </p>
                 </div>
               </div>
@@ -8973,7 +9010,7 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                     className="w-4 h-4 rounded text-zinc-900 focus:ring-zinc-900"
                   />
                   <span className="text-xs font-medium text-zinc-800">
-                    Verifikasi siswa ini langsung (Akun aktif dan siap digunakan ujian)
+                    Verifikasi peserta ini langsung (Akun aktif dan siap digunakan ujian)
                   </span>
                 </label>
               </div>
@@ -9028,7 +9065,7 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="sm:col-span-2">
                   <label className="block text-xs font-medium text-zinc-700 mb-1">
-                    Nama Lengkap Siswa <span className="text-rose-500">*</span>
+                    Nama Lengkap Peserta <span className="text-rose-500">*</span>
                   </label>
                   <input
                     type="text"
@@ -9109,7 +9146,7 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
 
                 <div className="sm:col-span-2">
                   <label className="block text-xs font-medium text-zinc-700 mb-1">
-                    Alamat Email Siswa <span className="text-zinc-400 font-normal">(Akun Google SSO)</span>
+                    Alamat Email Peserta <span className="text-zinc-400 font-normal">(Akun Google SSO)</span>
                   </label>
                   <input
                     type="email"
@@ -9132,7 +9169,7 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                             Alamat email diubah dari <code className="font-mono bg-amber-100/70 px-1 rounded">{editingStudent.original_email || '-'}</code> menjadi <code className="font-mono bg-amber-100/70 px-1 rounded">{editingStudent.email}</code>.
                           </p>
                           <p className="mt-0.5 font-medium text-amber-900">
-                            Sesuai aturan sistem, status Google SSO akan <strong>otomatis OFF</strong> (ID Google tersimpan akan dihapus). Siswa harus login ulang lewat Google SSO dengan email baru ini.
+                            Sesuai aturan sistem, status Google SSO akan <strong>otomatis OFF</strong> (ID Google tersimpan akan dihapus). Peserta harus login ulang lewat Google SSO dengan email baru ini.
                           </p>
                         </div>
                       </div>
