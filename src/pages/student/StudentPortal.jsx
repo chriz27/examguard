@@ -218,6 +218,7 @@ export default function StudentPortal({ currentUser: propCurrentUser, onLogout }
     cookies: { checking: true, passed: false, message: 'Memeriksa akses Cookies...' },
   });
   const [gpsSimulatedOverride, setGpsSimulatedOverride] = useState(false);
+  const [audioTested, setAudioTested] = useState(false);
   const [recheckTrigger, setRecheckTrigger] = useState(0);
 
   // Popup Animasi Pemeriksaan Izin Sistem Berulang (Checklist Loading Popup)
@@ -511,8 +512,8 @@ export default function StudentPortal({ currentUser: propCurrentUser, onLogout }
     };
   }, []);
 
-  // 4. Pre-Flight Verification Runner (Mengevaluasi 8 Izin Sesuai Mode Aplikasi & Pengaturan Instansi)
-  // Tetap berjalan pada setiap login di latar belakang untuk memastikan perangkat peserta selalu memenuhi syarat
+  // 4. Pre-Flight Verification Runner (Pemeriksaan Akurat Berdasarkan Setelan Riil Peramban Peserta)
+  // Berjalan di latar belakang untuk memastikan setiap izin yang diwajibkan admin benar-benar diizinkan oleh peramban
   useEffect(() => {
     if (currentStage === 'exam') return;
 
@@ -530,7 +531,7 @@ export default function StudentPortal({ currentUser: propCurrentUser, onLogout }
       cookies_iframe: true,
     };
 
-    // 1. Check Cookies
+    // 1. Check Cookies & Storage (Riil)
     if (perms.cookies_iframe === false || (isSimMode && appMode.bypass_cookies_check)) {
       setPreflightStatus((prev) => ({
         ...prev,
@@ -543,20 +544,27 @@ export default function StudentPortal({ currentUser: propCurrentUser, onLogout }
         },
       }));
     } else {
-      const cookiesPassed = navigator.cookieEnabled;
+      let storageOk = false;
+      try {
+        localStorage.setItem('__eg_storage_test__', '1');
+        localStorage.removeItem('__eg_storage_test__');
+        storageOk = navigator.cookieEnabled !== false;
+      } catch {
+        storageOk = false;
+      }
       setPreflightStatus((prev) => ({
         ...prev,
         cookies: {
           checking: false,
-          passed: cookiesPassed,
-          message: cookiesPassed
-            ? 'Penyimpanan Cookies diizinkan (Sesi & Iframe siap)'
-            : 'Cookies dinonaktifkan di peramban Anda',
+          passed: storageOk,
+          message: storageOk
+            ? 'Penyimpanan Cookies & Sesi peramban diizinkan (Siap)'
+            : 'Penyimpanan Cookies diblokir atau dinonaktifkan di peramban Anda',
         },
       }));
     }
 
-    // 2. Check Fullscreen
+    // 2. Check Fullscreen (Riil: Apakah saat ini layar sudah dalam mode fullscreen jika diwajibkan)
     if (perms.fullscreen === false || (isSimMode && appMode.bypass_fullscreen)) {
       setPreflightStatus((prev) => ({
         ...prev,
@@ -564,41 +572,29 @@ export default function StudentPortal({ currentUser: propCurrentUser, onLogout }
           checking: false,
           passed: true,
           message: isSimMode && appMode.bypass_fullscreen
-            ? 'Mode Simulasi: Mode Layar Penuh di-bypass (Bebas multi-tab/debug)'
+            ? 'Mode Simulasi: Mode Layar Penuh di-bypass'
             : 'Mode Layar Penuh tidak diwajibkan oleh sekolah',
         },
       }));
     } else {
-      const fsSupported = !!(
-        document.fullscreenEnabled ||
-        document.webkitFullscreenEnabled ||
-        document.mozFullScreenEnabled
+      const isCurrentlyFullscreen = Boolean(
+        document.fullscreenElement ||
+        document.webkitFullscreenElement ||
+        document.mozFullScreenElement
       );
-      // Apple iOS (iPhone/iPad) tidak mendukung Fullscreen API pada elemen HTML, viewport ponsel otomatis penuh
-      if (!fsSupported && (isIOS || isMobileDevice)) {
-        setPreflightStatus((prev) => ({
-          ...prev,
-          fullscreen: {
-            checking: false,
-            passed: true,
-            message: 'HP / iOS: Mode tampilan penuh adaptif aktif untuk peramban ponsel',
-          },
-        }));
-      } else {
-        setPreflightStatus((prev) => ({
-          ...prev,
-          fullscreen: {
-            checking: false,
-            passed: fsSupported,
-            message: fsSupported
-              ? 'Mode Layar Penuh didukung oleh peramban'
-              : 'Peramban tidak mendukung Layar Penuh',
-          },
-        }));
-      }
+      setPreflightStatus((prev) => ({
+        ...prev,
+        fullscreen: {
+          checking: false,
+          passed: isCurrentlyFullscreen,
+          message: isCurrentlyFullscreen
+            ? 'Mode Layar Penuh (Fullscreen) telah aktif'
+            : 'Layar Penuh belum aktif. Klik tombol "Masuk Layar Penuh" di bawah.',
+        },
+      }));
     }
 
-    // 3. Check Media (Camera & Mic)
+    // 3. Check Media: Kamera & Mikrofon (Riil: Tidak meloloskan jika belum diberi izin)
     if (perms.camera_webcam === false) {
       setPreflightStatus((prev) => ({
         ...prev,
@@ -614,101 +610,77 @@ export default function StudentPortal({ currentUser: propCurrentUser, onLogout }
         media: {
           checking: false,
           passed: true,
-          message: 'Mode Simulasi: Sensor Kamera & Mikrofon di-bypass untuk pengujian lokal',
+          message: 'Mode Simulasi: Sensor Kamera & Mikrofon di-bypass',
         },
       }));
-    } else if (isInsecureContext || (isMobileDevice && (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia))) {
-      // Pada HP di jaringan LAN HTTP (non-SSL), browser modern membatasi mediaDevices API
+    } else if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       setPreflightStatus((prev) => ({
         ...prev,
         media: {
           checking: false,
-          passed: true,
-          message: 'Koneksi LAN HP (HTTP): Sensor media disesuaikan siap (Gunakan HTTPS untuk sensor video riil)',
+          passed: false,
+          message: 'Peramban atau koneksi jaringan tidak mendukung API Kamera/Mikrofon',
         },
       }));
-    } else if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-      navigator.mediaDevices
-        .getUserMedia({ video: true, audio: true })
-        .then((stream) => {
-          stream.getTracks().forEach((track) => track.stop());
-          setPreflightStatus((prev) => ({
-            ...prev,
-            media: {
-              checking: false,
-              passed: true,
-              message: 'Sensor Kamera & Mikrofon aktif',
-            },
-          }));
-        })
-        .catch((err) => {
-          if (isSimMode && appMode.bypass_media) {
-            storageService.addSystemErrorLog({
-              source: 'Kamera & Mikrofon',
-              level: 'warning',
-              message: `Sensor media tidak terdeteksi (${err.message}) -> Di-Bypass pada Mode Simulasi`,
-              details: err.message,
-              solution: 'Aktifkan kamera riil saat Mode Produksi diaktifkan.',
-            });
-            setPreflightStatus((prev) => ({
-              ...prev,
-              media: {
-                checking: false,
-                passed: true,
-                message: 'Mode Simulasi: Kamera & Mikrofon di-bypass untuk pengujian lokal',
-              },
-            }));
-          } else if (isMobileDevice || isInsecureContext) {
-            // Pada HP di jaringan lokal HTTP non-SSL, izinkan adaptif agar siswa tidak terblokir
-            setPreflightStatus((prev) => ({
-              ...prev,
-              media: {
-                checking: false,
-                passed: true,
-                message: 'Koneksi LAN HP: Kamera & Mikrofon disesuaikan aktif (Mode LAN)',
-              },
-            }));
-          } else {
-            storageService.addSystemErrorLog({
-              source: 'Kamera & Mikrofon',
-              level: 'error',
-              message: `Akses kamera/mikrofon ditolak atau tidak ditemukan: ${err.message}`,
-              details: err.message,
-              solution: 'Pastikan kamera terpasang dan izinkan akses media pada peramban.',
-            });
+    } else {
+      // Periksa status izin kamera jika permissions query didukung
+      if (navigator.permissions && navigator.permissions.query) {
+        navigator.permissions
+          .query({ name: 'camera' })
+          .then((perm) => {
+            if (perm.state === 'granted') {
+              setPreflightStatus((prev) => ({
+                ...prev,
+                media: {
+                  checking: false,
+                  passed: true,
+                  message: 'Izin Kamera & Mikrofon aktif (Granted)',
+                },
+              }));
+            } else if (perm.state === 'denied') {
+              setPreflightStatus((prev) => ({
+                ...prev,
+                media: {
+                  checking: false,
+                  passed: false,
+                  message: 'Izin Kamera diblokir oleh peramban. Klik ikon gembok di URL bar.',
+                },
+              }));
+            } else {
+              setPreflightStatus((prev) => ({
+                ...prev,
+                media: {
+                  checking: false,
+                  passed: false,
+                  message: 'Izin Kamera belum diberikan. Klik tombol "Izinkan Kamera & Mic" di bawah.',
+                },
+              }));
+            }
+          })
+          .catch(() => {
+            // Jika query tidak didukung untuk camera di browser ini, minta interaksi pengguna
             setPreflightStatus((prev) => ({
               ...prev,
               media: {
                 checking: false,
                 passed: false,
-                message: `Kamera & Mikrofon wajib diizinkan: ${err.message}`,
+                message: 'Izin Kamera & Mikrofon belum diverifikasi. Klik tombol di bawah.',
               },
             }));
-          }
-        });
-    } else {
-      if ((isSimMode && appMode.bypass_media) || isMobileDevice || isInsecureContext) {
-        setPreflightStatus((prev) => ({
-          ...prev,
-          media: {
-            checking: false,
-            passed: true,
-            message: 'Koneksi LAN HP (HTTP): Sensor media disesuaikan siap untuk pengujian LAN',
-          },
-        }));
+          });
       } else {
         setPreflightStatus((prev) => ({
           ...prev,
           media: {
             checking: false,
             passed: false,
-            message: 'Perangkat tidak mendukung API Kamera & Mikrofon',
+            message: 'Izin Kamera & Mikrofon belum diverifikasi. Klik tombol di bawah.',
           },
         }));
       }
     }
 
-    // 4. Check Notifications (Didukung Dekstop & Adaptif Layar/Getar di HP)
+    // 4. Check Notifications (Riil: Berdasarkan Notification.permission)
     if (perms.notifications === false || (isSimMode && appMode.bypass_notifications)) {
       setPreflightStatus((prev) => ({
         ...prev,
@@ -716,18 +688,8 @@ export default function StudentPortal({ currentUser: propCurrentUser, onLogout }
           checking: false,
           passed: true,
           message: isSimMode && appMode.bypass_notifications
-            ? 'Mode Simulasi: Izin notifikasi di-bypass untuk pengujian lokal'
+            ? 'Mode Simulasi: Izin notifikasi di-bypass'
             : 'Notifikasi peringatan tidak diwajibkan oleh sekolah',
-        },
-      }));
-    } else if (isIOS) {
-      // HP Apple iOS tidak menyediakan Web Notification API di tab biasa, aktifkan notifikasi layar & audio
-      setPreflightStatus((prev) => ({
-        ...prev,
-        notifications: {
-          checking: false,
-          passed: true,
-          message: 'HP Apple iOS: Notifikasi Layar & Alarm Audio Terverifikasi',
         },
       }));
     } else if (typeof window !== 'undefined' && 'Notification' in window) {
@@ -737,51 +699,25 @@ export default function StudentPortal({ currentUser: propCurrentUser, onLogout }
           notifications: {
             checking: false,
             passed: true,
-            message: 'Izin Notifikasi & Suara Peringatan aktif',
-          },
-        }));
-      } else if (isMobileDevice && isInsecureContext) {
-        // Pada HP di jaringan HTTP lokal tanpa HTTPS, peramban membatasi Notification API
-        // Aktifkan otomatis fallback notifikasi visual layar + alarm audio + getar
-        setPreflightStatus((prev) => ({
-          ...prev,
-          notifications: {
-            checking: false,
-            passed: true,
-            message: 'Notifikasi Layar HP Aktif (Getar & Alarm Audio Terverifikasi)',
+            message: 'Izin Notifikasi peramban aktif (Granted)',
           },
         }));
       } else if (Notification.permission === 'denied') {
-        if (isMobileDevice) {
-          // Di HP jika ditolak, aktifkan fallback getar & notifikasi layar agar siswa tidak terblokir
-          setPreflightStatus((prev) => ({
-            ...prev,
-            notifications: {
-              checking: false,
-              passed: true,
-              message: 'Notifikasi Layar HP Aktif (Getar & Audio Internal)',
-            },
-          }));
-        } else {
-          setPreflightStatus((prev) => ({
-            ...prev,
-            notifications: {
-              checking: false,
-              passed: false,
-              message: 'Izin Notifikasi diblokir oleh peramban. Klik ikon gembok di URL bar.',
-            },
-          }));
-        }
-      } else {
-        // Notification.permission === 'default'
         setPreflightStatus((prev) => ({
           ...prev,
           notifications: {
             checking: false,
             passed: false,
-            message: isMobileDevice
-              ? 'Izin Notifikasi belum aktif. Ketuk tombol "Aktifkan Notifikasi Layar HP" di bawah.'
-              : 'Izin Notifikasi belum diberikan. Klik tombol "Izinkan Notifikasi" di bawah.',
+            message: 'Izin Notifikasi diblokir oleh peramban. Klik ikon gembok di URL bar untuk mengizinkan.',
+          },
+        }));
+      } else {
+        setPreflightStatus((prev) => ({
+          ...prev,
+          notifications: {
+            checking: false,
+            passed: false,
+            message: 'Izin Notifikasi belum aktif. Klik tombol "Izinkan Notifikasi" di bawah.',
           },
         }));
       }
@@ -790,13 +726,13 @@ export default function StudentPortal({ currentUser: propCurrentUser, onLogout }
         ...prev,
         notifications: {
           checking: false,
-          passed: true,
-          message: 'Peramban tidak mendukung API Notifikasi (Mode Suara Layar Aktif)',
+          passed: false,
+          message: 'Peramban ini tidak mendukung API Notifikasi Peringatan.',
         },
       }));
     }
 
-    // 5. Check Sound Audio
+    // 5. Check Sound Audio (Riil: Wajib diverifikasi melalui tes audio/klik)
     if (perms.sound_audio === false || (isSimMode && appMode.bypass_audio)) {
       setPreflightStatus((prev) => ({
         ...prev,
@@ -804,27 +740,24 @@ export default function StudentPortal({ currentUser: propCurrentUser, onLogout }
           checking: false,
           passed: true,
           message: isSimMode && appMode.bypass_audio
-            ? 'Mode Simulasi: Sistem audio di-bypass untuk pengujian lokal'
+            ? 'Mode Simulasi: Sistem audio di-bypass'
             : 'Audio alarm tidak diwajibkan oleh sekolah',
         },
       }));
     } else {
-      const audioSupported =
-        typeof window !== 'undefined' &&
-        (window.AudioContext || window.webkitAudioContext || typeof Audio !== 'undefined');
       setPreflightStatus((prev) => ({
         ...prev,
         sound: {
           checking: false,
-          passed: Boolean(audioSupported),
-          message: audioSupported
-            ? 'Sistem Audio & Alarm Suara Peringatan aktif'
-            : 'Perangkat tidak mendukung Web Audio',
+          passed: audioTested,
+          message: audioTested
+            ? 'Sistem Suara & Alarm Audio teruji dan aktif'
+            : 'Audio alarm belum diuji. Klik tombol "Uji Bunyi Alarm" di bawah.',
         },
       }));
     }
 
-    // 6. Check Google SSO
+    // 6. Check Google SSO (Riil: Sesuai status akun tertaut)
     if (perms.google_sso === false || (isSimMode && appMode.bypass_google_sso)) {
       setPreflightStatus((prev) => ({
         ...prev,
@@ -850,7 +783,7 @@ export default function StudentPortal({ currentUser: propCurrentUser, onLogout }
       }));
     }
 
-    // 7. Check Clipboard Sanitizer
+    // 7. Check Clipboard Sanitizer (Riil: Proteksi Salin-Tempel)
     if (perms.block_clipboard === false) {
       setPreflightStatus((prev) => ({
         ...prev,
@@ -871,7 +804,7 @@ export default function StudentPortal({ currentUser: propCurrentUser, onLogout }
       }));
     }
 
-    // 8. Check GPS Geolocation (Haversine)
+    // 8. Check GPS Geolocation (Riil: Mengukur koordinat & jarak Haversine ke titik sekolah)
     if (perms.location_gps === false || institution?.gps_enabled === false) {
       setPreflightStatus((prev) => ({
         ...prev,
@@ -892,146 +825,185 @@ export default function StudentPortal({ currentUser: propCurrentUser, onLogout }
           message: 'Mode Simulasi: Lokasi GPS Di-Bypass (Simulasi di Dalam Sekolah)',
         },
       }));
-    } else if (navigator.geolocation) {
+    } else if (!navigator.geolocation) {
+      setPreflightStatus((prev) => ({
+        ...prev,
+        gps: {
+          checking: false,
+          passed: false,
+          distance: null,
+          message: 'Perangkat tidak memiliki sensor GPS Geolocation',
+        },
+      }));
+    } else {
+      setPreflightStatus((prev) => ({
+        ...prev,
+        gps: { ...prev.gps, checking: true, message: 'Memeriksa sinyal GPS riil...' },
+      }));
+
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           const studentLat = pos.coords.latitude;
           const studentLng = pos.coords.longitude;
-          const dist = calculateHaversineDistance(
-            institution.center_lat,
-            institution.center_lng,
+          const targetLat = institution?.center_lat || -6.2088;
+          const targetLng = institution?.center_lng || 106.8456;
+          const dist = Math.round(calculateHaversineDistance(
+            targetLat,
+            targetLng,
             studentLat,
             studentLng
-          );
-          const isWithin = dist <= (institution.max_radius_meters || 200);
+          ));
+          const maxRadius = institution?.max_radius_meters || 200;
+          const isWithin = dist <= maxRadius;
 
-          if (!isWithin && isSimMode && appMode.bypass_gps) {
-            setPreflightStatus((prev) => ({
-              ...prev,
-              gps: {
-                checking: false,
-                passed: true,
-                distance: dist,
-                message: `Mode Simulasi: Terdeteksi di luar radius (${dist}m) -> Otomatis Di-Bypass!`,
-              },
-            }));
-          } else {
-            setPreflightStatus((prev) => ({
-              ...prev,
-              gps: {
-                checking: false,
-                passed: isWithin,
-                distance: dist,
-                message: isWithin
-                  ? `Dalam radius sekolah (${dist}m dari titik pusat)`
-                  : `Di luar radius sekolah (${dist}m, batas max: ${institution.max_radius_meters}m)`,
-              },
-            }));
-            if (!isWithin) {
-              storageService.addSystemErrorLog({
-                source: 'GPS Geolocation',
-                level: 'error',
-                message: `Siswa berada di luar radius sekolah: ${dist} meter (Batas: ${institution.max_radius_meters}m)`,
-                solution: 'Posisikan siswa dalam radius resmi sekolah atau aktifkan Mode Simulasi saat testing lokal.',
-              });
-            }
-          }
+          setPreflightStatus((prev) => ({
+            ...prev,
+            gps: {
+              checking: false,
+              passed: isWithin,
+              distance: dist,
+              message: isWithin
+                ? `Dalam radius sekolah (${dist}m dari titik pusat)`
+                : `Di luar radius sekolah (${dist}m, batas max: ${maxRadius}m)`,
+            },
+          }));
         },
         (err) => {
-          const isOriginInsecure = isInsecureContext || err.message?.toLowerCase().includes('secure') || err.code === 1;
-          if (isSimMode && appMode.bypass_gps) {
-            storageService.addSystemErrorLog({
-              source: 'GPS Geolocation',
-              level: 'warning',
-              message: `Akses GPS ditolak/gagal di localhost: ${err.message} -> Di-Bypass`,
-              solution: 'Bypass GPS aktif pada Mode Simulasi.',
-            });
-            setPreflightStatus((prev) => ({
-              ...prev,
-              gps: {
-                checking: false,
-                passed: true,
-                distance: 0,
-                message: 'Mode Simulasi: Izin GPS tidak dapat diakses di server lokal (Di-Bypass)',
-              },
-            }));
-          } else if (isOriginInsecure && (isMobileDevice || isInsecureContext)) {
-            // Pada HP di jaringan LAN HTTP (non-SSL), peramban membatasi Geolocation API
-            setPreflightStatus((prev) => ({
-              ...prev,
-              gps: {
-                checking: false,
-                passed: true,
-                distance: 10,
-                message: 'Koneksi LAN HP (HTTP): Lokasi disimulasikan di area sekolah (10m dari titik pusat)',
-              },
-            }));
-          } else {
-            storageService.addSystemErrorLog({
-              source: 'GPS Geolocation',
-              level: 'error',
-              message: `Izin lokasi GPS gagal/ditolak: ${err.message}`,
-              solution: 'Pastikan siswa memberikan izin lokasi di URL bar atau gunakan domain HTTPS.',
-            });
-            setPreflightStatus((prev) => ({
-              ...prev,
-              gps: {
-                checking: false,
-                passed: false,
-                distance: null,
-                message: `Izin lokasi belum diberikan: ${err.message}`,
-              },
-            }));
+          let msg = 'Izin lokasi belum diberikan: ' + err.message;
+          if (err.code === 1) {
+            msg = 'Izin lokasi GPS ditolak oleh peramban. Klik ikon gembok di URL bar untuk mengizinkan.';
+          } else if (err.code === 2) {
+            msg = 'Layanan GPS perangkat tidak aktif. Nyalakan GPS pada HP/Laptop Anda.';
+          } else if (err.code === 3) {
+            msg = 'Waktu pencarian koordinat GPS habis. Klik tombol periksa ulang.';
           }
+          setPreflightStatus((prev) => ({
+            ...prev,
+            gps: {
+              checking: false,
+              passed: false,
+              distance: null,
+              message: msg,
+            },
+          }));
         },
-        { enableHighAccuracy: true, timeout: 7000 }
+        { enableHighAccuracy: true, timeout: 8000 }
       );
-    } else {
-      if ((isSimMode && appMode.bypass_gps) || isMobileDevice || isInsecureContext) {
+    }
+  }, [currentStage, institution, currentUser, recheckTrigger, audioTested]);
+
+  // Listener Real-time Perubahan Mode Fullscreen (Layar Penuh)
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const isFs = Boolean(
+        document.fullscreenElement ||
+        document.webkitFullscreenElement ||
+        document.mozFullScreenElement
+      );
+      const perms = institution?.browser_permissions || {};
+      if (perms.fullscreen !== false) {
         setPreflightStatus((prev) => ({
           ...prev,
-          gps: {
+          fullscreen: {
             checking: false,
-            passed: true,
-            distance: 0,
-            message: 'Koneksi LAN HP: GPS disesuaikan di area sekolah (Perangkat tanpa sensor)',
-          },
-        }));
-      } else {
-        setPreflightStatus((prev) => ({
-          ...prev,
-          gps: {
-            checking: false,
-            passed: false,
-            distance: null,
-            message: 'Perangkat tidak memiliki sensor GPS Geolocation',
+            passed: isFs,
+            message: isFs
+              ? 'Mode Layar Penuh (Fullscreen) telah aktif'
+              : 'Layar Penuh belum aktif. Klik tombol "Masuk Layar Penuh" di bawah.',
           },
         }));
       }
-    }
-  }, [currentStage, institution, currentUser, recheckTrigger]);
+    };
 
-// Handler Minta Izin Notifikasi Langsung dari Peramban dengan Fallback Adaptif HP
-const handleRequestNotificationPermission = async () => {
-  // 1. Uji getar perangkat HP jika didukung
-  if (typeof navigator !== 'undefined' && navigator.vibrate) {
-    try { navigator.vibrate([100, 50, 100]); } catch {}
-  }
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+    };
+  }, [institution]);
 
-  // 2. Jika Apple iOS atau HP di jaringan lokal non-SSL (Insecure Context)
-  if (isIOS || (isMobileDevice && isInsecureContext)) {
+  // ========================================================
+  // HANDLER INTERAKTIF PERIZINAN RIIL BROWSER PESERTA
+  // ========================================================
+
+  // 1. Minta Izin & Periksa Lokasi GPS Riil
+  const handleRequestGps = () => {
     setPreflightStatus((prev) => ({
       ...prev,
-      notifications: {
-        checking: false,
-        passed: true,
-        message: 'Notifikasi Layar HP Berhasil Diaktifkan (Getar & Audio Siap)',
-      },
+      gps: { checking: true, passed: false, distance: null, message: 'Memeriksa sinyal GPS riil...' },
     }));
-    return;
-  }
+    if (!navigator.geolocation) {
+      showNotification('Peramban tidak mendukung API Geolocation.', 'error');
+      setPreflightStatus((prev) => ({
+        ...prev,
+        gps: { checking: false, passed: false, distance: null, message: 'Peramban tidak mendukung GPS' },
+      }));
+      return;
+    }
 
-  if (typeof window !== 'undefined' && 'Notification' in window) {
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const studentLat = pos.coords.latitude;
+        const studentLng = pos.coords.longitude;
+        const targetLat = institution?.center_lat || -6.2088;
+        const targetLng = institution?.center_lng || 106.8456;
+        const dist = Math.round(calculateHaversineDistance(targetLat, targetLng, studentLat, studentLng));
+        const maxRadius = institution?.max_radius_meters || 200;
+        const isWithin = dist <= maxRadius;
+
+        setPreflightStatus((prev) => ({
+          ...prev,
+          gps: {
+            checking: false,
+            passed: isWithin,
+            distance: dist,
+            message: isWithin
+              ? `Dalam radius sekolah (${dist}m dari titik pusat)`
+              : `Di luar radius sekolah (${dist}m, batas max: ${maxRadius}m)`,
+          },
+        }));
+
+        if (isWithin) {
+          showNotification(`Lokasi terverifikasi dalam radius sekolah (${dist}m)!`, 'success');
+        } else {
+          showNotification(`Lokasi Anda di luar radius sekolah (${dist}m, maks ${maxRadius}m)!`, 'error');
+        }
+      },
+      (err) => {
+        let msg = 'Izin lokasi belum diberikan: ' + err.message;
+        if (err.code === 1) msg = 'Izin lokasi GPS ditolak oleh browser. Buka setelan izin situs di URL bar.';
+        else if (err.code === 2) msg = 'Layanan GPS perangkat mati. Aktifkan GPS pada HP/Laptop Anda.';
+        else if (err.code === 3) msg = 'Waktu pencarian koordinat GPS habis. Coba lagi.';
+        setPreflightStatus((prev) => ({
+          ...prev,
+          gps: { checking: false, passed: false, distance: null, message: msg },
+        }));
+        showNotification(msg, 'error');
+      },
+      { enableHighAccuracy: true, timeout: 8000 }
+    );
+  };
+
+  // 2. Minta Izin Notifikasi Langsung dari Peramban
+  const handleRequestNotificationPermission = async () => {
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      try { navigator.vibrate([100, 50, 100]); } catch {}
+    }
+
+    if (!('Notification' in window)) {
+      showNotification('Peramban tidak mendukung API Notifikasi.', 'error');
+      setPreflightStatus((prev) => ({
+        ...prev,
+        notifications: {
+          checking: false,
+          passed: false,
+          message: 'Peramban tidak mendukung API Notifikasi Peringatan.',
+        },
+      }));
+      return;
+    }
+
     try {
       let result;
       if (typeof Notification.requestPermission === 'function') {
@@ -1053,76 +1025,153 @@ const handleRequestNotificationPermission = async () => {
           notifications: {
             checking: false,
             passed: true,
-            message: 'Izin Notifikasi berhasil diaktifkan',
+            message: 'Izin Notifikasi berhasil diaktifkan (Granted)',
           },
         }));
-      } else if (isMobileDevice) {
-        // Pada HP jika ditolak di level browser, fallback ke notifikasi layar + getar agar tidak memblokir peserta
+        showNotification('Izin Notifikasi berhasil diaktifkan!', 'success');
+      } else if (result === 'denied') {
         setPreflightStatus((prev) => ({
           ...prev,
           notifications: {
             checking: false,
-            passed: true,
-            message: 'Mode Notifikasi Layar & Getar HP Aktif (Siap Ujian)',
+            passed: false,
+            message: 'Izin Notifikasi diblokir oleh peramban. Klik ikon gembok di URL bar untuk mengizinkan.',
           },
         }));
+        showNotification('Izin Notifikasi diblokir peramban. Buka ikon gembok di URL bar.', 'error');
       } else {
         setPreflightStatus((prev) => ({
           ...prev,
           notifications: {
             checking: false,
             passed: false,
-            message: 'Izin Notifikasi ditolak oleh peramban',
+            message: 'Izin Notifikasi belum disetujui.',
           },
         }));
       }
     } catch (err) {
-      console.warn('Gagal meminta izin notifikasi:', err);
-      if (isMobileDevice) {
-        setPreflightStatus((prev) => ({
-          ...prev,
-          notifications: {
-            checking: false,
-            passed: true,
-            message: 'Mode Notifikasi Layar HP Aktif (Siap Ujian)',
-          },
-        }));
-      }
+      showNotification('Gagal meminta izin: ' + err.message, 'error');
     }
-  } else {
+  };
+
+  // 3. Minta Izin Kamera & Mikrofon Langsung
+  const handleRequestCameraMic = async () => {
     setPreflightStatus((prev) => ({
       ...prev,
-      notifications: {
+      media: { checking: true, passed: false, message: 'Mengakses Kamera & Mikrofon...' },
+    }));
+
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error('Peramban tidak mendukung API Kamera/Mikrofon.');
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      stream.getTracks().forEach((t) => t.stop());
+      setPreflightStatus((prev) => ({
+        ...prev,
+        media: {
+          checking: false,
+          passed: true,
+          message: 'Sensor Kamera & Mikrofon aktif dan terverifikasi',
+        },
+      }));
+      showNotification('Izin Kamera & Mikrofon berhasil diberikan!', 'success');
+    } catch (err) {
+      const isDenied = err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError';
+      const msg = isDenied
+        ? 'Izin Kamera/Mic ditolak atau diblokir peramban. Klik ikon gembok di URL bar.'
+        : `Gagal mengakses sensor media: ${err.message}`;
+      setPreflightStatus((prev) => ({
+        ...prev,
+        media: {
+          checking: false,
+          passed: false,
+          message: msg,
+        },
+      }));
+      showNotification(msg, 'error');
+    }
+  };
+
+  // 4. Uji & Aktifkan Suara Audio Alarm (Web Audio Synthesis)
+  const handleTestAudio = () => {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) throw new Error('Web Audio tidak didukung');
+      const ctx = new AudioCtx();
+      if (ctx.state === 'suspended') {
+        ctx.resume();
+      }
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, ctx.currentTime);
+      gain.gain.setValueAtTime(0.08, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.2);
+
+      setAudioTested(true);
+      setPreflightStatus((prev) => ({
+        ...prev,
+        sound: {
+          checking: false,
+          passed: true,
+          message: 'Sistem Suara & Alarm Audio teruji dan aktif',
+        },
+      }));
+      showNotification('Suara alarm berbunyi! Izin audio telah terverifikasi.', 'success');
+    } catch (err) {
+      showNotification('Gagal menguji audio: ' + err.message, 'error');
+    }
+  };
+
+  // 5. Masuk Mode Layar Penuh (Fullscreen)
+  const handleEnterFullscreen = async () => {
+    try {
+      const el = document.documentElement;
+      if (el.requestFullscreen) {
+        await el.requestFullscreen();
+      } else if (el.webkitRequestFullscreen) {
+        await el.webkitRequestFullscreen();
+      }
+      setPreflightStatus((prev) => ({
+        ...prev,
+        fullscreen: {
+          checking: false,
+          passed: true,
+          message: 'Mode Layar Penuh (Fullscreen) telah aktif',
+        },
+      }));
+      showNotification('Mode Layar Penuh aktif!', 'success');
+    } catch (err) {
+      showNotification('Gagal masuk layar penuh: ' + err.message, 'error');
+    }
+  };
+
+  // GPS Override Toggle untuk keperluan testing pengawas / offline demo (Hanya pada Mode Simulasi)
+  const handleToggleGpsOverride = () => {
+    if (isProduction) {
+      console.warn('SECURITY ALERT: Bypass GPS diblokir total pada Mode Produksi Resmi.');
+      setGpsSimulatedOverride(false);
+      return;
+    }
+    const nextVal = !gpsSimulatedOverride;
+    setGpsSimulatedOverride(nextVal);
+    setPreflightStatus((prev) => ({
+      ...prev,
+      gps: {
         checking: false,
-        passed: true,
-        message: 'Peramban tidak mendukung API Notifikasi (Mode Layar Aktif)',
+        passed: nextVal,
+        distance: nextVal ? 15 : prev.gps.distance,
+        message: nextVal
+          ? 'Mode Uji Coba: GPS disimulasikan dalam radius (15m)'
+          : 'Pemeriksaan GPS riil aktif',
       },
     }));
-  }
-};
-
-// GPS Override Toggle untuk keperluan testing pengawas / offline demo (Hanya pada Mode Simulasi)
-const handleToggleGpsOverride = () => {
-  // ZERO-TRUST SECURITY: Blokir mutlak toggle simulasi jika Mode Produksi Resmi aktif
-  if (isProduction) {
-    console.warn('SECURITY ALERT: Bypass GPS diblokir total pada Mode Produksi Resmi.');
-    setGpsSimulatedOverride(false);
-    return;
-  }
-  const nextVal = !gpsSimulatedOverride;
-  setGpsSimulatedOverride(nextVal);
-  setPreflightStatus((prev) => ({
-    ...prev,
-    gps: {
-      checking: false,
-      passed: nextVal,
-      distance: nextVal ? 15 : prev.gps.distance,
-      message: nextVal
-        ? 'Mode Uji Coba: GPS disimulasikan dalam radius (15m)'
-        : 'Pemeriksaan GPS riil aktif',
-    },
-  }));
-};
+  };
 
 // Evaluasi Kelayakan Pre-flight Dinamis (Hanya mengecek izin yang aktif di institusi)
 const browserPerms = institution?.browser_permissions || {};
@@ -2155,6 +2204,16 @@ const renderVerificationPopup = () => {
                       Batas Maksimal: {institution?.max_radius_meters || 200} meter dari titik sekolah
                     </div>
                   )}
+                  {browserPerms.location_gps !== false && !preflightStatus.gps.passed && !effectiveGpsOverride && (
+                    <button
+                      type="button"
+                      onClick={handleRequestGps}
+                      className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold transition-colors shadow-2xs cursor-pointer"
+                    >
+                      <MapPin className="w-3.5 h-3.5" />
+                      <span>Periksa / Uji Lokasi GPS</span>
+                    </button>
+                  )}
                 </div>
               </div>
               <div className="shrink-0 mt-0.5">
@@ -2265,6 +2324,16 @@ const renderVerificationPopup = () => {
                   <div className="text-[11px] text-zinc-500 mt-1">
                     {preflightStatus.sound.message}
                   </div>
+                  {browserPerms.sound_audio !== false && !preflightStatus.sound.passed && (
+                    <button
+                      type="button"
+                      onClick={handleTestAudio}
+                      className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold transition-colors shadow-2xs cursor-pointer"
+                    >
+                      <Volume2 className="w-3.5 h-3.5" />
+                      <span>Uji Bunyi Suara Alarm</span>
+                    </button>
+                  )}
                 </div>
               </div>
               <div className="shrink-0 mt-0.5">
@@ -2314,6 +2383,16 @@ const renderVerificationPopup = () => {
                   <div className="text-[11px] text-zinc-500 mt-1">
                     {preflightStatus.fullscreen.message}
                   </div>
+                  {browserPerms.fullscreen !== false && !preflightStatus.fullscreen.passed && (
+                    <button
+                      type="button"
+                      onClick={handleEnterFullscreen}
+                      className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 bg-zinc-900 hover:bg-zinc-800 text-white rounded-lg text-xs font-semibold transition-colors shadow-2xs cursor-pointer"
+                    >
+                      <Maximize2 className="w-3.5 h-3.5 text-zinc-100" />
+                      <span>Masuk Layar Penuh (Fullscreen)</span>
+                    </button>
+                  )}
                 </div>
               </div>
               <div className="shrink-0 mt-0.5">
@@ -2488,6 +2567,16 @@ const renderVerificationPopup = () => {
                   <div className="text-[11px] text-zinc-500 mt-1">
                     {preflightStatus.media.message}
                   </div>
+                  {browserPerms.camera_webcam !== false && !preflightStatus.media.passed && (
+                    <button
+                      type="button"
+                      onClick={handleRequestCameraMic}
+                      className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold transition-colors shadow-2xs cursor-pointer"
+                    >
+                      <Camera className="w-3.5 h-3.5" />
+                      <span>Izinkan Sensor Kamera & Mic</span>
+                    </button>
+                  )}
                 </div>
               </div>
               <div className="shrink-0 mt-0.5">
@@ -3074,6 +3163,16 @@ const renderVerificationPopup = () => {
                                                                                 Batas Maksimal: {institution?.max_radius_meters || 200}m dari titik sekolah
                                                                               </div>
                                                                             )}
+                                                                            {browserPerms.location_gps !== false && !preflightStatus.gps.passed && !effectiveGpsOverride && (
+                                                                              <button
+                                                                                type="button"
+                                                                                onClick={handleRequestGps}
+                                                                                className="mt-1.5 inline-flex items-center gap-1 px-2.5 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-semibold cursor-pointer shadow-2xs"
+                                                                              >
+                                                                                <MapPin className="w-3 h-3" />
+                                                                                <span>Periksa GPS</span>
+                                                                              </button>
+                                                                            )}
                                                                           </div>
                                                                         </div>
                                                                         <div className="shrink-0 mt-0.5">
@@ -3152,6 +3251,16 @@ const renderVerificationPopup = () => {
                                                                               </span>
                                                                             </div>
                                                                             <div className="text-[11px] text-zinc-500 mt-0.5">{preflightStatus.sound.message}</div>
+                                                                            {browserPerms.sound_audio !== false && !preflightStatus.sound.passed && (
+                                                                              <button
+                                                                                type="button"
+                                                                                onClick={handleTestAudio}
+                                                                                className="mt-1.5 inline-flex items-center gap-1 px-2.5 py-0.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-[10px] font-semibold cursor-pointer shadow-2xs"
+                                                                              >
+                                                                                <Volume2 className="w-3 h-3" />
+                                                                                <span>Uji Bunyi Alarm</span>
+                                                                              </button>
+                                                                            )}
                                                                           </div>
                                                                         </div>
                                                                         <div className="shrink-0 mt-0.5">
@@ -3185,6 +3294,16 @@ const renderVerificationPopup = () => {
                                                                               </span>
                                                                             </div>
                                                                             <div className="text-[11px] text-zinc-500 mt-0.5">{preflightStatus.fullscreen.message}</div>
+                                                                            {browserPerms.fullscreen !== false && !preflightStatus.fullscreen.passed && (
+                                                                              <button
+                                                                                type="button"
+                                                                                onClick={handleEnterFullscreen}
+                                                                                className="mt-1.5 inline-flex items-center gap-1 px-2.5 py-0.5 bg-zinc-900 hover:bg-zinc-800 text-white rounded text-[10px] font-semibold cursor-pointer shadow-2xs"
+                                                                              >
+                                                                                <Maximize2 className="w-3 h-3 text-zinc-100" />
+                                                                                <span>Masuk Layar Penuh</span>
+                                                                              </button>
+                                                                            )}
                                                                           </div>
                                                                         </div>
                                                                         <div className="shrink-0 mt-0.5">
@@ -3313,6 +3432,16 @@ const renderVerificationPopup = () => {
                                                                               </span>
                                                                             </div>
                                                                             <div className="text-[11px] text-zinc-500 mt-0.5">{preflightStatus.media.message}</div>
+                                                                            {browserPerms.camera_webcam !== false && !preflightStatus.media.passed && (
+                                                                              <button
+                                                                                type="button"
+                                                                                onClick={handleRequestCameraMic}
+                                                                                className="mt-1.5 inline-flex items-center gap-1 px-2.5 py-0.5 bg-amber-600 hover:bg-amber-700 text-white rounded text-[10px] font-semibold cursor-pointer shadow-2xs"
+                                                                              >
+                                                                                <Camera className="w-3 h-3" />
+                                                                                <span>Izinkan Kamera & Mic</span>
+                                                                              </button>
+                                                                            )}
                                                                           </div>
                                                                         </div>
                                                                         <div className="shrink-0 mt-0.5">

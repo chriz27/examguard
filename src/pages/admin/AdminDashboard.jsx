@@ -5453,6 +5453,7 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                         <th className="py-3.5 px-3">Kelas & Info</th>
                         <th className="py-3.5 px-3">Kunci Perangkat</th>
                         <th className="py-3.5 px-3 text-center">SSO Google</th>
+                        <th className="py-3.5 px-3 text-center">Status Akun</th>
                         <th className="py-3.5 px-3 text-center">Verifikasi</th>
                         <th className="py-3.5 px-3 text-center w-36">Aksi</th>
                       </tr>
@@ -5460,7 +5461,7 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                     <tbody className="divide-y divide-zinc-100">
                       {filteredUsers.length === 0 ? (
                         <tr>
-                          <td colSpan="9" className="text-center py-12 text-zinc-400 text-xs">
+                          <td colSpan="10" className="text-center py-12 text-zinc-400 text-xs">
                             Tidak ada peserta yang ditemukan.
                           </td>
                         </tr>
@@ -9192,6 +9193,51 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                     SSO Off (Belum Login)
                   </span>
                 )}
+              </div>
+
+              {/* Status Verifikasi & Status Akun */}
+              <div className="p-3 bg-zinc-50/80 border border-zinc-200 rounded-xl space-y-2.5">
+                <div className="text-[11px] font-bold text-zinc-800">Status Otorisasi Akun:</div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <label className="flex items-center gap-2 p-2 bg-white border border-zinc-200 rounded-lg cursor-pointer hover:bg-zinc-50">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(editingStudent.is_verified)}
+                      onChange={(e) => {
+                        const verified = e.target.checked;
+                        setEditingStudent({
+                          ...editingStudent,
+                          is_verified: verified,
+                          // Jika verifikasi dimatikan, akun otomatis tidak aktif
+                          is_active: verified ? editingStudent.is_active : false,
+                        });
+                      }}
+                      className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
+                    />
+                    <div className="text-xs">
+                      <div className="font-semibold text-zinc-800">Terverifikasi</div>
+                      <div className="text-[10px] text-zinc-500">Izin ikut ujian</div>
+                    </div>
+                  </label>
+
+                  <label className={`flex items-center gap-2 p-2 bg-white border rounded-lg cursor-pointer ${
+                    !editingStudent.is_verified ? 'opacity-60 cursor-not-allowed border-zinc-200' : 'hover:bg-zinc-50 border-zinc-200'
+                  }`}>
+                    <input
+                      type="checkbox"
+                      disabled={!editingStudent.is_verified}
+                      checked={Boolean(editingStudent.is_active)}
+                      onChange={(e) =>
+                        setEditingStudent({ ...editingStudent, is_active: e.target.checked })
+                      }
+                      className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500"
+                    />
+                    <div className="text-xs">
+                      <div className="font-semibold text-zinc-800">Akun Aktif</div>
+                      <div className="text-[10px] text-zinc-500">Bisa login ke portal</div>
+                    </div>
+                  </label>
+                </div>
               </div>
 
               <div className="flex gap-2 pt-3 border-t border-zinc-100">

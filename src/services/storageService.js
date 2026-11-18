@@ -368,8 +368,8 @@ const DEFAULT_USERS = [
     kelas: 'XII MIPA 2',
     tingkat: 12,
     ruang: 'Ruang 01',
-    is_active: false, // Tidak boleh aktif sebelum diverifikasi
-    is_verified: false, // Status Belum Verifikasi untuk contoh kasus
+    is_active: true,
+    is_verified: true,
     google_linked: false,
     google_id: null,
     google_email: null,
@@ -519,7 +519,7 @@ export const storageService = {
           modified = true;
         }
 
-        // Pastikan data siswa memiliki field nomor_ujian, jenis_kelamin, dan agama
+        // Pastikan data siswa memiliki field nomor_ujian, jenis_kelamin, agama, dan integritas status akun
         currentUsers.forEach((u) => {
           if (u.role === 'student') {
             if (!u.nomor_ujian) {
@@ -532,6 +532,21 @@ export const storageService = {
             }
             if (!u.agama) {
               u.agama = 'Islam';
+              modified = true;
+            }
+            // Audit integritas status akun peserta: jika undefined atau null, pastikan valid
+            if (u.is_active === undefined || u.is_active === null) {
+              u.is_active = true;
+              modified = true;
+            }
+            if (u.is_verified === undefined || u.is_verified === null) {
+              u.is_verified = true;
+              modified = true;
+            }
+            // Auto-heal untuk akun contoh bawaan yang sempat ter-seed false
+            if (u.username === '0058291022' && (!u.is_active || !u.is_verified)) {
+              u.is_active = true;
+              u.is_verified = true;
               modified = true;
             }
           }

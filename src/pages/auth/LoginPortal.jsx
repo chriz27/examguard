@@ -90,11 +90,13 @@ export default function LoginPortal({ institution, onLoginSuccess }) {
       return;
     }
 
-    // ATURAN WAJIB SSO: Jika Google OAuth aktif dan sudah terhubung Google SSO, peserta WAJIB login via Google SSO
+    // ATURAN WAJIB SSO: Hanya diterapkan jika Pengaturan Instansi mengatur metode autentikasi "Hanya SSO" (SSO_ONLY).
+    // Jika metode autentikasi diizinkan "Keduanya" (BOTH) atau "Kredensial Saja" (CREDENTIALS_ONLY), peserta bebas masuk via NISN & Password.
     const isGoogleOAuthActive = institution?.google_oauth_enabled !== false;
-    if (isGoogleOAuthActive && user.role === 'student' && user.google_linked && user.google_id) {
+    const isAuthMethodSSOOnly = institution?.auth_method === 'SSO_ONLY';
+    if (isGoogleOAuthActive && isAuthMethodSSOOnly && user.role === 'student') {
       setErrorMsg(
-        `Akun Anda (${user.nama}) telah terhubung ke Google SSO (${user.google_email || user.email}). Anda WAJIB masuk menggunakan tombol "Masuk dengan Google SSO Peserta" di bawah. Jika akses Google hilang, silakan lapor Admin/Proktor untuk Reset SSO.`
+        'Instansi saat ini mengatur metode masuk "Hanya Google SSO". Seluruh peserta wajib masuk menggunakan tombol "Masuk dengan Google SSO Peserta" di bawah.'
       );
       return;
     }
@@ -108,12 +110,16 @@ export default function LoginPortal({ institution, onLoginSuccess }) {
       return;
     }
 
-    if (!user.is_active) {
+    // Pemeriksaan fleksibel boolean/string untuk status aktif dan verifikasi akun
+    const isActive = user.is_active === true || user.is_active === 'true' || user.is_active === 1 || user.is_active === undefined;
+    const isVerified = user.is_verified === true || user.is_verified === 'true' || user.is_verified === 1 || user.is_verified === undefined;
+
+    if (!isActive) {
       setErrorMsg('Akun Anda dinonaktifkan oleh pihak sekolah. Hubungi proctor/admin.');
       return;
     }
 
-    if (!user.is_verified) {
+    if (!isVerified) {
       setErrorMsg('Akun Anda belum diverifikasi oleh panitia ujian sekolah.');
       return;
     }
@@ -150,13 +156,16 @@ export default function LoginPortal({ institution, onLoginSuccess }) {
       return;
     }
 
-    if (!user.is_verified) {
+    const isVerified = user.is_verified === true || user.is_verified === 'true' || user.is_verified === 1 || user.is_verified === undefined;
+    const isActive = user.is_active === true || user.is_active === 'true' || user.is_active === 1 || user.is_active === undefined;
+
+    if (!isVerified) {
       setErrorMsg('Akun Anda belum diverifikasi oleh panitia ujian sekolah.');
       setSsoModalOpen(false);
       return;
     }
 
-    if (!user.is_active) {
+    if (!isActive) {
       setErrorMsg('Akun Anda dinonaktifkan oleh administrator.');
       setSsoModalOpen(false);
       return;
