@@ -493,6 +493,14 @@ export default function StudentPortal({ currentUser: propCurrentUser, onLogout }
     setExams(allExams);
     setAttempts(allAttempts);
     setInstitution(storageService.getInstitution());
+    setAppModeConfig(storageService.getAppModeConfig());
+
+    if (currentUser?.id) {
+      const freshUser = storageService.getUserById(currentUser.id);
+      if (freshUser) {
+        setCurrentUser((prev) => ({ ...prev, ...freshUser }));
+      }
+    }
   };
 
   useEffect(() => {

@@ -30,6 +30,14 @@ export default function GeofenceMapPreview({
   const markerRef = useRef(null);
   const circleRef = useRef(null);
 
+  // Selalu simpan referensi callback mutakhir agar event Leaflet tidak terjebak closure usang (stale closure)
+  const onLocationChangeRef = useRef(onLocationChange);
+  const onRadiusChangeRef = useRef(onRadiusChange);
+  useEffect(() => {
+    onLocationChangeRef.current = onLocationChange;
+    onRadiusChangeRef.current = onRadiusChange;
+  });
+
   // State untuk Pencarian Lokasi Live di Peta
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
@@ -180,8 +188,8 @@ export default function GeofenceMapPreview({
       });
     }
 
-    if (onLocationChange) {
-      onLocationChange(item.lat, item.lng);
+    if (onLocationChangeRef.current) {
+      onLocationChangeRef.current(item.lat, item.lng);
     }
   };
 
@@ -259,14 +267,16 @@ export default function GeofenceMapPreview({
         </div>
       `);
 
-      // Event drag marker
+      // Event drag marker (pin sekolah digeser)
       marker.on('dragend', (e) => {
         const position = e.target.getLatLng();
-        if (onLocationChange) {
-          onLocationChange(
-            parseFloat(position.lat.toFixed(6)),
-            parseFloat(position.lng.toFixed(6))
-          );
+        const newLat = parseFloat(position.lat.toFixed(6));
+        const newLng = parseFloat(position.lng.toFixed(6));
+        if (circleRef.current) {
+          circleRef.current.setLatLng(position);
+        }
+        if (onLocationChangeRef.current) {
+          onLocationChangeRef.current(newLat, newLng);
         }
       });
 
@@ -289,11 +299,16 @@ export default function GeofenceMapPreview({
       // Klik peta untuk memindahkan lokasi titik koordinat
       map.on('click', (e) => {
         const { lat: clickLat, lng: clickLng } = e.latlng;
-        if (onLocationChange) {
-          onLocationChange(
-            parseFloat(clickLat.toFixed(6)),
-            parseFloat(clickLng.toFixed(6))
-          );
+        const newLat = parseFloat(clickLat.toFixed(6));
+        const newLng = parseFloat(clickLng.toFixed(6));
+        if (markerRef.current) {
+          markerRef.current.setLatLng(e.latlng);
+        }
+        if (circleRef.current) {
+          circleRef.current.setLatLng(e.latlng);
+        }
+        if (onLocationChangeRef.current) {
+          onLocationChangeRef.current(newLat, newLng);
         }
       });
 
@@ -389,7 +404,7 @@ export default function GeofenceMapPreview({
             <button
               key={r}
               type="button"
-              onClick={() => onRadiusChange && onRadiusChange(r)}
+              onClick={() => onRadiusChangeRef.current ? onRadiusChangeRef.current(r) : onRadiusChange && onRadiusChange(r)}
               className={`px-2 py-1 rounded-md text-[11px] font-mono font-medium transition-all cursor-pointer ${Number(radius) === r
                   ? 'bg-blue-600 text-white shadow-2xs font-bold'
                   : 'bg-white border border-zinc-200 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900'

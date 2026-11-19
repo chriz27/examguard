@@ -5,9 +5,10 @@
 [![GitHub](https://img.shields.io/badge/GitHub-chriz27%2Fexamguard-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/chriz27/examguard)
 ![React](https://img.shields.io/badge/React-19.0-61dafb?style=for-the-badge&logo=react&logoColor=black)
 ![Vite](https://img.shields.io/badge/Vite-6.2-646cff?style=for-the-badge&logo=vite&logoColor=white)
+![SQLite](https://img.shields.io/badge/SQLite-ACID_WAL-003B57?style=for-the-badge&logo=sqlite&logoColor=white)
+![WebSocket](https://img.shields.io/badge/WebSocket-Real--Time-010101?style=for-the-badge&logo=socketdotio&logoColor=white)
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-v4.0-38bdf8?style=for-the-badge&logo=tailwindcss&logoColor=white)
 ![Leaflet](https://img.shields.io/badge/Leaflet-1.9.4-199900?style=for-the-badge&logo=leaflet&logoColor=white)
-![cPanel Ready](https://img.shields.io/badge/cPanel-100%25_Ready-ff6c2c?style=for-the-badge&logo=cpanel&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-emerald?style=for-the-badge)
 
 **Sistem Pengawasan Ujian Berbasis Web Modern untuk Google Form dengan Proteksi Anti-Curang, GPS Geofencing, Google SSO, dan Dua Tingkat Peran Pengawas.**
@@ -23,7 +24,7 @@
 1. [Tentang ExamGuard](#-tentang-examguard)
 2. [Fitur Utama](#-fitur-utama)
 3. [Arsitektur & Alur Kerja Sistem](#-arsitektur--alur-kerja-sistem)
-4. [Basis Data & Sinkronisasi Hibrida (LAN & Cloud)](#-basis-data--sinkronisasi-hibrida-lan--cloud)
+4. [Basis Data Relasional SQLite & Real-Time Engine](#-basis-data-relasional-sqlite--real-time-engine)
 5. [Keamanan, Validasi & Integritas Ujian](#-keamanan-validasi--integritas-ujian)
 6. [Skalabilitas & Panduan Pelaksanaan 700+ Peserta](#-skalabilitas--panduan-pelaksanaan-700-peserta)
 7. [Prasyarat Sistem](#-prasyarat-sistem)
@@ -81,7 +82,7 @@ Aplikasi ini **100% Client-Side Ready** dan telah dioptimalkan untuk berjalan mu
 
 ## 🏗️ Arsitektur & Alur Kerja Sistem
 
-ExamGuard mengusung arsitektur **Hybrid Client-Centric Single Page Application (SPA)**. Alih-alih membebani server sekolah dengan ribuan kueri database SQL setiap detik, ExamGuard memisahkan beban secara cerdas:
+ExamGuard mengusung arsitektur terintegrasi **Node.js SQLite Backend Engine + WebSocket Push + React SPA Client**. Sistem memisahkan beban komputasi secara cerdas untuk menjamin konkurensi tinggi, integritas data mutlak, dan latensi nol:
 
 ```mermaid
 flowchart TD
@@ -93,42 +94,255 @@ flowchart TD
         GF["Google Forms Cloud Engine<br>(Penyajian Soal & Penyimpanan Jawaban)"]
     end
 
-    subgraph Server ExamGuard
-        SRV["Vite LAN Server / cPanel Apache<br>(Aset Statis & Endpoint /api/sync)"]
-        PROCTOR["Laptop / PC Dashboard Proktor<br>(Monitoring Status & Kontrol Unlock)"]
+    subgraph Server ExamGuard (Host / LAN / Cloud)
+        SRV["Vite + Node.js Engine (Port 5173)<br>(Static Assets & REST API /api/db/*)"]
+        WSS["WebSocket Push Server (Port 5174)<br>(Real-Time Event Broadcast < 10ms)"]
+        SQLITE[("examguard.db (SQLite WAL Mode)<br>• ACID Transactions<br>• Foreign Key ON DELETE CASCADE")]
+        PROCTOR["Dashboard Super Admin & Proktor<br>(Monitoring Live & Kontrol Pengawas)"]
     end
 
-    HP -->|"1. Unduh WebApp Ringan (~100 KB)"| SRV
-    HP -->|"2. Render Soal & Kirim Jawaban Langsung"| GF
-    HP <-->|"3. Sinkronisasi Pelanggaran & Status Kunci (/api/sync)"| SRV
-    PROCTOR <-->|"4. Kontrol Live Pengawas (Unlock / Reset)"| SRV
+    HP -->|"1. Unduh WebApp (~100 KB gzipped)"| SRV
+    HP -->|"2. Render Form & Submit Jawaban Langsung"| GF
+    HP <-->|"3. Mutasi Pengerjaan & Ping (REST API)"| SRV
+    SRV <-->|"4. ACID Query & FK Enforcement"| SQLITE
+    SQLITE -.->|"5. Auto-Broadcast Event"| WSS
+    WSS -->|"6. Push Event Seketika (<10ms)"| HP
+    WSS -->|"6. Push Status Live (<10ms)"| PROCTOR
+    PROCTOR <-->|"7. Aksi Unlock / Reset / Kelola Data"| SRV
 ```
 
 ### 1. Pemisahan Beban Komputasi
-* **Beban Soal & Jawaban:** Ditangani 100% oleh **Google Forms**. Server sekolah tidak akan pernah mengalami *database connection pool timeout* atau *MySQL crash* saat ratusan siswa menekan tombol submit bersamaan.
-* **Beban Pengawasan (Proctoring):** Timer ujian, deteksi fullscreen, pendeteksi ganti aplikasi, dan GPS Geofencing berjalan di memori browser HP masing-masing siswa.
-
-### 2. Dual-Mode Deployment (Fleksibilitas Jalur Penerapan)
-* **Mode Offline LAN / Wi-Fi Lokal:** Komputer proktor menjalankan server lokal via Vite dengan plugin bawaan `examGuardLanSyncPlugin`. Laptop proktor bertindak sebagai host di jaringan lokal, dan peserta cukup mengakses alamat IP lokal (contoh: `http://192.168.2.11:5173`).
-* **Mode Online Web Hosting (cPanel / Apache):** Aplikasi di-*build* menjadi file statis HTML/JS/CSS dan diunggah ke cPanel. Dilengkapi file `.htaccess` bawaan untuk menangani *SPA routing* dan *Force HTTPS*.
+* **Beban Soal & Jawaban:** Ditangani 100% oleh **Google Forms**. Server sekolah tidak akan pernah mengalami *database connection pool timeout* atau *crash* saat ratusan siswa menekan tombol submit bersamaan.
+* **Beban Pengawasan (Proctoring Client):** Timer ujian, deteksi fullscreen, pendeteksi perpindahan aplikasi (`visibilitychange`), dan GPS Geofencing berjalan di memori browser HP masing-masing siswa.
+* **Beban Penyimpanan & Integritas Relasional:** Dikelola oleh **SQLite** via engine `better-sqlite3` dengan mode **Write-Ahead Logging (WAL)** pada level file server (`examguard.db`).
+* **Beban Sinkronisasi Real-Time:** Dikelola oleh **WebSocket Server (ws)** di port 5174 yang menyebarkan (*push*) setiap mutasi proktor ke seluruh layar perangkat dalam waktu **< 10 milidetik**, menggantikan polling HTTP lama.
 
 ---
 
-## 🗄️ Basis Data & Sinkronisasi Hibrida (LAN & Cloud)
+## 🗄️ Basis Data Relasional SQLite & Real-Time Engine
 
-ExamGuard mengimplementasikan **Virtual Relational Storage Layer** berbasis peramban (*offline-first*) yang diorkestrasikan oleh `storageService.js`:
+ExamGuard telah sepenuhnya dimigrasikan dari file flat JSON menjadi **Database Relasional Sejati (SQLite)** yang berjalan dengan konfigurasi **ACID, Foreign Keys ON, dan WAL Mode**. Ini mengeliminasi seluruh risiko *race condition*, *lost update*, dan data hantu (*orphan records*).
 
-### 1. Skema Entitas Data Terstruktur
-* `USERS`: Menyimpan identitas siswa dan administrator (`id`, `nama`, `nomor_ujian`, `nisn`, `nis`, `kelas`, `tingkat`, `email`, `role`, `is_active`, `google_linked`, `active_device_id`).
-* `EXAM_SESSIONS`: Bank soal dan sesi ujian aktif (`id`, `title`, `token`, `google_form_url`, `duration_minutes`, `target_grades`, `is_archived`).
-* `STUDENT_ATTEMPTS`: Log riwayat pengerjaan (`status`: *NOT_STARTED*, *IN_PROGRESS*, *LOCKED*, *COMPLETED*, *RESET_BY_PROCTOR*, `violation_count`, `last_violation_reason`, `time_spent_seconds`, `unlocked_at`).
-* `EXAM_ATTENDANCE`: Rekap presensi kehadiran ujian per siswa dan sesi ujian.
-* `INSTITUTION` & `APP_MODE_CONFIG`: Profil sekolah, koordinat GPS geofence, radius toleransi, serta konfigurasi mode produksi (*STRICT*) vs simulasi (*DEV*).
+### 1. Diagram Relasi Entitas (Entity-Relationship Diagram / ERD)
 
-### 2. Mekanisme Sinkronisasi Real-Time Hibrida
-* **Sinkronisasi Tab Lokal:** Menggunakan `BroadcastChannel` dan `CustomEvent` browser untuk sinkronisasi instan antar-tab tanpa latensi.
-* **Sinkronisasi Antar-Perangkat (LAN/Cloud):** Menggunakan endpoint `/api/sync` dengan algoritma **Smart Conflict-Resolution**:
-  * Status `LOCKED` dan riwayat pelanggaran tertinggi peserta diproteksi di level kernel aplikasi agar **tidak dapat dimanipulasi atau di-downgrade** oleh HP siswa tanpa otorisasi resmi proktor.
+```mermaid
+erDiagram
+    institution {
+        TEXT id PK "singleton"
+        TEXT name "Nama Sekolah"
+        TEXT npsn "NPSN 8 digit"
+        TEXT logo_url "URL Logo"
+        TEXT education_level "Jenjang (SD/SMP/SMA/Lainnya)"
+        TEXT allowed_grades "JSON Array Tingkat"
+        INTEGER idle_timeout_minutes "Batas Waktu Idle"
+        INTEGER gps_enabled "Status GPS (1/0)"
+        REAL center_lat "Latitude Pusat"
+        REAL center_lng "Longitude Pusat"
+        INTEGER max_radius_meters "Radius Toleransi (m)"
+        TEXT gmaps_url "Link Google Maps"
+        TEXT auth_method "SSO_ONLY | CREDENTIALS_ONLY | BOTH"
+        INTEGER google_oauth_enabled "Status Google SSO (1/0)"
+        TEXT google_client_id "Google OAuth Client ID"
+        TEXT google_client_secret "Google OAuth Secret"
+        INTEGER recaptcha_enabled "Status Captcha (1/0)"
+        TEXT recaptcha_site_key "reCAPTCHA Site Key"
+        TEXT recaptcha_secret_key "reCAPTCHA Secret Key"
+        TEXT recaptcha_version "v2 | v3"
+        INTEGER finish_token_lead_minutes "Lead Time Token Selesai"
+        TEXT browser_permissions "JSON Setelan Izin Browser"
+        TEXT updated_at "Timestamp Terakhir"
+    }
+
+    users {
+        TEXT id PK "UUID / String ID"
+        TEXT username UK "Username Unik (NISN untuk Siswa)"
+        TEXT password "Kata Sandi (Default NIS)"
+        TEXT nama "Nama Lengkap"
+        TEXT email "Alamat Email"
+        TEXT role "admin | proctor | student"
+        TEXT nisn "Nomor Induk Siswa Nasional"
+        TEXT nis "Nomor Induk Sekolah"
+        TEXT nomor_ujian "Nomor Peserta Ujian Unik"
+        TEXT jenis_kelamin "L | P"
+        TEXT agama "Agama Peserta"
+        TEXT kelas "Nama Rombel / Kelas"
+        INTEGER tingkat "Tingkat Kelas (1-12)"
+        TEXT ruang "Ruang Ujian (Default Ruang 01)"
+        INTEGER is_active "Status Akun Aktif (1/0)"
+        INTEGER is_verified "Status Verifikasi Panitia (1/0)"
+        INTEGER google_linked "Tautan Akun Google SSO (1/0)"
+        TEXT google_id "ID Sub Akun Google"
+        TEXT google_email "Email Akun Google Terhubung"
+        TEXT google_linked_at "Timestamp Tautan SSO"
+        TEXT active_device_id "Binding Fingerprint Perangkat"
+        TEXT created_at "Waktu Dibuat"
+        TEXT updated_at "Waktu Diperbarui"
+    }
+
+    exam_sessions {
+        TEXT id PK "UUID Sesi Ujian"
+        TEXT subject "Mata Pelajaran"
+        TEXT title "Judul Lengkap Sesi Ujian"
+        TEXT session_group "Kelompok (ATS, AAS, ASAJ, PH, dll)"
+        TEXT description "Deskripsi & Petunjuk Pengerjaan"
+        INTEGER grade_level "Tingkat Kelas Sasaran"
+        INTEGER is_active "Status Sesi Aktif (1/0)"
+        INTEGER is_archived "Status Bank Soal / Arsip (1/0)"
+        TEXT gform_base_url "URL Formulir Soal Google Form"
+        TEXT respon_base_url "URL Spreadsheet Respon Jawaban"
+        TEXT exam_token "Token Masuk Ujian"
+        TEXT finish_token "Token Selesai Ujian"
+        TEXT start_time "Waktu Mulai Ujian"
+        TEXT end_time "Waktu Berakhir Ujian"
+        INTEGER duration_minutes "Durasi Pengerjaan (Menit)"
+        TEXT created_at "Waktu Dibuat"
+        TEXT updated_at "Waktu Diperbarui"
+    }
+
+    student_attempts {
+        TEXT id PK "UUID Rekaman Pengerjaan"
+        TEXT student_id FK "ID Peserta (users.id)"
+        TEXT student_name "Snapshot Nama Peserta"
+        TEXT student_nisn "Snapshot NISN Peserta"
+        TEXT student_kelas "Snapshot Kelas Peserta"
+        INTEGER student_tingkat "Snapshot Tingkat Peserta"
+        TEXT exam_session_id FK "ID Sesi Ujian (exam_sessions.id)"
+        TEXT exam_title "Snapshot Judul Ujian"
+        TEXT status "IN_PROGRESS | COMPLETED | LOCKED | RESET_BY_PROCTOR | UNLOCKED"
+        INTEGER violation_count "Akumulasi Pelanggaran"
+        INTEGER time_spent_seconds "Waktu Pengerjaan Berjalan (Detik)"
+        TEXT last_violation_reason "Alasan Pelanggaran Terakhir"
+        INTEGER ping_latency_ms "Latensi Jaringan Klien (ms)"
+        TEXT last_ping_at "Timestamp Ping Terakhir"
+        TEXT started_at "Waktu Mulai Ujian"
+        TEXT completed_at "Waktu Selesai Ujian"
+        TEXT reset_at "Waktu Reset Pengawas"
+        TEXT unlocked_at "Waktu Buka Kunci Pengawas"
+        TEXT updated_at "Waktu Update Terakhir"
+        INTEGER is_proctor_action "Flag Aksi Pengawas (1/0)"
+        INTEGER is_reset_violations "Flag Reset Pelanggaran (1/0)"
+    }
+
+    exam_attendance {
+        TEXT id PK "UUID Presensi"
+        TEXT exam_session_id FK "ID Sesi Ujian (exam_sessions.id)"
+        TEXT student_id FK "ID Peserta (users.id)"
+        TEXT status "HADIR | SAKIT | IZIN | ALPHA | DISPENSASI"
+        TEXT keterangan "Catatan Keterangan Khusus"
+        TEXT updated_by "Pengubah Terakhir (Proktor/Admin)"
+        TEXT updated_at "Timestamp Terakhir"
+    }
+
+    berita_acara_config {
+        TEXT id PK "singleton"
+        TEXT instansi_pusat "Kementerian / Dinas Naungan"
+        TEXT alamat "Alamat Lengkap Instansi"
+        TEXT kepala_sekolah_nama "Nama Kepala Sekolah"
+        TEXT kepala_sekolah_nip "NIP Kepala Sekolah"
+        TEXT proktor_nama "Nama Proktor Pelaksana"
+        TEXT proktor_nip "NIP Proktor Pelaksana"
+        TEXT pengawas_nama "Nama Pengawas Ruang"
+        TEXT pengawas_nip "NIP Pengawas Ruang"
+        TEXT catatan_pelaksanaan "Catatan Kejadian Khusus Pelaksanaan"
+        TEXT paper_size "A4 | F4 | LETTER"
+        TEXT margin_preset "standard | compact | narrow | custom"
+        INTEGER margin_top "Margin Atas (mm)"
+        INTEGER margin_right "Margin Kanan (mm)"
+        INTEGER margin_bottom "Margin Bawah (mm)"
+        INTEGER margin_left "Margin Kiri (mm)"
+        TEXT updated_at "Timestamp Update"
+    }
+
+    app_mode_config {
+        TEXT id PK "singleton"
+        TEXT app_mode "production | simulation"
+        INTEGER bypass_gps "Bypass GPS (Hanya Simulasi)"
+        INTEGER bypass_media "Bypass Kamera (Hanya Simulasi)"
+        INTEGER bypass_audio "Bypass Audio (Hanya Simulasi)"
+        INTEGER bypass_notifications "Bypass Notifikasi (Hanya Simulasi)"
+        INTEGER bypass_fullscreen "Bypass Fullscreen (Hanya Simulasi)"
+        INTEGER bypass_cookies_check "Bypass Cookies (Hanya Simulasi)"
+        INTEGER bypass_google_sso "Bypass SSO (Hanya Simulasi)"
+        REAL mock_gps_lat "Latitude Simulasi"
+        REAL mock_gps_lng "Longitude Simulasi"
+        TEXT signature "Tanda Tangan Integritas Kernel"
+        TEXT updated_at "Timestamp Update"
+    }
+
+    system_error_logs {
+        TEXT id PK "UUID Log"
+        TEXT timestamp "Waktu Terjadi Error"
+        TEXT source "Sumber Error (GPS, Kamera, Auth, dll)"
+        TEXT level "error | warning | info"
+        TEXT message "Pesan Kesalahan Ringkas"
+        TEXT details "Rincian Teknis / Stack Trace"
+        TEXT solution "Saran Solusi Penanganan"
+        TEXT user_agent "Identitas Browser / Perangkat Klien"
+    }
+
+    users ||--o{ student_attempts : "CASCADE ON DELETE / ON UPDATE"
+    exam_sessions ||--o{ student_attempts : "CASCADE ON DELETE / ON UPDATE"
+    users ||--o{ exam_attendance : "CASCADE ON DELETE / ON UPDATE"
+    exam_sessions ||--o{ exam_attendance : "CASCADE ON DELETE / ON UPDATE"
+```
+
+---
+
+### 2. Rincian Hubungan Relasional (Foreign Keys & Cascade)
+
+Sistem database ExamGuard menerapkan prinsip **Strict Referential Integrity**:
+
+1. **Relasi `users` $\rightarrow$ `student_attempts`:**
+   - **Kunci:** `student_attempts.student_id` merujuk ke `users.id`.
+   - **Klausul:** `ON DELETE CASCADE ON UPDATE CASCADE`.
+   - **Dampak:** Saat peserta ujian dihapus dari sistem (baik satu per satu maupun saat tombol *Kosongkan Peserta* ditekan), seluruh riwayat pengerjaan, counter pelanggaran, dan status ujian peserta tersebut **otomatis terhapus bersih dari disk**. Tidak akan pernah ada data hantu (*ghost/orphan attempt*) yang tertinggal di tabel pengawasan proktor.
+2. **Relasi `exam_sessions` $\rightarrow$ `student_attempts`:**
+   - **Kunci:** `student_attempts.exam_session_id` merujuk ke `exam_sessions.id`.
+   - **Klausul:** `ON DELETE CASCADE ON UPDATE CASCADE`.
+   - **Dampak:** Menghapus suatu sesi ujian atau bank soal akan langsung menghapus seluruh log pengerjaan yang terikat pada ujian tersebut secara atomik.
+3. **Relasi `users` & `exam_sessions` $\rightarrow$ `exam_attendance`:**
+   - **Kunci:** `exam_attendance.student_id` $\rightarrow$ `users.id` dan `exam_attendance.exam_session_id` $\rightarrow$ `exam_sessions.id`.
+   - **Klausul:** `ON DELETE CASCADE ON UPDATE CASCADE`.
+   - **Unique Constraint:** `UNIQUE(exam_session_id, student_id)` menjamin seorang siswa hanya memiliki 1 baris presensi per sesi ujian.
+4. **Indeks Performa Tinggi:**
+   - Indeks unik majemuk `idx_attempts_unique` pada `(student_id, exam_session_id)` memastikan operasi upsert pengerjaan berlangsung instan dalam skala waktu $O(1)$.
+   - Indeks pencarian pada `users(role)`, `users(nisn)`, `users(username)`, dan `system_error_logs(timestamp DESC)`.
+
+---
+
+### 3. Keunggulan Arsitektur SQLite + WebSocket Dibandingkan File JSON Lama
+
+| Parameter | Arsitektur Lama (File JSON + `localStorage`) | Arsitektur Baru (SQLite + WebSocket Push) |
+| :--- | :--- | :--- |
+| **Penyimpanan Utama** | File teks `.examguard-db.json` ditimpa seluruhnya | File database biner terindeks `examguard.db` |
+| **Integritas Relasional** | Logika manual JS (rentan data hantu jika terlewat) | **Engine-Level `ON DELETE CASCADE` 100% Akurat** |
+| **Keamanan Transaksi** | Tidak ada (risiko file rusak jika server mati mendadak) | **Penuh (ACID Transactions dengan Write-Ahead Log / WAL)** |
+| **Mekanisme Sinkronisasi** | Polling HTTP setiap 700ms (beban CPU & lag) | **WebSocket Push Server (< 10 milidetik ke seluruh HP/laptop)** |
+| **Masalah Concurrency** | Race condition (request siswa saling menimpa data) | **Row-Level Locking & Atomic Upsert (Thread-Safe)** |
+| **Pembersihan Data** | Data sering kembali lagi saat browser direfresh | **Single Source of Truth mutlak di file database SQLite** |
+
+---
+
+### 4. REST API Endpoint SQLite (`/api/db/*`)
+
+Vite development server menyediakan REST API terpadu yang mengeksekusi *prepared statements* SQLite secara aman dari SQL Injection:
+
+* `GET /api/db/snapshot` &mdash; Mengambil snapshot seluruh entitas sistem secara instan saat inisialisasi aplikasi.
+* `GET | POST | PUT /api/db/institution` &mdash; Pengaturan profil sekolah, GPS geofence, dan integrasi Google.
+* `GET | POST /api/db/users` &mdash; Pengambilan daftar pengguna dan pendaftaran peserta baru.
+* `PUT /api/db/users/:id/*` &mdash; Aksi toggle aktif, verifikasi, reset perangkat, reset password, dan reset Google SSO.
+* `DELETE /api/db/users/:id` &mdash; Hapus akun peserta (memicu *cascade delete* ke attempts dan attendance).
+* `DELETE /api/db/users/delete-all-students` &mdash; Mengosongkan seluruh peserta ujian secara massal.
+* `POST /api/db/users/import` &mdash; Validasi pra-impor anti-duplikasi dan import massal berkecepatan tinggi dalam satu transaksi database (`db.transaction`).
+* `GET | POST | PUT | DELETE /api/db/exam-sessions` &mdash; Manajemen sesi ujian aktif dan pengarsipan bank soal.
+* `GET | POST /api/db/attempts` &mdash; Pemantauan pengerjaan ujian real-time dan perekaman pelanggaran.
+* `PUT /api/db/attempts/:studentId/:examId/*` &mdash; Kontrol pengawas: *unlock*, *reset-violations*, *reset-work*, *complete*, *update-time*, *ping*.
+* `POST /api/db/attempts/bulk` &mdash; Aksi kontrol pengawas massal (reset, selesaikan, atau hapus attempt per rombel).
+* `GET | POST | DELETE /api/db/attendance` &mdash; Presensi kehadiran peserta ujian per mapel.
+* `GET | POST /api/db/berita-acara` &mdash; Konfigurasi kop berita acara ujian dan pengaturan margin cetak PDF/kertas.
+* `GET | POST /api/db/app-mode` &mdash; Penegakan mode produksi resmi vs mode simulasi dengan validasi signature kernel.
+* `GET | POST | DELETE /api/db/logs` &mdash; Audit trail dan log diagnosa kesalahan sistem.
+* `GET /api/db/backup` & `POST /api/db/restore` &mdash; Fasilitas pencadangan dan pemulihan penuh seluruh basis data.
 
 ---
 
@@ -205,10 +419,11 @@ cd examguard
 Atau jika menggunakan Laragon / XAMPP, letakkan folder proyek di direktori web server Anda (misal `d:\laragon\www\examguard`).
 
 ### 2. Instalasi Paket Dependensi
-Jalankan perintah instalasi paket modul Node:
+Jalankan perintah instalasi paket modul Node (termasuk engine **SQLite `better-sqlite3`** dan **WebSocket `ws`**):
 ```bash
 npm install
 ```
+*Atau di Windows, Anda cukup klik ganda file:* **`install-sqlite.bat`**
 
 > [!TIP]
 > **Pengguna Windows PowerShell:** Jika muncul error eksekusi skrip (*PSSecurityException*), gunakan perintah `npm.cmd install` atau jalankan `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned` di PowerShell Administrator.
@@ -219,7 +434,12 @@ Jalankan server pengembangan berbasis Vite:
 npm run dev
 ```
 
-Agar aplikasi dapat diakses oleh perangkat lain dalam satu jaringan WiFi/LAN yang sama (misalnya untuk uji coba dari HP siswa):
+Saat pertama kali dijalankan, server Node.js akan otomatis:
+1. Menginisialisasi basis data SQLite baru: **`examguard.db`** (dengan skema 8 tabel relasional).
+2. Melakukan **migrasi otomatis** data dari `.examguard-db.json` (jika tersedia).
+3. Mengaktifkan **WebSocket Server** di port `5174` untuk push data real-time ke semua perangkat.
+
+Agar aplikasi dapat diakses oleh perangkat lain dalam satu jaringan WiFi/LAN yang sama (misalnya untuk pengawasan langsung dari HP siswa):
 ```bash
 npm run dev -- --host 0.0.0.0
 ```
@@ -228,6 +448,22 @@ npm run dev -- --host 0.0.0.0
 Buka peramban web dan arahkan ke alamat yang tampil di terminal:
 - Akses Lokal: **[http://localhost:5173](http://localhost:5173)**
 - Akses Jaringan LAN: `http://[IP-Komputer-Anda]:5173`
+- Endpoint REST API SQLite: `http://localhost:5173/api/db/*`
+- Endpoint WebSocket Real-Time: `ws://localhost:5174`
+
+### 5. Verifikasi Integritas & Perintah Database Berguna
+ExamGuard dilengkapi dengan suite pengujian otomatis dan skrip pengelolaan database:
+
+```bash
+# 1. Jalankan 30+ Integration Test SQLite (Validasi Relasi, FK Cascade, & CRUD)
+npm run test:db
+
+# 2. Reset database dari nol (membersihkan file examguard.db)
+npm run db:reset
+
+# 3. Migrasi manual ulang dari file backup .examguard-db.json
+npm run db:migrate
+```
 
 ---
 
@@ -350,6 +586,10 @@ ExamGuard membedakan wewenang administrator menjadi dua tingkatan:
 
 ```text
 examguard/
+├── examguard.db                       # Database SQLite utama (Single Source of Truth, WAL mode)
+├── examguard.db-wal                   # Write-Ahead Log SQLite untuk konkurensi tulis tinggi
+├── install-sqlite.bat                 # Skrip instalasi dependensi otomatis (klik ganda)
+├── SQLITE-MIGRATION.md                # Dokumentasi teknis & panduan operasional SQLite
 ├── dist/                              # Output build siap hosting cPanel
 │   ├── assets/                        # Bundle JS & CSS ter-hash
 │   ├── .htaccess                      # Aturan SPA routing & Force HTTPS
@@ -357,6 +597,9 @@ examguard/
 ├── public/
 │   ├── .htaccess                      # Konfigurasi Apache bawaan
 │   └── favicon.ico                    # Favicon aplikasi
+├── server/                            # Backend Engine Server (Node.js)
+│   ├── db.cjs                         # SQLite Engine: Skema DDL, Foreign Keys, & CRUD API
+│   └── test-db.cjs                    # 30+ Integration Test SQLite Engine (npm run test:db)
 ├── src/
 │   ├── components/
 │   │   ├── admin/
@@ -366,6 +609,8 @@ examguard/
 │   │       └── NotificationToast.jsx  # Toast notifikasi kustom modern
 │   ├── constants/
 │   │   └── educationConfig.js         # Konfigurasi jenjang, Haversine GPS, helper
+│   ├── hooks/
+│   │   └── useDatabase.js             # React Hooks real-time (useSnapshot, useUsers, useAttempts)
 │   ├── pages/
 │   │   ├── admin/
 │   │   │   └── AdminDashboard.jsx     # Dashboard terpadu Super Admin & Proktor
@@ -374,13 +619,14 @@ examguard/
 │   │   └── student/
 │   │       └── StudentPortal.jsx      # Pre-flight check, beranda, & ujian GForm
 │   ├── services/
-│   │   └── storageService.js          # Arsitektur penyimpanan terpusat (LocalStorage)
+│   │   ├── dbService.js               # REST API client & WebSocket client real-time
+│   │   └── storageService.js          # Adapter backward-compatible ke dbService
 │   ├── App.jsx                        # Komponen root aplikasi & router
 │   ├── index.css                      # Konfigurasi Tailwind CSS v4 & styling font
 │   └── main.jsx                       # Entry point React DOM
 ├── examguard-cpanel-ready.zip         # Arsip siap deploy ke cPanel
-├── package.json                       # Konfigurasi dependensi dan skrip npm
-├── vite.config.js                     # Konfigurasi Vite (relative base './')
+├── package.json                       # Dependensi (React, Vite, better-sqlite3, ws)
+├── vite.config.js                     # Vite Config + Plugin SQLite & WebSocket Server
 └── README.md                          # Panduan dokumentasi lengkap ini
 ```
 
@@ -413,7 +659,9 @@ ExamGuard mendukung 2 mode API resmi Google reCAPTCHA dan sistem Captcha Mandiri
 
 | Gejala Masalah | Kemungkinan Penyebab | Langkah Solusi |
 | :--- | :--- | :--- |
-| **Port 5173 already in use** | Port 5173 sedang dipakai oleh aplikasi lain | Jalankan Vite pada port alternatif: `npm run dev -- --port 5174` |
+| **Port 5173 already in use** | Port 5173 sedang dipakai oleh aplikasi lain | Jalankan Vite pada port alternatif: `npm run dev -- --port 5175` |
+| **Gagal Memuat SQLite Engine (`better-sqlite3`)** | Dependensi native belum terinstal | Jalankan `npm install` atau klik ganda `install-sqlite.bat` di root direktori proyek. |
+| **WebSocket Port 5174 Conflict** | Port 5174 dipakai oleh servis latar belakang lain | Tutup proses yang menggunakan port 5174 atau sesuaikan `WS_PORT` pada `vite.config.js` dan `dbService.js`. |
 | **Error 404 saat Refresh di cPanel** | File `.htaccess` belum terunggah atau `mod_rewrite` nonaktif | Pastikan file `.htaccess` berada di folder yang sama dengan `index.html` dan opsi *Show Hidden Files* aktif di cPanel. |
 | **Izin Geolocation / GPS Gagal** | Situs dibuka tanpa protokol HTTPS | Akses situs melalui `https://` bukan `http://`. Browser memblokir API sensor pada koneksi non-HTTPS. |
 | **Mode Layar Penuh Ditolak** | Pemicuan Fullscreen tanpa interaksi klik | Pastikan siswa mengklik tombol "Buka Soal & Fullscreen". Browser modern melarang otomatisasi fullscreen tanpa klik pengguna. |

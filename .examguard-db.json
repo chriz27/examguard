@@ -1,0 +1,935 @@
+{
+  "institution": {
+    "id": "39a03e56-5d11-4b44-8c04-1dde0d626fd8",
+    "name": "SMA Negeri 1 Nusantara",
+    "npsn": "20104829",
+    "logo_url": null,
+    "education_level": "LAINNYA",
+    "allowed_grades": [
+      0
+    ],
+    "idle_timeout_minutes": 30,
+    "gps_enabled": true,
+    "center_lat": -7.915829,
+    "center_lng": 110.408177,
+    "max_radius_meters": 200,
+    "gmaps_url": "https://maps.google.com/?q=-7.915829,110.408177",
+    "auth_method": "CREDENTIALS_ONLY",
+    "google_oauth_enabled": false,
+    "google_client_id": "",
+    "google_client_secret": "",
+    "recaptcha_enabled": false,
+    "recaptcha_site_key": "",
+    "recaptcha_secret_key": "",
+    "finish_token_lead_minutes": 10,
+    "browser_permissions": {
+      "location_gps": true,
+      "notifications": true,
+      "sound_audio": true,
+      "fullscreen": true,
+      "google_sso": false,
+      "block_clipboard": true,
+      "camera_webcam": true,
+      "cookies_iframe": true
+    },
+    "recaptcha_version": "v2"
+  },
+  "appModeConfig": null,
+  "beritaAcaraConfig": {
+    "instansi_pusat": "",
+    "alamat": "",
+    "kepala_sekolah_nama": "",
+    "kepala_sekolah_nip": "",
+    "proktor_nama": "",
+    "proktor_nip": "",
+    "pengawas_nama": "",
+    "pengawas_nip": "",
+    "catatan_pelaksanaan": "Pelaksanaan ujian berlangsung dengan tertib, aman, dan terkendali sesuai tata tertib yang berlaku.",
+    "paper_size": "A4",
+    "margin_preset": "standard",
+    "margin_top": 15,
+    "margin_right": 15,
+    "margin_bottom": 15,
+    "margin_left": 15
+  },
+  "users": [
+    {
+      "id": "ADMIN-SUPER-01",
+      "username": "admin",
+      "password": "admin",
+      "nama": "Super Admin",
+      "email": "admin@examguard.sch.id",
+      "role": "admin",
+      "nisn": "",
+      "nis": "",
+      "kelas": "Administrator Utama",
+      "tingkat": 0,
+      "is_active": true,
+      "is_verified": true,
+      "active_device_id": null,
+      "nomor_ujian": "",
+      "jenis_kelamin": "",
+      "agama": "",
+      "ruang": "",
+      "google_linked": false,
+      "google_id": null,
+      "google_email": null,
+      "google_linked_at": null
+    },
+    {
+      "id": "PROCTOR-01",
+      "username": "proktor",
+      "password": "proktor",
+      "nama": "Proktor Ujian",
+      "email": "proktor@examguard.sch.id",
+      "role": "proctor",
+      "nisn": "",
+      "nis": "",
+      "kelas": "Pengawas / Proktor",
+      "tingkat": 0,
+      "is_active": true,
+      "is_verified": true,
+      "active_device_id": null,
+      "nomor_ujian": "",
+      "jenis_kelamin": "",
+      "agama": "",
+      "ruang": "",
+      "google_linked": false,
+      "google_id": null,
+      "google_email": null,
+      "google_linked_at": null
+    },
+    {
+      "id": "319b1d32-3d89-4158-b5d1-1e00ede62078",
+      "username": "0081234567",
+      "password": "1111",
+      "nama": "Fandi",
+      "nomor_ujian": "0081234567",
+      "jenis_kelamin": "L",
+      "agama": "Islam",
+      "nisn": "0081234567",
+      "nis": "1111",
+      "kelas": "9A",
+      "tingkat": 9,
+      "ruang": "Ruang 01",
+      "email": "0081234567@student.sch.id",
+      "role": "student",
+      "is_active": true,
+      "is_verified": true,
+      "google_linked": false,
+      "google_id": null,
+      "google_email": null,
+      "google_linked_at": null,
+      "active_device_id": null
+    }
+  ],
+  "examSessions": [
+    {
+      "id": "ce53b5a9-0f03-4929-9afa-5ad172adb71b",
+      "subject": "Biologi",
+      "title": "Bank Soal: Biologi Sel, Genetika & Hereditas",
+      "session_group": "Penilaian Harian (PH)",
+      "description": "Master bank soal bab genetika dan metabolisme sel. Soal ini tersimpan di arsip bank soal.",
+      "grade_level": 12,
+      "is_active": false,
+      "is_archived": true,
+      "gform_base_url": "https://docs.google.com/forms/d/e/1FAIpQLScX_sample_biologi/viewform?embedded=true",
+      "respon_base_url": "https://docs.google.com/spreadsheets/d/sample_biologi_sheets",
+      "exam_token": "BIOGEN",
+      "start_time": "2026-11-10T08:00",
+      "end_time": "2026-11-10T15:00",
+      "duration_minutes": 60,
+      "finish_token": "SLSAI1"
+    }
+  ],
+  "attempts": [],
+  "attendance": [],
+  "systemErrorLogs": [],
+  "events": [
+    {
+      "action": "init_bootstrap",
+      "payload": {},
+      "timestamp": 1795103466328
+    },
+    {
+      "action": "init_client",
+      "payload": {},
+      "timestamp": 1795103468316
+    },
+    {
+      "action": "init_client",
+      "payload": {},
+      "timestamp": 1795103613678
+    },
+    {
+      "action": "sessions_updated",
+      "payload": {
+        "examSessions": [
+          {
+            "id": "c9fa5392-2e1f-48a4-98ac-a3d90e4b0ea7",
+            "subject": "Fisika",
+            "title": "Ujian Fisika Lanjutan - Gelombang & Optik",
+            "session_group": "Asesmen Tengah Semester (ATS)",
+            "description": "Kerjakan soal uraian dan pilihan ganda. Pastikan kuota dan daya baterai perangkat mencukupi.",
+            "grade_level": 12,
+            "is_active": true,
+            "is_archived": false,
+            "gform_base_url": "https://docs.google.com/forms/d/e/1FAIpQLScX_sample_fisika/viewform?embedded=true",
+            "respon_base_url": "https://docs.google.com/spreadsheets/d/sample_fisika_sheets",
+            "exam_token": "FSKOPT",
+            "finish_token": "SLSAI2",
+            "start_time": "2026-11-11T08:00",
+            "end_time": "2026-11-11T17:00",
+            "duration_minutes": 60
+          },
+          {
+            "id": "cb8baffc-3f35-495f-aa7e-a0cb2eb1e02f",
+            "subject": "Bahasa Indonesia",
+            "title": "Simulasi Asesmen Bahasa Indonesia",
+            "session_group": "Simulasi & Try Out",
+            "description": "Teks Eksplanasi dan Teks Prosedur Kompleks untuk Kelas XI.",
+            "grade_level": 11,
+            "is_active": true,
+            "is_archived": false,
+            "gform_base_url": "https://docs.google.com/forms/d/e/1FAIpQLScX_sample_indo/viewform?embedded=true",
+            "respon_base_url": "https://docs.google.com/spreadsheets/d/sample_indo_sheets",
+            "exam_token": "BINDXI",
+            "finish_token": "SLSAI3",
+            "start_time": "2026-11-11T07:30",
+            "end_time": "2026-11-11T16:30",
+            "duration_minutes": 75
+          },
+          {
+            "id": "ce53b5a9-0f03-4929-9afa-5ad172adb71b",
+            "subject": "Biologi",
+            "title": "Bank Soal: Biologi Sel, Genetika & Hereditas",
+            "session_group": "Penilaian Harian (PH)",
+            "description": "Master bank soal bab genetika dan metabolisme sel. Soal ini tersimpan di arsip bank soal.",
+            "grade_level": 12,
+            "is_active": false,
+            "is_archived": true,
+            "gform_base_url": "https://docs.google.com/forms/d/e/1FAIpQLScX_sample_biologi/viewform?embedded=true",
+            "respon_base_url": "https://docs.google.com/spreadsheets/d/sample_biologi_sheets",
+            "exam_token": "BIOGEN",
+            "start_time": "2026-11-10T08:00",
+            "end_time": "2026-11-10T15:00",
+            "duration_minutes": 60,
+            "finish_token": "SLSAI1"
+          }
+        ]
+      },
+      "timestamp": 1795103620598
+    },
+    {
+      "action": "sessions_updated",
+      "payload": {
+        "examSessions": [
+          {
+            "id": "cb8baffc-3f35-495f-aa7e-a0cb2eb1e02f",
+            "subject": "Bahasa Indonesia",
+            "title": "Simulasi Asesmen Bahasa Indonesia",
+            "session_group": "Simulasi & Try Out",
+            "description": "Teks Eksplanasi dan Teks Prosedur Kompleks untuk Kelas XI.",
+            "grade_level": 11,
+            "is_active": true,
+            "is_archived": false,
+            "gform_base_url": "https://docs.google.com/forms/d/e/1FAIpQLScX_sample_indo/viewform?embedded=true",
+            "respon_base_url": "https://docs.google.com/spreadsheets/d/sample_indo_sheets",
+            "exam_token": "BINDXI",
+            "finish_token": "SLSAI3",
+            "start_time": "2026-11-11T07:30",
+            "end_time": "2026-11-11T16:30",
+            "duration_minutes": 75
+          },
+          {
+            "id": "ce53b5a9-0f03-4929-9afa-5ad172adb71b",
+            "subject": "Biologi",
+            "title": "Bank Soal: Biologi Sel, Genetika & Hereditas",
+            "session_group": "Penilaian Harian (PH)",
+            "description": "Master bank soal bab genetika dan metabolisme sel. Soal ini tersimpan di arsip bank soal.",
+            "grade_level": 12,
+            "is_active": false,
+            "is_archived": true,
+            "gform_base_url": "https://docs.google.com/forms/d/e/1FAIpQLScX_sample_biologi/viewform?embedded=true",
+            "respon_base_url": "https://docs.google.com/spreadsheets/d/sample_biologi_sheets",
+            "exam_token": "BIOGEN",
+            "start_time": "2026-11-10T08:00",
+            "end_time": "2026-11-10T15:00",
+            "duration_minutes": 60,
+            "finish_token": "SLSAI1"
+          }
+        ]
+      },
+      "timestamp": 1795103624664
+    },
+    {
+      "action": "sessions_updated",
+      "payload": {
+        "examSessions": [
+          {
+            "id": "ce53b5a9-0f03-4929-9afa-5ad172adb71b",
+            "subject": "Biologi",
+            "title": "Bank Soal: Biologi Sel, Genetika & Hereditas",
+            "session_group": "Penilaian Harian (PH)",
+            "description": "Master bank soal bab genetika dan metabolisme sel. Soal ini tersimpan di arsip bank soal.",
+            "grade_level": 12,
+            "is_active": false,
+            "is_archived": true,
+            "gform_base_url": "https://docs.google.com/forms/d/e/1FAIpQLScX_sample_biologi/viewform?embedded=true",
+            "respon_base_url": "https://docs.google.com/spreadsheets/d/sample_biologi_sheets",
+            "exam_token": "BIOGEN",
+            "start_time": "2026-11-10T08:00",
+            "end_time": "2026-11-10T15:00",
+            "duration_minutes": 60,
+            "finish_token": "SLSAI1"
+          }
+        ]
+      },
+      "timestamp": 1795103626902
+    },
+    {
+      "action": "init_client",
+      "payload": {},
+      "timestamp": 1795103629766
+    },
+    {
+      "action": "init_client",
+      "payload": {},
+      "timestamp": 1795103637973
+    },
+    {
+      "action": "init_client",
+      "payload": {},
+      "timestamp": 1795103666265
+    },
+    {
+      "action": "institution_updated",
+      "payload": {
+        "institution": {
+          "id": "39a03e56-5d11-4b44-8c04-1dde0d626fd8",
+          "name": "SMP Negeri 1 Nusantara",
+          "npsn": "20104829",
+          "logo_url": null,
+          "education_level": "SMP",
+          "allowed_grades": [
+            7,
+            8,
+            9
+          ],
+          "idle_timeout_minutes": 30,
+          "gps_enabled": true,
+          "center_lat": -6.2088,
+          "center_lng": 106.8456,
+          "max_radius_meters": 200,
+          "gmaps_url": "https://maps.google.com/?q=-6.2088,106.8456",
+          "auth_method": "CREDENTIALS_ONLY",
+          "google_oauth_enabled": false,
+          "google_client_id": "",
+          "google_client_secret": "",
+          "recaptcha_enabled": false,
+          "recaptcha_version": "v2",
+          "recaptcha_site_key": "",
+          "recaptcha_secret_key": "",
+          "finish_token_lead_minutes": 10,
+          "browser_permissions": {
+            "location_gps": true,
+            "notifications": true,
+            "sound_audio": true,
+            "fullscreen": true,
+            "google_sso": false,
+            "block_clipboard": true,
+            "camera_webcam": true,
+            "cookies_iframe": true
+          }
+        }
+      },
+      "timestamp": 1795103681504
+    },
+    {
+      "action": "institution_updated",
+      "payload": {
+        "institution": {
+          "id": "39a03e56-5d11-4b44-8c04-1dde0d626fd8",
+          "name": "SMP Negeri 1 Nusantara",
+          "npsn": "20104829",
+          "logo_url": null,
+          "education_level": "SMP",
+          "allowed_grades": [
+            7,
+            8,
+            9
+          ],
+          "idle_timeout_minutes": 30,
+          "gps_enabled": true,
+          "center_lat": -7.92344,
+          "center_lng": 110.384223,
+          "max_radius_meters": 200,
+          "gmaps_url": "https://maps.google.com/?q=-7.92344,110.384223",
+          "auth_method": "CREDENTIALS_ONLY",
+          "google_oauth_enabled": false,
+          "google_client_id": "",
+          "google_client_secret": "",
+          "recaptcha_enabled": false,
+          "recaptcha_version": "v2",
+          "recaptcha_site_key": "",
+          "recaptcha_secret_key": "",
+          "finish_token_lead_minutes": 10,
+          "browser_permissions": {
+            "location_gps": true,
+            "notifications": true,
+            "sound_audio": true,
+            "fullscreen": true,
+            "google_sso": false,
+            "block_clipboard": true,
+            "camera_webcam": true,
+            "cookies_iframe": true
+          }
+        }
+      },
+      "timestamp": 1795103731542
+    },
+    {
+      "action": "institution_updated",
+      "payload": {
+        "institution": {
+          "id": "39a03e56-5d11-4b44-8c04-1dde0d626fd8",
+          "name": "SMA Negeri 1 Nusantara",
+          "npsn": "20104829",
+          "logo_url": null,
+          "education_level": "SMA",
+          "allowed_grades": [
+            10,
+            11,
+            12
+          ],
+          "idle_timeout_minutes": 30,
+          "gps_enabled": true,
+          "center_lat": -7.915829,
+          "center_lng": 110.408177,
+          "max_radius_meters": 200,
+          "gmaps_url": "https://maps.google.com/?q=-7.915829,110.408177",
+          "auth_method": "CREDENTIALS_ONLY",
+          "google_oauth_enabled": false,
+          "google_client_id": "",
+          "google_client_secret": "",
+          "recaptcha_enabled": false,
+          "recaptcha_version": "v2",
+          "recaptcha_site_key": "",
+          "recaptcha_secret_key": "",
+          "finish_token_lead_minutes": 10,
+          "browser_permissions": {
+            "location_gps": true,
+            "notifications": true,
+            "sound_audio": true,
+            "fullscreen": true,
+            "google_sso": false,
+            "block_clipboard": true,
+            "camera_webcam": true,
+            "cookies_iframe": true
+          }
+        }
+      },
+      "timestamp": 1795103741903
+    },
+    {
+      "action": "institution_updated",
+      "payload": {
+        "institution": {
+          "id": "39a03e56-5d11-4b44-8c04-1dde0d626fd8",
+          "name": "SMA Negeri 1 Nusantara",
+          "npsn": "20104829",
+          "logo_url": null,
+          "education_level": "SMA",
+          "allowed_grades": [
+            10,
+            11,
+            12
+          ],
+          "idle_timeout_minutes": 30,
+          "gps_enabled": true,
+          "center_lat": -7.915829,
+          "center_lng": 110.408177,
+          "max_radius_meters": 200,
+          "gmaps_url": "https://maps.google.com/?q=-7.915829,110.408177",
+          "auth_method": "CREDENTIALS_ONLY",
+          "google_oauth_enabled": false,
+          "google_client_id": "",
+          "google_client_secret": "",
+          "recaptcha_enabled": false,
+          "recaptcha_version": "v2",
+          "recaptcha_site_key": "",
+          "recaptcha_secret_key": "",
+          "finish_token_lead_minutes": 10,
+          "browser_permissions": {
+            "location_gps": true,
+            "notifications": true,
+            "sound_audio": true,
+            "fullscreen": true,
+            "google_sso": false,
+            "block_clipboard": true,
+            "camera_webcam": true,
+            "cookies_iframe": true
+          }
+        }
+      },
+      "timestamp": 1795103745055
+    },
+    {
+      "action": "institution_updated",
+      "payload": {
+        "institution": {
+          "id": "39a03e56-5d11-4b44-8c04-1dde0d626fd8",
+          "name": "SMA Negeri 1 Nusantara",
+          "npsn": "20104829",
+          "logo_url": null,
+          "education_level": "SMA",
+          "allowed_grades": [
+            10,
+            11,
+            12
+          ],
+          "idle_timeout_minutes": 30,
+          "gps_enabled": true,
+          "center_lat": -7.915829,
+          "center_lng": 110.408177,
+          "max_radius_meters": 200,
+          "gmaps_url": "https://maps.google.com/?q=-7.915829,110.408177",
+          "auth_method": "CREDENTIALS_ONLY",
+          "google_oauth_enabled": false,
+          "google_client_id": "",
+          "google_client_secret": "",
+          "recaptcha_enabled": false,
+          "recaptcha_version": "v2",
+          "recaptcha_site_key": "",
+          "recaptcha_secret_key": "",
+          "finish_token_lead_minutes": 10,
+          "browser_permissions": {
+            "location_gps": true,
+            "notifications": true,
+            "sound_audio": true,
+            "fullscreen": true,
+            "google_sso": false,
+            "block_clipboard": true,
+            "camera_webcam": true,
+            "cookies_iframe": true
+          }
+        }
+      },
+      "timestamp": 1795103748576
+    },
+    {
+      "action": "init_client",
+      "payload": {},
+      "timestamp": 1795103752372
+    },
+    {
+      "action": "init_client",
+      "payload": {},
+      "timestamp": 1795103864821
+    },
+    {
+      "action": "init_client",
+      "payload": {},
+      "timestamp": 1795103872451
+    },
+    {
+      "action": "init_client",
+      "payload": {},
+      "timestamp": 1795103988041
+    },
+    {
+      "action": "init_client",
+      "payload": {},
+      "timestamp": 1795105593708
+    },
+    {
+      "action": "init_client",
+      "payload": {},
+      "timestamp": 1795105606469
+    },
+    {
+      "action": "attempts_purged",
+      "payload": {
+        "attempts": [],
+        "is_full_replace": true
+      },
+      "timestamp": 1795105882357
+    },
+    {
+      "action": "attempts_purged",
+      "payload": {
+        "attempts": [],
+        "is_full_replace": true
+      },
+      "timestamp": 1795105882405
+    },
+    {
+      "action": "init_client",
+      "payload": {},
+      "timestamp": 1795105994779
+    },
+    {
+      "action": "institution_updated",
+      "payload": {
+        "institution": {
+          "id": "39a03e56-5d11-4b44-8c04-1dde0d626fd8",
+          "name": "SMA Negeri 1 Nusantara",
+          "npsn": "20104829",
+          "logo_url": null,
+          "education_level": "SMP",
+          "allowed_grades": [
+            7,
+            8,
+            9
+          ],
+          "idle_timeout_minutes": 30,
+          "gps_enabled": true,
+          "center_lat": -7.915829,
+          "center_lng": 110.408177,
+          "max_radius_meters": 200,
+          "gmaps_url": "https://maps.google.com/?q=-7.915829,110.408177",
+          "auth_method": "CREDENTIALS_ONLY",
+          "google_oauth_enabled": false,
+          "google_client_id": "",
+          "google_client_secret": "",
+          "recaptcha_enabled": false,
+          "recaptcha_version": "v2",
+          "recaptcha_site_key": "",
+          "recaptcha_secret_key": "",
+          "finish_token_lead_minutes": 10,
+          "browser_permissions": {
+            "location_gps": true,
+            "notifications": true,
+            "sound_audio": true,
+            "fullscreen": true,
+            "google_sso": false,
+            "block_clipboard": true,
+            "camera_webcam": true,
+            "cookies_iframe": true
+          }
+        }
+      },
+      "timestamp": 1795106021471
+    },
+    {
+      "action": "institution_updated",
+      "payload": {
+        "institution": {
+          "id": "39a03e56-5d11-4b44-8c04-1dde0d626fd8",
+          "name": "SMA Negeri 1 Nusantara",
+          "npsn": "20104829",
+          "logo_url": null,
+          "education_level": "SMP",
+          "allowed_grades": [
+            7,
+            8,
+            9
+          ],
+          "idle_timeout_minutes": 30,
+          "gps_enabled": true,
+          "center_lat": -7.915829,
+          "center_lng": 110.408177,
+          "max_radius_meters": 200,
+          "gmaps_url": "https://maps.google.com/?q=-7.915829,110.408177",
+          "auth_method": "CREDENTIALS_ONLY",
+          "google_oauth_enabled": false,
+          "google_client_id": "",
+          "google_client_secret": "",
+          "recaptcha_enabled": false,
+          "recaptcha_version": "v2",
+          "recaptcha_site_key": "",
+          "recaptcha_secret_key": "",
+          "finish_token_lead_minutes": 10,
+          "browser_permissions": {
+            "location_gps": true,
+            "notifications": true,
+            "sound_audio": true,
+            "fullscreen": true,
+            "google_sso": false,
+            "block_clipboard": true,
+            "camera_webcam": true,
+            "cookies_iframe": true
+          }
+        }
+      },
+      "timestamp": 1795106026487
+    },
+    {
+      "action": "init_client",
+      "payload": {},
+      "timestamp": 1795106029864
+    },
+    {
+      "action": "institution_updated",
+      "payload": {
+        "institution": {
+          "id": "39a03e56-5d11-4b44-8c04-1dde0d626fd8",
+          "name": "SMA Negeri 1 Nusantara",
+          "npsn": "20104829",
+          "logo_url": null,
+          "education_level": "LAINNYA",
+          "allowed_grades": [
+            0
+          ],
+          "idle_timeout_minutes": 30,
+          "gps_enabled": true,
+          "center_lat": -7.915829,
+          "center_lng": 110.408177,
+          "max_radius_meters": 200,
+          "gmaps_url": "https://maps.google.com/?q=-7.915829,110.408177",
+          "auth_method": "CREDENTIALS_ONLY",
+          "google_oauth_enabled": false,
+          "google_client_id": "",
+          "google_client_secret": "",
+          "recaptcha_enabled": false,
+          "recaptcha_version": "v2",
+          "recaptcha_site_key": "",
+          "recaptcha_secret_key": "",
+          "finish_token_lead_minutes": 10,
+          "browser_permissions": {
+            "location_gps": true,
+            "notifications": true,
+            "sound_audio": true,
+            "fullscreen": true,
+            "google_sso": false,
+            "block_clipboard": true,
+            "camera_webcam": true,
+            "cookies_iframe": true
+          }
+        }
+      },
+      "timestamp": 1795106047879
+    },
+    {
+      "action": "institution_updated",
+      "payload": {
+        "institution": {
+          "id": "39a03e56-5d11-4b44-8c04-1dde0d626fd8",
+          "name": "SMA Negeri 1 Nusantara",
+          "npsn": "20104829",
+          "logo_url": null,
+          "education_level": "SD",
+          "allowed_grades": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6
+          ],
+          "idle_timeout_minutes": 30,
+          "gps_enabled": true,
+          "center_lat": -7.915829,
+          "center_lng": 110.408177,
+          "max_radius_meters": 200,
+          "gmaps_url": "https://maps.google.com/?q=-7.915829,110.408177",
+          "auth_method": "CREDENTIALS_ONLY",
+          "google_oauth_enabled": false,
+          "google_client_id": "",
+          "google_client_secret": "",
+          "recaptcha_enabled": false,
+          "recaptcha_version": "v2",
+          "recaptcha_site_key": "",
+          "recaptcha_secret_key": "",
+          "finish_token_lead_minutes": 10,
+          "browser_permissions": {
+            "location_gps": true,
+            "notifications": true,
+            "sound_audio": true,
+            "fullscreen": true,
+            "google_sso": false,
+            "block_clipboard": true,
+            "camera_webcam": true,
+            "cookies_iframe": true
+          }
+        }
+      },
+      "timestamp": 1795106053351
+    },
+    {
+      "action": "institution_updated",
+      "payload": {
+        "institution": {
+          "id": "39a03e56-5d11-4b44-8c04-1dde0d626fd8",
+          "name": "SMA Negeri 1 Nusantara",
+          "npsn": "20104829",
+          "logo_url": null,
+          "education_level": "SD",
+          "allowed_grades": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6
+          ],
+          "idle_timeout_minutes": 30,
+          "gps_enabled": true,
+          "center_lat": -7.915829,
+          "center_lng": 110.408177,
+          "max_radius_meters": 200,
+          "gmaps_url": "https://maps.google.com/?q=-7.915829,110.408177",
+          "auth_method": "CREDENTIALS_ONLY",
+          "google_oauth_enabled": false,
+          "google_client_id": "",
+          "google_client_secret": "",
+          "recaptcha_enabled": false,
+          "recaptcha_version": "v2",
+          "recaptcha_site_key": "",
+          "recaptcha_secret_key": "",
+          "finish_token_lead_minutes": 10,
+          "browser_permissions": {
+            "location_gps": true,
+            "notifications": true,
+            "sound_audio": true,
+            "fullscreen": true,
+            "google_sso": false,
+            "block_clipboard": true,
+            "camera_webcam": true,
+            "cookies_iframe": true
+          }
+        }
+      },
+      "timestamp": 1795106067814
+    },
+    {
+      "action": "institution_updated",
+      "payload": {
+        "institution": {
+          "id": "39a03e56-5d11-4b44-8c04-1dde0d626fd8",
+          "name": "SMA Negeri 1 Nusantara",
+          "npsn": "20104829",
+          "logo_url": null,
+          "education_level": "SD",
+          "allowed_grades": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6
+          ],
+          "idle_timeout_minutes": 30,
+          "gps_enabled": true,
+          "center_lat": -7.915829,
+          "center_lng": 110.408177,
+          "max_radius_meters": 200,
+          "gmaps_url": "https://maps.google.com/?q=-7.915829,110.408177",
+          "auth_method": "CREDENTIALS_ONLY",
+          "google_oauth_enabled": false,
+          "google_client_id": "",
+          "google_client_secret": "",
+          "recaptcha_enabled": false,
+          "recaptcha_version": "v2",
+          "recaptcha_site_key": "",
+          "recaptcha_secret_key": "",
+          "finish_token_lead_minutes": 10,
+          "browser_permissions": {
+            "location_gps": true,
+            "notifications": true,
+            "sound_audio": true,
+            "fullscreen": true,
+            "google_sso": false,
+            "block_clipboard": true,
+            "camera_webcam": true,
+            "cookies_iframe": true
+          }
+        }
+      },
+      "timestamp": 1795106072016
+    },
+    {
+      "action": "init_client",
+      "payload": {},
+      "timestamp": 1795106077275
+    },
+    {
+      "action": "institution_updated",
+      "payload": {
+        "institution": {
+          "id": "39a03e56-5d11-4b44-8c04-1dde0d626fd8",
+          "name": "SMA Negeri 1 Nusantara",
+          "npsn": "20104829",
+          "logo_url": null,
+          "education_level": "LAINNYA",
+          "allowed_grades": [
+            0
+          ],
+          "idle_timeout_minutes": 30,
+          "gps_enabled": true,
+          "center_lat": -7.915829,
+          "center_lng": 110.408177,
+          "max_radius_meters": 200,
+          "gmaps_url": "https://maps.google.com/?q=-7.915829,110.408177",
+          "auth_method": "CREDENTIALS_ONLY",
+          "google_oauth_enabled": false,
+          "google_client_id": "",
+          "google_client_secret": "",
+          "recaptcha_enabled": false,
+          "recaptcha_version": "v2",
+          "recaptcha_site_key": "",
+          "recaptcha_secret_key": "",
+          "finish_token_lead_minutes": 10,
+          "browser_permissions": {
+            "location_gps": true,
+            "notifications": true,
+            "sound_audio": true,
+            "fullscreen": true,
+            "google_sso": false,
+            "block_clipboard": true,
+            "camera_webcam": true,
+            "cookies_iframe": true
+          }
+        }
+      },
+      "timestamp": 1795106092536
+    },
+    {
+      "action": "institution_updated",
+      "payload": {
+        "institution": {
+          "id": "39a03e56-5d11-4b44-8c04-1dde0d626fd8",
+          "name": "SMA Negeri 1 Nusantara",
+          "npsn": "20104829",
+          "logo_url": null,
+          "education_level": "LAINNYA",
+          "allowed_grades": [
+            0
+          ],
+          "idle_timeout_minutes": 30,
+          "gps_enabled": true,
+          "center_lat": -7.915829,
+          "center_lng": 110.408177,
+          "max_radius_meters": 200,
+          "gmaps_url": "https://maps.google.com/?q=-7.915829,110.408177",
+          "auth_method": "CREDENTIALS_ONLY",
+          "google_oauth_enabled": false,
+          "google_client_id": "",
+          "google_client_secret": "",
+          "recaptcha_enabled": false,
+          "recaptcha_version": "v2",
+          "recaptcha_site_key": "",
+          "recaptcha_secret_key": "",
+          "finish_token_lead_minutes": 10,
+          "browser_permissions": {
+            "location_gps": true,
+            "notifications": true,
+            "sound_audio": true,
+            "fullscreen": true,
+            "google_sso": false,
+            "block_clipboard": true,
+            "camera_webcam": true,
+            "cookies_iframe": true
+          }
+        }
+      },
+      "timestamp": 1795106099976
+    },
+    {
+      "action": "init_client",
+      "payload": {},
+      "timestamp": 1795106521301
+    }
+  ],
+  "lastUpdated": 1795106521301
+}

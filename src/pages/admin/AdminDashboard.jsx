@@ -369,6 +369,10 @@ function executePrintDocument(elementId, title, marginSetting = 'narrow', custom
 export default function AdminDashboard({ currentUser, onLogout }) {
   const isSuperAdmin = currentUser?.role === 'admin';
   const [activeTab, setActiveTab] = useState('overview');
+  const activeTabRef = useRef(activeTab);
+  useEffect(() => {
+    activeTabRef.current = activeTab;
+  }, [activeTab]);
   const [institution, setInstitution] = useState(storageService.getInstitution());
   const [users, setUsers] = useState(storageService.getUsers());
   const [exams, setExams] = useState(storageService.getExamSessions());
@@ -874,12 +878,15 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     }, 3500);
   };
 
-  // Refresh seluruh data sistem termasuk konfigurasi institusi
+  // Refresh seluruh data sistem termasuk konfigurasi institusi, mode, dan log
   const refreshData = () => {
     setInstitution(storageService.getInstitution());
     setUsers(storageService.getUsers());
     setExams(storageService.getExamSessions());
     setAttempts(storageService.getAttempts());
+    setBeritaAcaraConfig(storageService.getBeritaAcaraConfig());
+    setAppModeConfig(storageService.getAppModeConfig());
+    setSystemErrorLogs(storageService.getSystemErrorLogs());
   };
 
   // Refresh hanya data aktivitas dinamis (siswa, ujian, attempt) tanpa menimpa formulir instansi yang sedang diedit
@@ -1019,23 +1026,39 @@ export default function AdminDashboard({ currentUser, onLogout }) {
   useEffect(() => {
     refreshData();
 
-    const handleSyncTrigger = () => {
-      refreshMonitoringData();
+    const handleSyncTrigger = (event) => {
+      // Jika event khusus pembaruan instansi, hanya perbarui jika admin tidak sedang membuka tab pengaturan instansi
+      if (event === 'institution_updated') {
+        if (activeTabRef.current !== 'institution') {
+          setInstitution(storageService.getInstitution());
+        }
+      } else if (event === 'berita_acara_updated') {
+        setBeritaAcaraConfig(storageService.getBeritaAcaraConfig());
+      } else if (event === 'app_mode_updated') {
+        setAppModeConfig(storageService.getAppModeConfig());
+      } else {
+        // Pembaruan aktivitas pengerjaan siswa & ujian (tidak menimpa formulir instansi)
+        refreshMonitoringData();
+      }
     };
 
-    // 1. Sinkronisasi instan via BroadcastChannel (antar tab / multi-window)
+    // 1. Sinkronisasi instan via WebSocket real-time
     const unsubscribe = subscribeSync(handleSyncTrigger);
 
-    // 2. CustomEvent lokal di tab yang sama
-    window.addEventListener('examguard_storage_updated', handleSyncTrigger);
+    // 2. CustomEvent lokal di tab yang sama (hanya monitoring data agar form tidak tertimpa)
+    const handleStorageChange = () => {
+      refreshMonitoringData();
+    };
+    window.addEventListener('examguard_storage_updated', handleStorageChange);
 
-    // 3. Storage event native browser (terpicu saat tab lain menulis ke localStorage)
-    window.addEventListener('storage', handleSyncTrigger);
+    // 3. Storage event native browser (hanya monitoring data)
+    window.addEventListener('storage', handleStorageChange);
 
-    // 4. Polling interval 2.5 detik untuk pemantauan live yang responsif
-    const interval = setInterval(refreshMonitoringData, 2500);
+    // 4. Polling interval 2 detik HANYA untuk pemantauan live data aktivitas siswa (refreshMonitoringData)
+    // Tidak lagi memanggil refreshData() agar formulir konfigurasi yang sedang diketik tidak tereset!
+    const interval = setInterval(refreshMonitoringData, 2000);
 
-    // 5. Auto-refresh saat tab browser kembali aktif/fokus
+    // 5. Auto-refresh saat tab browser kembali aktif/fokus (hanya data monitoring)
     const handleFocus = () => {
       if (document.visibilityState === 'visible') {
         refreshMonitoringData();
@@ -1046,17 +1069,23 @@ export default function AdminDashboard({ currentUser, onLogout }) {
 
     return () => {
       unsubscribe();
-      window.removeEventListener('examguard_storage_updated', handleSyncTrigger);
-      window.removeEventListener('storage', handleSyncTrigger);
+      window.removeEventListener('examguard_storage_updated', handleStorageChange);
+      window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('visibilitychange', handleFocus);
       window.removeEventListener('focus', handleFocus);
       clearInterval(interval);
     };
   }, []);
 
-  // Auto-refresh data seketika saat admin membuka/mengklik menu Kontrol Pengawas
+  // Saat berpindah tab, sinkronkan data yang relevan
   useEffect(() => {
-    if (activeTab === 'proctor') {
+    if (activeTab === 'institution') {
+      const saved = storageService.getInstitution();
+      setInstitution(saved);
+      if (saved?.gmaps_url) {
+        setGmapsInput(saved.gmaps_url);
+      }
+    } else if (activeTab === 'proctor') {
       refreshMonitoringData();
     }
   }, [activeTab]);
@@ -1124,17 +1153,18 @@ export default function AdminDashboard({ currentUser, onLogout }) {
   // Simpan Pengaturan Institusi
   const handleSaveInstitution = (e) => {
     e.preventDefault();
-    if (institution.npsn && institution.npsn.length !== 8) {
-      showNotification('NPSN sekolah harus terdiri dari 8 digit angka numerik.', 'error');
+    if (institution.npsn && !/^[a-zA-Z0-9]{4,16}$/.test(institution.npsn)) {
+      showNotification('NPSN harus berupa kombinasi huruf dan angka (alfanumerik 4-16 karakter tanpa spasi atau simbol).', 'error');
       return;
     }
-    const updated = {
-      ...institution,
-      gmaps_url: gmapsInput?.trim() || institution.gmaps_url,
-    };
-    storageService.updateInstitution(updated);
-    setInstitution(updated);
-    refreshData();
+    setInstitution((prev) => {
+      const updated = {
+        ...prev,
+        gmaps_url: gmapsInput?.trim() || prev.gmaps_url,
+      };
+      storageService.updateInstitution(updated);
+      return updated;
+    });
     showNotification('Konfigurasi instansi dan lokasi GPS berhasil disimpan.');
   };
 
@@ -1414,15 +1444,17 @@ export default function AdminDashboard({ currentUser, onLogout }) {
         const lat = parseFloat(pos.coords.latitude.toFixed(6));
         const lng = parseFloat(pos.coords.longitude.toFixed(6));
         const gmaps = `https://maps.google.com/?q=${lat},${lng}`;
-        const updated = {
-          ...institution,
-          center_lat: lat,
-          center_lng: lng,
-          gmaps_url: gmaps,
-        };
-        setInstitution(updated);
+        setInstitution((prev) => {
+          const updated = {
+            ...prev,
+            center_lat: lat,
+            center_lng: lng,
+            gmaps_url: gmaps,
+          };
+          storageService.updateInstitution(updated);
+          return updated;
+        });
         setGmapsInput(gmaps);
-        storageService.updateInstitution(updated);
         showNotification('Koordinat GPS berhasil disesuaikan dengan posisi Anda saat ini.');
       },
       (err) => {
@@ -1447,15 +1479,17 @@ export default function AdminDashboard({ currentUser, onLogout }) {
       const lng = parseFloat(parsed.lng.toFixed(6));
       const validUrl = trimmed.startsWith('http') ? trimmed : `https://maps.google.com/?q=${lat},${lng}`;
 
-      const updated = {
-        ...institution,
-        center_lat: lat,
-        center_lng: lng,
-        gmaps_url: validUrl,
-      };
-      setInstitution(updated);
+      setInstitution((prev) => {
+        const updated = {
+          ...prev,
+          center_lat: lat,
+          center_lng: lng,
+          gmaps_url: validUrl,
+        };
+        storageService.updateInstitution(updated);
+        return updated;
+      });
       setGmapsInput(validUrl);
-      storageService.updateInstitution(updated);
       showNotification(`Lokasi berhasil diterapkan ke koordinat: ${lat}, ${lng}`);
     } else {
       if (trimmed.includes('maps.app.goo.gl') || trimmed.includes('goo.gl/maps')) {
@@ -2486,6 +2520,37 @@ export default function AdminDashboard({ currentUser, onLogout }) {
         storageService.deleteUser(id);
         refreshData();
         showNotification(`Peserta "${name}" berhasil dihapus.`);
+      },
+    });
+  };
+
+  // Handler Kosongkan Seluruh Data Peserta
+  const handleClearAllStudents = () => {
+    const studentCount = (users || []).filter((u) => u.role === 'student').length;
+    if (studentCount === 0) {
+      showNotification('Tidak ada data peserta untuk dihapus.', 'info');
+      return;
+    }
+    openConfirm({
+      title: 'Kosongkan Seluruh Data Peserta?',
+      message: (
+        <div className="space-y-2">
+          <p>
+            Apakah Anda yakin ingin menghapus <strong>seluruh {studentCount} data peserta</strong>?
+          </p>
+          <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800">
+            Perhatian: Seluruh akun peserta akan dihapus secara permanen dari sistem dan file database server. Akun Super Admin & Proktor akan tetap aman.
+          </div>
+        </div>
+      ),
+      confirmText: `Ya, Hapus Semua (${studentCount} Peserta)`,
+      cancelText: 'Batal',
+      variant: 'danger',
+      icon: Trash2,
+      onConfirm: () => {
+        storageService.deleteAllStudents();
+        refreshData();
+        showNotification(`Berhasil menghapus seluruh data peserta.`);
       },
     });
   };
@@ -5849,6 +5914,15 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                     <Upload className="w-4 h-4 text-zinc-500" />
                     <span>Import Peserta (CSV/Excel)</span>
                   </button>
+
+                  <button
+                    onClick={handleClearAllStudents}
+                    className="inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs font-medium rounded-xl shadow-2xs transition-all cursor-pointer"
+                    title="Hapus seluruh data peserta sekaligus"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                    <span>Kosongkan Peserta</span>
+                  </button>
                 </div>
               </div>
 
@@ -7222,24 +7296,23 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
 
                     <div>
                       <label className="block text-xs font-medium text-zinc-700 mb-1.5 flex items-center justify-between">
-                        <span>NPSN (8 Digit Angka)</span>
-                        <span className="text-[10px] text-zinc-400 font-mono">Numerik</span>
+                        <span>NPSN / Kode Sekolah</span>
+                        <span className="text-[10px] text-zinc-600 font-mono bg-zinc-100 px-1.5 py-0.5 rounded border border-zinc-200">Alfanumerik</span>
                       </label>
                       <input
                         type="text"
-                        inputMode="numeric"
-                        pattern="[0-9]{8}"
-                        maxLength={8}
-                        placeholder="Contoh: 20104829"
+                        pattern="[A-Za-z0-9]+"
+                        maxLength={16}
+                        placeholder="Contoh: 20104829 atau SMPN01"
                         value={institution.npsn || ''}
                         onChange={(e) => {
-                          const val = e.target.value.replace(/\D/g, '').slice(0, 8);
-                          setInstitution({ ...institution, npsn: val });
+                          const val = e.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 16);
+                          setInstitution((prev) => ({ ...prev, npsn: val }));
                         }}
-                        className="w-full px-3.5 py-2.5 border border-zinc-300 rounded-xl text-sm font-mono tracking-wider focus:ring-2 focus:ring-zinc-900 focus:outline-none"
+                        className="w-full px-3.5 py-2.5 border border-zinc-300 rounded-xl text-sm font-mono tracking-wider uppercase focus:ring-2 focus:ring-zinc-900 focus:outline-none"
                       />
                       <p className="text-[10px] text-zinc-400 mt-1">
-                        Nomor Pokok Sekolah Nasional resmi Kemendikbudristek (hanya angka).
+                        Huruf (A-Z) dan angka (0-9) saja, tanpa spasi dan tanpa karakter khusus.
                       </p>
                     </div>
 
@@ -7470,9 +7543,10 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                         step="any"
                         required
                         value={institution.center_lat}
-                        onChange={(e) =>
-                          setInstitution({ ...institution, center_lat: parseFloat(e.target.value) || 0 })
-                        }
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value) || 0;
+                          setInstitution((prev) => ({ ...prev, center_lat: val }));
+                        }}
                         className="w-full px-3.5 py-2.5 border border-zinc-300 rounded-xl text-sm font-mono-num focus:ring-2 focus:ring-zinc-900 focus:outline-none"
                       />
                     </div>
@@ -7484,9 +7558,10 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                         step="any"
                         required
                         value={institution.center_lng}
-                        onChange={(e) =>
-                          setInstitution({ ...institution, center_lng: parseFloat(e.target.value) || 0 })
-                        }
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value) || 0;
+                          setInstitution((prev) => ({ ...prev, center_lng: val }));
+                        }}
                         className="w-full px-3.5 py-2.5 border border-zinc-300 rounded-xl text-sm font-mono-num focus:ring-2 focus:ring-zinc-900 focus:outline-none"
                       />
                     </div>
@@ -7512,12 +7587,17 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                           max="5000"
                           required
                           value={institution.max_radius_meters}
-                          onChange={(e) =>
-                            setInstitution({
-                              ...institution,
-                              max_radius_meters: parseInt(e.target.value, 10) || 100,
-                            })
-                          }
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10) || 100;
+                            setInstitution((prev) => {
+                              const updated = {
+                                ...prev,
+                                max_radius_meters: val,
+                              };
+                              storageService.updateInstitution(updated);
+                              return updated;
+                            });
+                          }}
                           className="w-full px-3.5 py-2.5 border border-zinc-300 rounded-xl text-sm font-mono-num focus:ring-2 focus:ring-zinc-900 focus:outline-none pr-16"
                         />
                         <span className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-xs text-zinc-400 pointer-events-none">
@@ -7536,24 +7616,28 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                       institutionName={institution.name}
                       onLocationChange={(newLat, newLng) => {
                         const gmaps = `https://maps.google.com/?q=${newLat},${newLng}`;
-                        const updated = {
-                          ...institution,
-                          center_lat: newLat,
-                          center_lng: newLng,
-                          gmaps_url: gmaps,
-                        };
-                        setInstitution(updated);
+                        setInstitution((prev) => {
+                          const updated = {
+                            ...prev,
+                            center_lat: newLat,
+                            center_lng: newLng,
+                            gmaps_url: gmaps,
+                          };
+                          storageService.updateInstitution(updated);
+                          return updated;
+                        });
                         setGmapsInput(gmaps);
-                        storageService.updateInstitution(updated);
                         showNotification(`Koordinat GPS diperbarui: ${newLat}, ${newLng}`);
                       }}
                       onRadiusChange={(newRadius) => {
-                        const updated = {
-                          ...institution,
-                          max_radius_meters: newRadius,
-                        };
-                        setInstitution(updated);
-                        storageService.updateInstitution(updated);
+                        setInstitution((prev) => {
+                          const updated = {
+                            ...prev,
+                            max_radius_meters: newRadius,
+                          };
+                          storageService.updateInstitution(updated);
+                          return updated;
+                        });
                         showNotification(`Radius toleransi diubah ke ${newRadius} meter.`);
                       }}
                     />
