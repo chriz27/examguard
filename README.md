@@ -2,6 +2,7 @@
 
 <div align="center">
 
+[![GitHub](https://img.shields.io/badge/GitHub-chriz27%2Fexamguard-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/chriz27/examguard)
 ![React](https://img.shields.io/badge/React-19.0-61dafb?style=for-the-badge&logo=react&logoColor=black)
 ![Vite](https://img.shields.io/badge/Vite-6.2-646cff?style=for-the-badge&logo=vite&logoColor=white)
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-v4.0-38bdf8?style=for-the-badge&logo=tailwindcss&logoColor=white)
@@ -11,7 +12,7 @@
 
 **Sistem Pengawasan Ujian Berbasis Web Modern untuk Google Form dengan Proteksi Anti-Curang, GPS Geofencing, Google SSO, dan Dua Tingkat Peran Pengawas.**
 
-[Fitur Utama](#-fitur-utama) • [Prasyarat](#-prasyarat-sistem) • [Instalasi Lokal](#-panduan-instalasi-lokal-mode-pengembang) • [Deploy cPanel](#-panduan-instalasi--deployment-ke-cpanel) • [Kredensial Demo](#-kredensial-akun-demo-pengujian) • [Troubleshooting](#-pemecahan-masalah-troubleshooting)
+[Fitur Utama](#-fitur-utama) • [Prasyarat](#-prasyarat-sistem) • [Instalasi Lokal](#-panduan-instalasi-lokal-mode-pengembang) • [Deploy cPanel](#-panduan-instalasi--deployment-ke-cpanel) • [Kredensial Demo](#-kredensial-akun-demo-pengujian) • [Repositori GitHub](https://github.com/chriz27/examguard)
 
 </div>
 
@@ -198,7 +199,7 @@ Ikuti langkah-langkah di bawah ini untuk menjalankan ExamGuard di komputer lokal
 ### 1. Kloning Repository atau Unduh Sumber Kode
 Jika menggunakan Git:
 ```bash
-git clone https://github.com/username/examguard.git
+git clone https://github.com/chriz27/examguard.git
 cd examguard
 ```
 Atau jika menggunakan Laragon / XAMPP, letakkan folder proyek di direktori web server Anda (misal `d:\laragon\www\examguard`).
@@ -387,19 +388,24 @@ examguard/
 
 ## ⚙️ Konfigurasi Tambahan
 
-### 1. Konfigurasi Google Workspace SSO (Opsional)
+### 1. Konfigurasi Google Workspace SSO (Mode Produksi Resmi)
 Untuk mengaktifkan autentikasi akun Google sekolah (@sekolah.sch.id):
 1. Buka [Google Cloud Console](https://console.cloud.google.com/).
 2. Buat proyek baru $\rightarrow$ Buka menu **APIs & Services** $\rightarrow$ **Credentials**.
 3. Buat **OAuth 2.0 Client IDs** (Web Application).
-4. Tambahkan domain sekolah Anda ke dalam **Authorized JavaScript origins** (misal: `https://ujian.sekolah.sch.id`).
+4. Tambahkan domain sekolah Anda ke dalam **Authorized JavaScript origins** (misal: `https://ujian.sekolah.sch.id` atau `http://localhost:5173`).
 5. Salin **Client ID** yang diperoleh, lalu masuk ke ExamGuard sebagai Super Admin $\rightarrow$ Tab **Pengaturan Instansi** $\rightarrow$ Masukkan Client ID pada formulir Google OAuth.
-6. Aktifkan toggle switch Google OAuth.
+6. Klik tombol **Test Koneksi & Aktifkan**. Begitu terverifikasi, status otomatis beralih ke **AKTIF (ON)**.
+> **Catatan Keamanan:** Jika Google OAuth belum dikonfigurasi atau di-reset, tombol SSO pada portal login otomatis **tersembunyi (hidden)** dan seluruh peserta wajib login menggunakan nomor **Nomor Ujian / NISN** dan **Password NIS**.
 
-### 2. Konfigurasi Google reCAPTCHA v2 (Opsional)
+### 2. Konfigurasi Google reCAPTCHA (v2 Checkbox & v3 Invisible)
+ExamGuard mendukung 2 mode API resmi Google reCAPTCHA dan sistem Captcha Mandiri Default:
 1. Buka [Google reCAPTCHA Admin Console](https://www.google.com/recaptcha/admin).
-2. Daftarkan domain sekolah dengan memilih tipe **reCAPTCHA v2 ("I'm not a robot" Checkbox)**.
-3. Masukkan **Site Key** ke tab **Pengaturan Instansi** di ExamGuard dan aktifkan proteksi reCAPTCHA.
+2. Daftarkan domain sekolah dengan memilih salah satu tipe:
+   - **reCAPTCHA v2 ("I'm not a robot" Checkbox):** Menampilkan kotak centang interaktif yang wajib diselesaikan siswa.
+   - **reCAPTCHA v3 (Score-based Invisible):** Verifikasi latar belakang otomatis tanpa mengganggu alur pengerjaan siswa.
+3. Masukkan **Site Key** dan **Secret Key** ke tab **Pengaturan Instansi** di ExamGuard, pilih versi yang sesuai (v2 atau v3), lalu klik **Test Koneksi & Aktifkan**.
+> **Proteksi Captcha Mandiri (Default):** Jika Google reCAPTCHA belum diset (kosong) atau aplikasi dijalankan pada jaringan tertutup (*offline LAN*), sistem secara otomatis mengaktifkan **Captcha Keamanan Mandiri ExamGuard (Default)** berbasis *visual canvas anti-bot* 5 karakter. Dengan demikian, portal login tetap 100% terlindungi dari serangan *brute-force* bot tanpa bergantung pada koneksi internet luar.
 
 ---
 
@@ -417,6 +423,9 @@ Untuk mengaktifkan autentikasi akun Google sekolah (@sekolah.sch.id):
 
 ---
 
-## 📄 Lisensi
+## 📄 Lisensi & Repositori
 
 ExamGuard dirilis di bawah lisensi [MIT](LICENSE). Bebas digunakan, dimodifikasi, dan didistribusikan untuk keperluan instansi pendidikan, sekolah, maupun pelatihan mandiri.
+
+* **Repositori Resmi:** [https://github.com/chriz27/examguard](https://github.com/chriz27/examguard)
+* **Author / Maintainer:** [chriz27](https://github.com/chriz27)

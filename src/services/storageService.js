@@ -295,13 +295,14 @@ const DEFAULT_INSTITUTION = {
   center_lng: 106.8456,
   max_radius_meters: 200,
   gmaps_url: 'https://maps.google.com/?q=-6.2088,106.8456',
-  auth_method: 'BOTH', // 'SSO_ONLY', 'CREDENTIALS_ONLY', 'BOTH'
-  google_oauth_enabled: true,
-  google_client_id: '842918239012-examguard.apps.googleusercontent.com',
-  google_client_secret: 'GOCSPX-ExamGuardSecretToken2026',
-  recaptcha_enabled: true,
-  recaptcha_site_key: '6LeIx0aUAAAAAExampleKeyExamGuardSiteKey',
-  recaptcha_secret_key: '6LeIx0aUAAAAAExampleKeyExamGuardSecret',
+  auth_method: 'CREDENTIALS_ONLY', // 'SSO_ONLY', 'CREDENTIALS_ONLY', 'BOTH' (Default aman jika belum ada OAuth)
+  google_oauth_enabled: false, // Default OFF di mode produksi jika belum diset & diuji
+  google_client_id: '',
+  google_client_secret: '',
+  recaptcha_enabled: false, // Default OFF di mode produksi jika belum diset & diuji
+  recaptcha_version: 'v2', // 'v2' (Checkbox "Saya bukan robot") atau 'v3' (Invisible Score-based)
+  recaptcha_site_key: '',
+  recaptcha_secret_key: '',
   finish_token_lead_minutes: 10, // Menit sebelum waktu habis untuk menampilkan TOKEN SELESAI
   browser_permissions: { ...DEFAULT_BROWSER_PERMISSIONS },
 };
@@ -530,6 +531,56 @@ export const storageService = {
   init() {
     if (!localStorage.getItem(STORAGE_KEYS.INSTITUTION)) {
       localStorage.setItem(STORAGE_KEYS.INSTITUTION, JSON.stringify(DEFAULT_INSTITUTION));
+    } else {
+      // Migrasi pembersihan kredensial dummy bawaan & penegakan aturan mode produksi:
+      // Jika kredensial kosong, maka status otomatis OFF.
+      try {
+        const rawInst = localStorage.getItem(STORAGE_KEYS.INSTITUTION);
+        if (rawInst) {
+          const parsed = JSON.parse(rawInst);
+          let modified = false;
+
+          // Hapus kredensial dummy bawaan sebelumnya
+          if (
+            parsed.google_client_id === '842918239012-examguard.apps.googleusercontent.com' ||
+            parsed.google_client_id?.includes('842918239012-examguard')
+          ) {
+            parsed.google_client_id = '';
+            parsed.google_client_secret = '';
+            parsed.google_oauth_enabled = false;
+            modified = true;
+          }
+
+          if (
+            parsed.recaptcha_site_key === '6LeIx0aUAAAAAExampleKeyExamGuardSiteKey' ||
+            parsed.recaptcha_site_key?.includes('6LeIx0aUAAAAAExampleKey')
+          ) {
+            parsed.recaptcha_site_key = '';
+            parsed.recaptcha_secret_key = '';
+            parsed.recaptcha_enabled = false;
+            modified = true;
+          }
+
+          // Rule: Jika belum di-set (kosong), otomatis OFF
+          if (!parsed.google_client_id || !parsed.google_client_id.trim()) {
+            if (parsed.google_oauth_enabled) {
+              parsed.google_oauth_enabled = false;
+              modified = true;
+            }
+          }
+
+          if (!parsed.recaptcha_site_key || !parsed.recaptcha_site_key.trim()) {
+            if (parsed.recaptcha_enabled) {
+              parsed.recaptcha_enabled = false;
+              modified = true;
+            }
+          }
+
+          if (modified) {
+            localStorage.setItem(STORAGE_KEYS.INSTITUTION, JSON.stringify(parsed));
+          }
+        }
+      } catch {}
     }
     if (!localStorage.getItem(STORAGE_KEYS.USERS)) {
       localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(DEFAULT_USERS));
@@ -636,19 +687,32 @@ export const storageService = {
       if (typeof parsed.gps_enabled === 'boolean') {
         browser_permissions.location_gps = parsed.gps_enabled;
       }
+
+      const googleClientId = parsed.google_client_id ? String(parsed.google_client_id).trim() : '';
+      const recaptchaSiteKey = parsed.recaptcha_site_key ? String(parsed.recaptcha_site_key).trim() : '';
+
+      // ATURAN MODE PRODUKSI: Jika tidak di-set (kosong), otomatis OFF
+      const google_oauth_enabled = Boolean(parsed.google_oauth_enabled) && Boolean(googleClientId);
+      const recaptcha_enabled = Boolean(parsed.recaptcha_enabled) && Boolean(recaptchaSiteKey);
+
+      let auth_method = parsed.auth_method || 'CREDENTIALS_ONLY';
+      if (!google_oauth_enabled && auth_method === 'SSO_ONLY') {
+        auth_method = 'CREDENTIALS_ONLY';
+      }
+
       return {
         ...DEFAULT_INSTITUTION,
         ...parsed,
         npsn: parsed.npsn ? String(parsed.npsn).replace(/[^a-zA-Z0-9]/g, '') : '20104829',
         browser_permissions,
-        google_oauth_enabled:
-          typeof parsed.google_oauth_enabled === 'boolean'
-            ? parsed.google_oauth_enabled
-            : (parsed.auth_method !== 'CREDENTIALS_ONLY'),
-        recaptcha_enabled:
-          typeof parsed.recaptcha_enabled === 'boolean'
-            ? parsed.recaptcha_enabled
-            : true,
+        google_client_id: googleClientId,
+        google_client_secret: parsed.google_client_secret ? String(parsed.google_client_secret).trim() : '',
+        google_oauth_enabled,
+        auth_method,
+        recaptcha_site_key: recaptchaSiteKey,
+        recaptcha_secret_key: parsed.recaptcha_secret_key ? String(parsed.recaptcha_secret_key).trim() : '',
+        recaptcha_version: parsed.recaptcha_version === 'v3' ? 'v3' : 'v2',
+        recaptcha_enabled,
         finish_token_lead_minutes:
           typeof parsed.finish_token_lead_minutes === 'number'
             ? parsed.finish_token_lead_minutes
@@ -688,6 +752,38 @@ export const storageService = {
       gps_enabled = data.browser_permissions.location_gps;
     }
 
+    const googleClientId = data.google_client_id !== undefined
+      ? String(data.google_client_id || '').trim()
+      : String(current.google_client_id || '').trim();
+
+    const recaptchaSiteKey = data.recaptcha_site_key !== undefined
+      ? String(data.recaptcha_site_key || '').trim()
+      : String(current.recaptcha_site_key || '').trim();
+
+    // ATURAN MODE PRODUKSI: Jika tidak di-set (kosong), otomatis OFF
+    let google_oauth_enabled = data.google_oauth_enabled !== undefined
+      ? Boolean(data.google_oauth_enabled)
+      : Boolean(current.google_oauth_enabled);
+    if (!googleClientId) {
+      google_oauth_enabled = false;
+    }
+
+    let recaptcha_enabled = data.recaptcha_enabled !== undefined
+      ? Boolean(data.recaptcha_enabled)
+      : Boolean(current.recaptcha_enabled);
+    if (!recaptchaSiteKey) {
+      recaptcha_enabled = false;
+    }
+
+    let auth_method = data.auth_method !== undefined ? data.auth_method : (current.auth_method || 'CREDENTIALS_ONLY');
+    if (!google_oauth_enabled && auth_method === 'SSO_ONLY') {
+      auth_method = 'CREDENTIALS_ONLY';
+    }
+
+    const recaptcha_version = data.recaptcha_version === 'v3'
+      ? 'v3'
+      : (data.recaptcha_version === 'v2' ? 'v2' : (current.recaptcha_version || 'v2'));
+
     const updated = {
       ...current,
       ...data,
@@ -695,6 +791,12 @@ export const storageService = {
       gps_enabled,
       browser_permissions,
       allowed_grades,
+      google_client_id: googleClientId,
+      google_oauth_enabled,
+      auth_method,
+      recaptcha_version,
+      recaptcha_site_key: recaptchaSiteKey,
+      recaptcha_enabled,
     };
     localStorage.setItem(STORAGE_KEYS.INSTITUTION, JSON.stringify(updated));
     broadcastSync('institution_updated', { institution: updated });

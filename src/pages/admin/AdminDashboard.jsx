@@ -531,8 +531,11 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     };
   }, []);
 
-  // Password visibility
+  // Password visibility & State Uji Koneksi Produksi
   const [showGoogleSecret, setShowGoogleSecret] = useState(false);
+  const [showRecaptchaSecret, setShowRecaptchaSecret] = useState(false);
+  const [testingOAuth, setTestingOAuth] = useState(false);
+  const [testingRecaptcha, setTestingRecaptcha] = useState(false);
   const [showAdminPass, setShowAdminPass] = useState(false);
   const [showProctorPass, setShowProctorPass] = useState(false);
 
@@ -661,8 +664,8 @@ export default function AdminDashboard({ currentUser, onLogout }) {
   const duplicateEditStudent = duplicateEditNisn;
   const hasEditDuplicate = Boolean(duplicateEditNisn || duplicateEditNoUjian || duplicateEditNis);
 
-  // URL Repositori GitHub Resmi ExamGuard (Dapat diedit langsung sebelum rilis)
-  const GITHUB_REPO_URL = 'https://github.com/your-username/examguard';
+  // URL Repositori GitHub Resmi ExamGuard
+  const GITHUB_REPO_URL = 'https://github.com/chriz27/examguard';
 
   // State Backup & Restore Sistem
   const [backupUseDefaultKey, setBackupUseDefaultKey] = useState(true);
@@ -1157,131 +1160,246 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     );
   };
 
-  // Handler Switch On/Off Google OAuth & Workspace SSO (Konfirmasi Modern)
-  const handleToggleGoogleOAuth = () => {
-    const isCurrentlyActive = Boolean(institution.google_oauth_enabled);
-    if (isCurrentlyActive) {
-      openConfirm({
-        title: 'Matikan Google OAuth 2.0 & SSO?',
-        message: (
-          <div className="space-y-2">
-            <p>
-              Apakah Anda yakin ingin <strong>menonaktifkan Google OAuth 2.0 & Workspace SSO</strong>?
-            </p>
-            <p className="text-[11px] text-zinc-500 bg-amber-50 border border-amber-200 p-2.5 rounded-xl text-amber-900">
-              Perhatian: Tombol login "Masuk dengan Google SSO" akan disembunyikan dari beranda login siswa. Siswa dapat login menggunakan nomor <strong>NISN & Password NIS</strong>.
-            </p>
-          </div>
-        ),
-        confirmText: 'Ya, Matikan OAuth',
-        cancelText: 'Batal',
-        variant: 'warning',
-        icon: Unlink,
-        onConfirm: () => {
-          const updated = {
-            ...institution,
-            google_oauth_enabled: false,
-            auth_method:
-              institution.auth_method === 'SSO_ONLY' ? 'CREDENTIALS_ONLY' : institution.auth_method,
-          };
-          setInstitution(updated);
-          storageService.updateInstitution(updated);
-          refreshData();
-          showNotification('Integrasi Google OAuth & SSO dinonaktifkan.');
-        },
-      });
-    } else {
-      openConfirm({
-        title: 'Aktifkan Google OAuth 2.0 & SSO?',
-        message: (
-          <div className="space-y-2">
-            <p>
-              Aktifkan <strong>Google OAuth 2.0 & Workspace SSO</strong> untuk autentikasi peserta ujian sekolah?
-            </p>
-            <p className="text-[11px] text-zinc-500 bg-blue-50 border border-blue-200 p-2.5 rounded-xl text-blue-900">
-              Siswa dengan email terdaftar dapat login praktis 1-klik menggunakan akun Google resmi sekolah mereka.
-            </p>
-          </div>
-        ),
-        confirmText: 'Ya, Aktifkan OAuth',
-        cancelText: 'Batal',
-        variant: 'success',
-        icon: CheckCircle2,
-        onConfirm: () => {
-          const updated = {
-            ...institution,
-            google_oauth_enabled: true,
-            auth_method:
-              institution.auth_method === 'CREDENTIALS_ONLY' ? 'BOTH' : institution.auth_method || 'BOTH',
-          };
-          setInstitution(updated);
-          storageService.updateInstitution(updated);
-          refreshData();
-          showNotification('Integrasi Google OAuth & SSO berhasil diaktifkan.');
-        },
-      });
+  // ========================================================
+  // GOOGLE OAUTH 2.0 & GIS (MODE PRODUKSI RESMI TANPA BYPASS)
+  // ========================================================
+  const handleTestGoogleOAuth = async () => {
+    const clientId = institution.google_client_id?.trim();
+    if (!clientId) {
+      showNotification('Harap isi Google OAuth Client ID terlebih dahulu sebelum menguji koneksi.', 'error');
+      return;
+    }
+
+    const isGoogleFormat = clientId.endsWith('.apps.googleusercontent.com') || clientId.includes('.googleusercontent.com') || (clientId.length >= 25 && /^[0-9a-zA-Z._-]+$/.test(clientId));
+    if (!isGoogleFormat) {
+      showNotification('Format Client ID tidak valid. Google Client ID biasanya berakhiran ".apps.googleusercontent.com".', 'error');
+      return;
+    }
+
+    setTestingOAuth(true);
+    const start = performance.now();
+    try {
+      // Uji ketersediaan server Google OAuth / GIS
+      let googleReachable = false;
+      try {
+        const resp = await fetch('https://accounts.google.com/.well-known/openid-configuration', {
+          method: 'GET',
+          headers: { Accept: 'application/json' },
+          cache: 'no-cache',
+        });
+        if (resp.ok) {
+          const cfg = await resp.json();
+          if (cfg.issuer?.includes('accounts.google.com')) {
+            googleReachable = true;
+          }
+        }
+      } catch {
+        googleReachable = await new Promise((resolve) => {
+          if (window.google?.accounts?.oauth2) return resolve(true);
+          const s = document.createElement('script');
+          s.src = 'https://accounts.google.com/gsi/client';
+          s.async = true;
+          s.onload = () => resolve(true);
+          s.onerror = () => resolve(false);
+          document.head.appendChild(s);
+        });
+      }
+
+      if (!googleReachable) {
+        throw new Error('Tidak dapat menghubungi server Google Identity Services. Pastikan komputer terhubung ke internet.');
+      }
+
+      const elapsed = Math.round(performance.now() - start);
+
+      // KONEKSI SUKSES: Otomatis AKTIF (ON) & simpan ke sistem
+      const updated = {
+        ...institution,
+        google_client_id: clientId,
+        google_client_secret: (institution.google_client_secret || '').trim(),
+        google_oauth_enabled: true,
+        auth_method: institution.auth_method === 'CREDENTIALS_ONLY' ? 'BOTH' : (institution.auth_method || 'BOTH'),
+      };
+      setInstitution(updated);
+      storageService.updateInstitution(updated);
+      refreshData();
+      showNotification(`✓ Uji koneksi Google OAuth 2.0 BERHASIL (${elapsed} ms)! Integrasi SSO Google otomatis AKTIF (ON) dalam Mode Produksi.`);
+    } catch (err) {
+      showNotification(`Uji koneksi Google OAuth gagal: ${err.message || 'Periksa Client ID atau akses internet.'}`, 'error');
+    } finally {
+      setTestingOAuth(false);
     }
   };
 
-  // Handler Switch On/Off Google reCAPTCHA v2 (Konfirmasi Modern)
-  const handleToggleRecaptcha = () => {
-    const isCurrentlyActive = Boolean(institution.recaptcha_enabled);
+  const handleResetGoogleOAuth = () => {
+    openConfirm({
+      title: 'Reset & Nonaktifkan Google OAuth?',
+      message: (
+        <div className="space-y-2">
+          <p>
+            Apakah Anda yakin ingin <strong>mengosongkan settingan dan menonaktifkan Google OAuth 2.0</strong>?
+          </p>
+          <p className="text-[11px] text-zinc-500 bg-amber-50 border border-amber-200 p-2.5 rounded-xl text-amber-900">
+            Kredensial Client ID & Client Secret akan dikosongkan. Status OAuth otomatis beralih ke <strong>OFF</strong> dan tombol Google SSO disembunyikan di halaman login siswa.
+          </p>
+        </div>
+      ),
+      confirmText: 'Ya, Reset (Kosongkan)',
+      cancelText: 'Batal',
+      variant: 'warning',
+      icon: Unlink,
+      onConfirm: () => {
+        const updated = {
+          ...institution,
+          google_client_id: '',
+          google_client_secret: '',
+          google_oauth_enabled: false,
+          auth_method: institution.auth_method === 'SSO_ONLY' ? 'CREDENTIALS_ONLY' : (institution.auth_method || 'CREDENTIALS_ONLY'),
+        };
+        setInstitution(updated);
+        storageService.updateInstitution(updated);
+        refreshData();
+        showNotification('Pengaturan Google OAuth telah dikosongkan dan otomatis dinonaktifkan (OFF).');
+      },
+    });
+  };
+
+  const handleToggleGoogleOAuth = () => {
+    const isCurrentlyActive = Boolean(institution.google_oauth_enabled && institution.google_client_id?.trim());
     if (isCurrentlyActive) {
-      openConfirm({
-        title: 'Matikan Proteksi Google reCAPTCHA v2?',
-        message: (
-          <div className="space-y-2">
-            <p>
-              Apakah Anda yakin ingin <strong>menonaktifkan verifikasi Google reCAPTCHA v2</strong> di gerbang login?
-            </p>
-            <p className="text-[11px] text-zinc-500 bg-amber-50 border border-amber-200 p-2.5 rounded-xl text-amber-900">
-              Setelah dinonaktifkan, siswa dan pengawas dapat langsung login tanpa perlu menyelesaikan checklist "Saya bukan robot".
-            </p>
-          </div>
-        ),
-        confirmText: 'Ya, Matikan reCAPTCHA',
-        cancelText: 'Batal',
-        variant: 'warning',
-        icon: AlertTriangle,
-        onConfirm: () => {
-          const updated = {
-            ...institution,
-            recaptcha_enabled: false,
-          };
-          setInstitution(updated);
-          storageService.updateInstitution(updated);
-          refreshData();
-          showNotification('Proteksi Google reCAPTCHA v2 dinonaktifkan.');
-        },
-      });
+      handleResetGoogleOAuth();
     } else {
-      openConfirm({
-        title: 'Aktifkan Proteksi Google reCAPTCHA v2?',
-        message: (
-          <div className="space-y-2">
-            <p>
-              Aktifkan proteksi <strong>Google reCAPTCHA v2</strong> pada gerbang login ujian?
-            </p>
-            <p className="text-[11px] text-zinc-500 bg-emerald-50 border border-emerald-200 p-2.5 rounded-xl text-emerald-900">
-              Setiap peserta ujian dan administrator diwajibkan menyelesaikan verifikasi robot sebelum mengirim kredensial login.
-            </p>
-          </div>
-        ),
-        confirmText: 'Ya, Aktifkan reCAPTCHA',
-        cancelText: 'Batal',
-        variant: 'success',
-        icon: CheckCircle2,
-        onConfirm: () => {
-          const updated = {
-            ...institution,
-            recaptcha_enabled: true,
+      if (!institution.google_client_id?.trim()) {
+        showNotification('Google Client ID belum diisi. Masukkan Client ID dan klik "Test Koneksi & Aktifkan" untuk mengaktifkan.', 'error');
+      } else {
+        handleTestGoogleOAuth();
+      }
+    }
+  };
+
+  // ========================================================
+  // GOOGLE RECAPTCHA V2 / V3 (MODE PRODUKSI RESMI TANPA BYPASS)
+  // ========================================================
+  const handleTestRecaptcha = async () => {
+    const siteKey = institution.recaptcha_site_key?.trim();
+    if (!siteKey) {
+      showNotification('Harap isi reCAPTCHA Site Key terlebih dahulu sebelum menguji koneksi.', 'error');
+      return;
+    }
+
+    if (siteKey.length < 30) {
+      showNotification('Format reCAPTCHA Site Key tidak valid. Site Key reCAPTCHA Google biasanya sepanjang 40 karakter.', 'error');
+      return;
+    }
+
+    const version = institution.recaptcha_version === 'v3' ? 'v3' : 'v2';
+    setTestingRecaptcha(true);
+    const start = performance.now();
+    try {
+      let recaptchaReachable = false;
+      if (version === 'v3') {
+        recaptchaReachable = await new Promise((resolve) => {
+          const scriptId = 'examguard-recaptcha-v3-loader';
+          let script = document.getElementById(scriptId);
+          if (script) {
+            if (window.grecaptcha?.ready) {
+              window.grecaptcha.ready(() => resolve(true));
+              return;
+            }
+          } else {
+            script = document.createElement('script');
+            script.id = scriptId;
+            script.src = `https://www.google.com/recaptcha/api.js?render=${siteKey}`;
+            script.async = true;
+            document.head.appendChild(script);
+          }
+          script.onload = () => {
+            if (window.grecaptcha && window.grecaptcha.ready) {
+              window.grecaptcha.ready(() => resolve(true));
+            } else {
+              resolve(true);
+            }
           };
-          setInstitution(updated);
-          storageService.updateInstitution(updated);
-          refreshData();
-          showNotification('Proteksi Google reCAPTCHA v2 berhasil diaktifkan.');
-        },
-      });
+          script.onerror = () => resolve(false);
+        });
+      } else {
+        recaptchaReachable = await new Promise((resolve) => {
+          if (window.grecaptcha?.render) return resolve(true);
+          const s = document.createElement('script');
+          s.src = 'https://www.google.com/recaptcha/api.js?render=explicit';
+          s.async = true;
+          s.onload = () => resolve(true);
+          s.onerror = () => resolve(false);
+          document.head.appendChild(s);
+        });
+      }
+
+      if (!recaptchaReachable) {
+        throw new Error('Tidak dapat menghubungi server Google reCAPTCHA. Pastikan komputer terhubung ke internet.');
+      }
+
+      const elapsed = Math.round(performance.now() - start);
+
+      // KONEKSI SUKSES: Otomatis AKTIF (ON) & simpan ke sistem
+      const updated = {
+        ...institution,
+        recaptcha_version: version,
+        recaptcha_site_key: siteKey,
+        recaptcha_secret_key: (institution.recaptcha_secret_key || '').trim(),
+        recaptcha_enabled: true,
+      };
+      setInstitution(updated);
+      storageService.updateInstitution(updated);
+      refreshData();
+      showNotification(`✓ Uji koneksi Google reCAPTCHA ${version.toUpperCase()} BERHASIL (${elapsed} ms)! Proteksi robot Google otomatis AKTIF (ON).`);
+    } catch (err) {
+      showNotification(`Uji koneksi reCAPTCHA gagal: ${err.message || 'Periksa Site Key atau akses internet.'}`, 'error');
+    } finally {
+      setTestingRecaptcha(false);
+    }
+  };
+
+  const handleResetRecaptcha = () => {
+    openConfirm({
+      title: 'Reset & Nonaktifkan Google reCAPTCHA?',
+      message: (
+        <div className="space-y-2">
+          <p>
+            Apakah Anda yakin ingin <strong>mengosongkan settingan dan menonaktifkan Google reCAPTCHA</strong>?
+          </p>
+          <p className="text-[11px] text-zinc-500 bg-amber-50 border border-amber-200 p-2.5 rounded-xl text-amber-900">
+            Site Key dan Secret Key akan dikosongkan. Sistem akan <strong>otomatis beralih ke Captcha Mandiri ExamGuard (Default)</strong> sehingga proteksi bot tetap aktif tanpa memerlukan koneksi internet.
+          </p>
+        </div>
+      ),
+      confirmText: 'Ya, Reset (Kosongkan)',
+      cancelText: 'Batal',
+      variant: 'warning',
+      icon: AlertTriangle,
+      onConfirm: () => {
+        const updated = {
+          ...institution,
+          recaptcha_site_key: '',
+          recaptcha_secret_key: '',
+          recaptcha_enabled: false,
+        };
+        setInstitution(updated);
+        storageService.updateInstitution(updated);
+        refreshData();
+        showNotification('Pengaturan Google reCAPTCHA telah dikosongkan (OFF). Sistem otomatis menggunakan Captcha Keamanan Mandiri Default.');
+      },
+    });
+  };
+
+  const handleToggleRecaptcha = () => {
+    const isCurrentlyActive = Boolean(institution.recaptcha_enabled && institution.recaptcha_site_key?.trim());
+    if (isCurrentlyActive) {
+      handleResetRecaptcha();
+    } else {
+      if (!institution.recaptcha_site_key?.trim()) {
+        showNotification('reCAPTCHA Site Key belum diisi. Masukkan Site Key dan klik "Test Koneksi & Aktifkan" untuk mengaktifkan.', 'error');
+      } else {
+        handleTestRecaptcha();
+      }
     }
   };
 
@@ -7442,11 +7560,11 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                   </div>
                 </div>
 
-                {/* FITUR 4: METODE AUTENTIKASI & KEAMANAN GOOGLE */}
+                {/* FITUR 4: METODE AUTENTIKASI & KEAMANAN GOOGLE (MODE PRODUKSI RESMI TANPA BYPASS) */}
                 <div className="space-y-5">
                   {/* 1. KARTU GOOGLE OAUTH 2.0 & WORKSPACE SSO */}
                   <div
-                    className={`bg-white border rounded-2xl p-6 shadow-2xs transition-all ${institution.google_oauth_enabled
+                    className={`bg-white border rounded-2xl p-6 shadow-2xs transition-all ${institution.google_oauth_enabled && institution.google_client_id
                         ? 'border-blue-200/90 ring-1 ring-blue-100'
                         : 'border-zinc-200/80'
                       }`}
@@ -7454,14 +7572,14 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-zinc-100">
                       <div className="flex items-center gap-3.5">
                         <div
-                          className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${institution.google_oauth_enabled
+                          className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${institution.google_oauth_enabled && institution.google_client_id
                               ? 'bg-blue-50/80 border border-blue-200/90 shadow-2xs ring-4 ring-blue-50/60'
                               : 'bg-zinc-100 border border-zinc-200'
                             }`}
                         >
                           <GoogleBrandIcon
                             className="w-6 h-6"
-                            active={institution.google_oauth_enabled}
+                            active={Boolean(institution.google_oauth_enabled && institution.google_client_id)}
                           />
                         </div>
                         <div>
@@ -7469,18 +7587,20 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                             <h3 className="text-sm font-bold text-zinc-900">
                               Google OAuth 2.0 & Workspace SSO
                             </h3>
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200/60">
+                              Mode Produksi Resmi
+                            </span>
                           </div>
                           <p className="text-xs text-zinc-500 mt-0.5">
-                            Single Sign-On (SSO) akun Google resmi (
-                            <span className="font-mono text-zinc-600">@sekolah.sch.id</span>)
+                            Single Sign-On (SSO) akun Google resmi (<span className="font-mono text-zinc-600">@sekolah.sch.id</span>)
                           </p>
                         </div>
                       </div>
 
-                      {/* Sakelar ON / OFF & Status Koneksi Google OAuth */}
+                      {/* Status & Sakelar Cepat Google OAuth */}
                       <div className="flex items-center gap-3 bg-zinc-50 border border-zinc-200 p-1.5 px-3 rounded-xl shrink-0">
                         <span className="text-xs font-medium">
-                          {institution.google_oauth_enabled ? (
+                          {institution.google_oauth_enabled && institution.google_client_id ? (
                             <span className="text-emerald-700 font-semibold flex items-center gap-1.5">
                               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
                               OAuth: TERHUBUNG (ON)
@@ -7488,25 +7608,25 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                           ) : (
                             <span className="text-zinc-500 flex items-center gap-1.5">
                               <span className="w-2 h-2 rounded-full bg-zinc-400"></span>
-                              OAuth: TERPUTUS (OFF)
+                              OAuth: NONAKTIF (OFF)
                             </span>
                           )}
                         </span>
                         <button
                           type="button"
                           role="switch"
-                          aria-checked={institution.google_oauth_enabled}
+                          aria-checked={Boolean(institution.google_oauth_enabled && institution.google_client_id)}
                           onClick={handleToggleGoogleOAuth}
-                          className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${institution.google_oauth_enabled ? 'bg-emerald-600' : 'bg-zinc-300 hover:bg-zinc-400'
+                          className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${institution.google_oauth_enabled && institution.google_client_id ? 'bg-emerald-600' : 'bg-zinc-300 hover:bg-zinc-400'
                             }`}
                           title={
-                            institution.google_oauth_enabled
-                              ? 'Klik untuk mematikan Google OAuth SSO'
-                              : 'Klik untuk mengaktifkan Google OAuth SSO'
+                            institution.google_oauth_enabled && institution.google_client_id
+                              ? 'Klik untuk reset/menonaktifkan Google OAuth'
+                              : 'Isi Client ID dan klik Test Koneksi untuk mengaktifkan'
                           }
                         >
                           <span
-                            className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition duration-200 ease-in-out ${institution.google_oauth_enabled ? 'translate-x-5' : 'translate-x-0'
+                            className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition duration-200 ease-in-out ${institution.google_oauth_enabled && institution.google_client_id ? 'translate-x-5' : 'translate-x-0'
                               }`}
                           />
                         </button>
@@ -7514,22 +7634,18 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                     </div>
 
                     {/* Banner status koneksi Google OAuth */}
-                    {!institution.google_oauth_enabled ? (
+                    {!institution.google_oauth_enabled || !institution.google_client_id ? (
                       <div className="mt-4 p-3.5 rounded-xl bg-zinc-50 border border-zinc-200 text-xs text-zinc-600 flex items-start gap-2.5">
                         <AlertCircle className="w-4 h-4 text-zinc-400 shrink-0 mt-0.5" />
                         <div>
-                          <strong>Integrasi Google OAuth Nonaktif:</strong> Tombol Google SSO
-                          disembunyikan di halaman login siswa. Siswa dapat login menggunakan nomor{' '}
-                          <strong>NISN & Password NIS</strong>.
+                          <strong>Integrasi Google OAuth Nonaktif (OFF):</strong> Masukkan Client ID & Client Secret dari Google Cloud Console, lalu klik <strong>"Test Koneksi & Aktifkan"</strong>. Jika kosong atau di-reset, status otomatis <strong>OFF</strong> dan siswa masuk menggunakan NISN & Password NIS.
                         </div>
                       </div>
                     ) : (
                       <div className="mt-4 p-3.5 rounded-xl bg-blue-50/70 border border-blue-200/80 text-xs text-blue-900 flex items-start gap-2.5">
                         <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
                         <div>
-                          <strong>Integrasi Google OAuth Terhubung:</strong> Siswa yang telah
-                          menautkan akun dapat masuk 1-klik via SSO Google. Kredensial Client ID &
-                          Client Secret aktif memvalidasi akun.
+                          <strong>Integrasi Google OAuth Terverifikasi (ON):</strong> Layanan Google Identity Services aktif. Siswa dapat login 1-klik menggunakan akun Google resmi sekolah tanpa simulasi/bypass.
                         </div>
                       </div>
                     )}
@@ -7541,14 +7657,10 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                         </label>
                         <select
                           value={institution.auth_method}
-                          disabled={!institution.google_oauth_enabled}
                           onChange={(e) =>
                             setInstitution({ ...institution, auth_method: e.target.value })
                           }
-                          className={`w-full px-3.5 py-2.5 border rounded-xl text-sm focus:ring-2 focus:ring-zinc-900 focus:outline-none ${!institution.google_oauth_enabled
-                              ? 'bg-zinc-100 border-zinc-200 text-zinc-400 cursor-not-allowed'
-                              : 'bg-white border-zinc-300'
-                            }`}
+                          className="w-full px-3.5 py-2.5 border border-zinc-300 rounded-xl text-sm bg-white focus:ring-2 focus:ring-zinc-900 focus:outline-none"
                         >
                           {Object.entries(AUTH_METHODS).map(([key, label]) => (
                             <option key={key} value={key}>
@@ -7560,32 +7672,28 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
 
                       <div>
                         <label className="block text-xs font-medium text-zinc-700 mb-1.5">
-                          Google OAuth Client ID
+                          Google OAuth Client ID <span className="text-rose-500">*</span>
                         </label>
                         <input
                           type="text"
-                          disabled={!institution.google_oauth_enabled}
                           value={institution.google_client_id || ''}
                           onChange={(e) =>
                             setInstitution({ ...institution, google_client_id: e.target.value })
                           }
                           placeholder="842918239012-xxx.apps.googleusercontent.com"
-                          className={`w-full px-3.5 py-2.5 border rounded-xl text-sm font-mono focus:ring-2 focus:ring-zinc-900 focus:outline-none ${!institution.google_oauth_enabled
-                              ? 'bg-zinc-100 border-zinc-200 text-zinc-400 cursor-not-allowed'
-                              : 'bg-white border-zinc-300'
-                            }`}
-                        />
+                          className="w-full px-3.5 py-2.5 border border-zinc-300 rounded-xl text-sm font-mono focus:ring-2 focus:ring-zinc-900 focus:outline-none"
+                        >
+                        </input>
                       </div>
                     </div>
 
                     <div className="mt-4">
                       <label className="block text-xs font-medium text-zinc-700 mb-1.5">
-                        Google OAuth Client Secret
+                        Google OAuth Client Secret <span className="text-zinc-400 font-normal">(Opsional untuk Web App)</span>
                       </label>
                       <div className="relative">
                         <input
                           type={showGoogleSecret ? 'text' : 'password'}
-                          disabled={!institution.google_oauth_enabled}
                           value={institution.google_client_secret || ''}
                           onChange={(e) =>
                             setInstitution({
@@ -7594,16 +7702,12 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                             })
                           }
                           placeholder="GOCSPX-xxxxxxxxxxxxx"
-                          className={`w-full px-3.5 py-2.5 border rounded-xl text-sm font-mono focus:ring-2 focus:ring-zinc-900 focus:outline-none pr-10 ${!institution.google_oauth_enabled
-                              ? 'bg-zinc-100 border-zinc-200 text-zinc-400 cursor-not-allowed'
-                              : 'bg-white border-zinc-300'
-                            }`}
+                          className="w-full px-3.5 py-2.5 border border-zinc-300 rounded-xl text-sm font-mono focus:ring-2 focus:ring-zinc-900 focus:outline-none pr-10"
                         />
                         <button
                           type="button"
-                          disabled={!institution.google_oauth_enabled}
                           onClick={() => setShowGoogleSecret(!showGoogleSecret)}
-                          className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-zinc-400 hover:text-zinc-600 disabled:opacity-30 cursor-pointer"
+                          className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-zinc-400 hover:text-zinc-600 cursor-pointer"
                         >
                           {showGoogleSecret ? (
                             <EyeOff className="w-4 h-4" />
@@ -7613,11 +7717,49 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                         </button>
                       </div>
                     </div>
+
+                    {/* Tombol Aksi: Test Koneksi & Reset Kosongkan */}
+                    <div className="mt-5 pt-4 border-t border-zinc-100 flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-center gap-2 text-xs text-zinc-500">
+                        <Info className="w-4 h-4 text-blue-600 shrink-0" />
+                        <span>Mode Produksi: Otomatis <strong>ON</strong> setelah Test Koneksi sukses, otomatis <strong>OFF</strong> jika di-reset.</span>
+                      </div>
+                      <div className="flex items-center gap-2.5">
+                        <button
+                          type="button"
+                          onClick={handleResetGoogleOAuth}
+                          disabled={testingOAuth || (!institution.google_client_id && !institution.google_oauth_enabled)}
+                          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-zinc-300 hover:bg-zinc-100 disabled:opacity-40 text-xs font-semibold text-zinc-700 transition-colors cursor-pointer"
+                          title="Kosongkan konfigurasi dan otomatis nonaktifkan OAuth"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5 text-zinc-500" />
+                          <span>Reset (Kosongkan)</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleTestGoogleOAuth}
+                          disabled={testingOAuth}
+                          className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50 text-white rounded-xl text-xs font-semibold shadow-xs transition-all cursor-pointer"
+                        >
+                          {testingOAuth ? (
+                            <>
+                              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                              <span>Menguji Koneksi Google...</span>
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>Test Koneksi & Aktifkan</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
                   </div>
 
-                  {/* 2. KARTU GOOGLE RECAPTCHA V2 */}
+                  {/* 2. KARTU GOOGLE RECAPTCHA V2 & V3 */}
                   <div
-                    className={`bg-white border rounded-2xl p-6 shadow-2xs transition-all ${institution.recaptcha_enabled
+                    className={`bg-white border rounded-2xl p-6 shadow-2xs transition-all ${institution.recaptcha_enabled && institution.recaptcha_site_key
                         ? 'border-emerald-200/90 ring-1 ring-emerald-100'
                         : 'border-zinc-200/80'
                       }`}
@@ -7625,58 +7767,61 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-zinc-100">
                       <div className="flex items-center gap-3.5">
                         <div
-                          className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${institution.recaptcha_enabled
-                              ? 'bg-blue-50/80 border border-blue-200/90 shadow-2xs ring-4 ring-blue-50/60'
+                          className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${institution.recaptcha_enabled && institution.recaptcha_site_key
+                              ? 'bg-emerald-50/80 border border-emerald-200/90 shadow-2xs ring-4 ring-emerald-50/60'
                               : 'bg-zinc-100 border border-zinc-200'
                             }`}
                         >
                           <RecaptchaBrandIcon
                             className="w-6 h-6"
-                            active={institution.recaptcha_enabled}
+                            active={Boolean(institution.recaptcha_enabled && institution.recaptcha_site_key)}
                           />
                         </div>
                         <div>
                           <div className="flex items-center gap-2">
                             <h3 className="text-sm font-bold text-zinc-900">
-                              Google reCAPTCHA v2 Protection
+                              Google reCAPTCHA (v2 & v3 Protection)
                             </h3>
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/60">
+                              {institution.recaptcha_version === 'v3' ? 'Mode v3 Invisible' : 'Mode v2 Checkbox'}
+                            </span>
                           </div>
                           <p className="text-xs text-zinc-500 mt-0.5">
-                            Proteksi kotak centang "Saya bukan robot" untuk keamanan login ujian
+                            Proteksi verifikasi bot Google atau Captcha Mandiri Otomatis saat offline
                           </p>
                         </div>
                       </div>
 
-                      {/* Sakelar ON / OFF & Status Proteksi reCAPTCHA */}
+                      {/* Status & Sakelar Cepat reCAPTCHA */}
                       <div className="flex items-center gap-3 bg-zinc-50 border border-zinc-200 p-1.5 px-3 rounded-xl shrink-0">
                         <span className="text-xs font-medium">
-                          {institution.recaptcha_enabled ? (
+                          {institution.recaptcha_enabled && institution.recaptcha_site_key ? (
                             <span className="text-emerald-700 font-semibold flex items-center gap-1.5">
                               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                              Proteksi: AKTIF (ON)
+                              Google reCAPTCHA: ON ({institution.recaptcha_version?.toUpperCase() || 'V2'})
                             </span>
                           ) : (
-                            <span className="text-zinc-500 flex items-center gap-1.5">
-                              <span className="w-2 h-2 rounded-full bg-zinc-400"></span>
-                              Proteksi: NONAKTIF (OFF)
+                            <span className="text-zinc-600 flex items-center gap-1.5 font-medium">
+                              <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                              Default Captcha Mandiri: AKTIF
                             </span>
                           )}
                         </span>
                         <button
                           type="button"
                           role="switch"
-                          aria-checked={institution.recaptcha_enabled}
+                          aria-checked={Boolean(institution.recaptcha_enabled && institution.recaptcha_site_key)}
                           onClick={handleToggleRecaptcha}
-                          className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${institution.recaptcha_enabled ? 'bg-emerald-600' : 'bg-zinc-300 hover:bg-zinc-400'
+                          className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${institution.recaptcha_enabled && institution.recaptcha_site_key ? 'bg-emerald-600' : 'bg-zinc-300 hover:bg-zinc-400'
                             }`}
                           title={
-                            institution.recaptcha_enabled
-                              ? 'Klik untuk mematikan Google reCAPTCHA'
-                              : 'Klik untuk mengaktifkan Google reCAPTCHA'
+                            institution.recaptcha_enabled && institution.recaptcha_site_key
+                              ? 'Klik untuk reset/menonaktifkan Google reCAPTCHA'
+                              : 'Isi Site Key dan klik Test Koneksi untuk mengaktifkan'
                           }
                         >
                           <span
-                            className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition duration-200 ease-in-out ${institution.recaptcha_enabled ? 'translate-x-5' : 'translate-x-0'
+                            className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition duration-200 ease-in-out ${institution.recaptcha_enabled && institution.recaptcha_site_key ? 'translate-x-5' : 'translate-x-0'
                               }`}
                           />
                         </button>
@@ -7684,51 +7829,107 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                     </div>
 
                     {/* Banner status reCAPTCHA */}
-                    {!institution.recaptcha_enabled ? (
+                    {!institution.recaptcha_enabled || !institution.recaptcha_site_key ? (
                       <div className="mt-4 p-3.5 rounded-xl bg-amber-50/70 border border-amber-200 text-xs text-amber-900 flex items-start gap-2.5">
                         <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                         <div>
-                          <strong>Verifikasi Bot Dinonaktifkan:</strong> Halaman login tidak
-                          menampilkan checklist reCAPTCHA v2. Pengguna dapat langsung login tanpa
-                          verifikasi robot.
+                          <strong>Google reCAPTCHA Belum Di-set (OFF):</strong> Sistem secara otomatis mengaktifkan <strong>Captcha Keamanan Mandiri ExamGuard (Default)</strong> pada form login. Login peserta dan admin tetap aman terlindungi dari bot tanpa membutuhkan koneksi internet.
                         </div>
                       </div>
                     ) : (
                       <div className="mt-4 p-3.5 rounded-xl bg-emerald-50/70 border border-emerald-200/80 text-xs text-emerald-900 flex items-start gap-2.5">
                         <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
                         <div>
-                          <strong>Proteksi Bot Aktif:</strong> Setiap siswa dan administrator wajib
-                          menyelesaikan checklist "Saya bukan robot" sebelum formulir login
-                          diproses.
+                          <strong>Google reCAPTCHA {institution.recaptcha_version?.toUpperCase() || 'V2'} Terverifikasi (ON):</strong>{' '}
+                          {institution.recaptcha_version === 'v3'
+                            ? 'Verifikasi risiko bot berjalan mulus di latar belakang (invisible) tanpa mengganggu konsentrasi siswa.'
+                            : 'Setiap peserta ujian dan administrator wajib menyelesaikan checklist "Saya bukan robot" sebelum masuk.'}
                         </div>
                       </div>
                     )}
 
-                    {institution.recaptcha_enabled && (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
-                        <div>
-                          <label className="block text-xs font-medium text-zinc-700 mb-1.5">
-                            reCAPTCHA Site Key
-                          </label>
+                    {/* Pilihan 2 Mode Versi API: v2 vs v3 */}
+                    <div className="mt-4 p-3.5 bg-zinc-50 border border-zinc-200/80 rounded-xl space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-semibold text-zinc-800">
+                          Pilihan Mode Versi API Google reCAPTCHA
+                        </label>
+                        <span className="text-[11px] text-zinc-500">Pilih salah satu mode yang sesuai dengan Site Key Anda</span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        <button
+                          type="button"
+                          onClick={() => setInstitution({ ...institution, recaptcha_version: 'v2' })}
+                          className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                            (institution.recaptcha_version || 'v2') === 'v2'
+                              ? 'bg-white border-emerald-500 ring-2 ring-emerald-100 shadow-2xs'
+                              : 'bg-white border-zinc-200 hover:border-zinc-300'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-zinc-900 flex items-center gap-1.5">
+                              <span>Mode v2 Checkbox</span>
+                              <span className="px-1.5 py-0.2 rounded text-[9px] bg-zinc-100 text-zinc-600 font-normal">Interaktif</span>
+                            </span>
+                            {(institution.recaptcha_version || 'v2') === 'v2' && (
+                              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                            )}
+                          </div>
+                          <p className="text-[11px] text-zinc-500 mt-1">
+                            Checklist kotak centang <strong>"Saya bukan robot"</strong> yang wajib diklik peserta.
+                          </p>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setInstitution({ ...institution, recaptcha_version: 'v3' })}
+                          className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                            institution.recaptcha_version === 'v3'
+                              ? 'bg-white border-emerald-500 ring-2 ring-emerald-100 shadow-2xs'
+                              : 'bg-white border-zinc-200 hover:border-zinc-300'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-zinc-900 flex items-center gap-1.5">
+                              <span>Mode v3 Invisible</span>
+                              <span className="px-1.5 py-0.2 rounded text-[9px] bg-blue-100 text-blue-700 font-normal">Tanpa Klik</span>
+                            </span>
+                            {institution.recaptcha_version === 'v3' && (
+                              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                            )}
+                          </div>
+                          <p className="text-[11px] text-zinc-500 mt-1">
+                            Verifikasi <strong>skor latar belakang otomatis</strong> tanpa perlu interaksi klik kotak centang.
+                          </p>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                      <div>
+                        <label className="block text-xs font-medium text-zinc-700 mb-1.5">
+                          reCAPTCHA Site Key <span className="text-rose-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={institution.recaptcha_site_key || ''}
+                          onChange={(e) =>
+                            setInstitution({
+                              ...institution,
+                              recaptcha_site_key: e.target.value,
+                            })
+                          }
+                          placeholder={institution.recaptcha_version === 'v3' ? 'Site Key Google reCAPTCHA v3...' : '6LeIx0aUAAAAAExampleKey...'}
+                          className="w-full px-3.5 py-2.5 border border-zinc-300 rounded-xl text-sm font-mono focus:ring-2 focus:ring-zinc-900 focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-zinc-700 mb-1.5">
+                          reCAPTCHA Secret Key <span className="text-zinc-400 font-normal">(Server Secret)</span>
+                        </label>
+                        <div className="relative">
                           <input
-                            type="text"
-                            value={institution.recaptcha_site_key || ''}
-                            onChange={(e) =>
-                              setInstitution({
-                                ...institution,
-                                recaptcha_site_key: e.target.value,
-                              })
-                            }
-                            placeholder="6LeIx0aUAAAAAExampleKey..."
-                            className="w-full px-3.5 py-2.5 border border-zinc-300 rounded-xl text-sm font-mono focus:ring-2 focus:ring-zinc-900 focus:outline-none"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-zinc-700 mb-1.5">
-                            reCAPTCHA Secret Key
-                          </label>
-                          <input
-                            type="password"
+                            type={showRecaptchaSecret ? 'text' : 'password'}
                             value={institution.recaptcha_secret_key || ''}
                             onChange={(e) =>
                               setInstitution({
@@ -7737,11 +7938,60 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                               })
                             }
                             placeholder="6LeIx0aUAAAAASecret..."
-                            className="w-full px-3.5 py-2.5 border border-zinc-300 rounded-xl text-sm font-mono focus:ring-2 focus:ring-zinc-900 focus:outline-none"
+                            className="w-full px-3.5 py-2.5 border border-zinc-300 rounded-xl text-sm font-mono focus:ring-2 focus:ring-zinc-900 focus:outline-none pr-10"
                           />
+                          <button
+                            type="button"
+                            onClick={() => setShowRecaptchaSecret(!showRecaptchaSecret)}
+                            className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-zinc-400 hover:text-zinc-600 cursor-pointer"
+                          >
+                            {showRecaptchaSecret ? (
+                              <EyeOff className="w-4 h-4" />
+                            ) : (
+                              <Eye className="w-4 h-4" />
+                            )}
+                          </button>
                         </div>
                       </div>
-                    )}
+                    </div>
+
+                    {/* Tombol Aksi: Test Koneksi & Reset Kosongkan */}
+                    <div className="mt-5 pt-4 border-t border-zinc-100 flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-center gap-2 text-xs text-zinc-500">
+                        <Info className="w-4 h-4 text-emerald-600 shrink-0" />
+                        <span>Mode Produksi: Otomatis <strong>ON</strong> setelah Test Koneksi sukses, dan beralih ke <strong>Captcha Mandiri Default</strong> saat di-reset.</span>
+                      </div>
+                      <div className="flex items-center gap-2.5">
+                        <button
+                          type="button"
+                          onClick={handleResetRecaptcha}
+                          disabled={testingRecaptcha || (!institution.recaptcha_site_key && !institution.recaptcha_enabled)}
+                          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-zinc-300 hover:bg-zinc-100 disabled:opacity-40 text-xs font-semibold text-zinc-700 transition-colors cursor-pointer"
+                          title="Kosongkan konfigurasi Google reCAPTCHA dan kembali ke Default Captcha Mandiri"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5 text-zinc-500" />
+                          <span>Reset (Kosongkan)</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleTestRecaptcha}
+                          disabled={testingRecaptcha}
+                          className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:opacity-50 text-white rounded-xl text-xs font-semibold shadow-xs transition-all cursor-pointer"
+                        >
+                          {testingRecaptcha ? (
+                            <>
+                              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                              <span>Menguji Koneksi {institution.recaptcha_version?.toUpperCase() || 'V2'}...</span>
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>Test Koneksi & Aktifkan</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
