@@ -138,11 +138,12 @@ function examGuardSQLitePlugin() {
       return;
     }
 
+    if (!req) return;
     const rawUrl = req.url || '';
     const url = rawUrl.split('?')[0];
     const method = req.method || 'GET';
     const headers = req.headers || {};
-    const callerRole = headers['x-user-role'] || null;
+    const callerRole = (req.headers && req.headers['x-user-role']) || (headers && headers['x-user-role']) || null;
 
     try {
       let body = {};
