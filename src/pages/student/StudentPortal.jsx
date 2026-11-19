@@ -205,6 +205,8 @@ export default function StudentPortal({ currentUser: propCurrentUser, onLogout }
 
   // Modal Dialog Rincian Kelayakan Sistem (Dibuka dari Icon di Beranda Peserta)
   const [showPreflightModal, setShowPreflightModal] = useState(false);
+  const [logoError, setLogoError] = useState(false);
+  const [headerLogoError, setHeaderLogoError] = useState(false);
 
   // Pre-flight Checks State (8 Izin Sesuai Pengaturan Instansi)
   const [preflightStatus, setPreflightStatus] = useState({
@@ -2115,11 +2117,12 @@ const renderVerificationPopup = () => {
       <div className="min-h-screen bg-zinc-50 flex flex-col justify-between items-center p-4 sm:p-6 selection:bg-zinc-900 selection:text-white">
         <header className="w-full max-w-lg pt-6 pb-2 text-center">
           <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-zinc-900 text-white shadow-xs mb-3 overflow-hidden">
-            {institution?.logo_url ? (
+            {institution?.logo_url && !logoError ? (
               <img
                 src={institution.logo_url}
                 alt="Logo Sekolah"
                 className="w-full h-full object-contain p-1.5 bg-white"
+                onError={() => setLogoError(true)}
               />
             ) : (
               <Shield className="w-6 h-6 text-zinc-100" />
@@ -2735,11 +2738,12 @@ const renderVerificationPopup = () => {
         <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-zinc-200/80 px-6 py-3.5 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-zinc-900 text-white flex items-center justify-center shadow-2xs overflow-hidden shrink-0">
-              {institution?.logo_url ? (
+              {institution?.logo_url && !headerLogoError ? (
                 <img
                   src={institution.logo_url}
                   alt="Logo Sekolah"
                   className="w-full h-full object-contain p-1 bg-white"
+                  onError={() => setHeaderLogoError(true)}
                 />
               ) : (
                 <Shield className="w-5 h-5 text-zinc-100" />

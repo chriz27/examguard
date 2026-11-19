@@ -21,23 +21,27 @@
 
 1. [Tentang ExamGuard](#-tentang-examguard)
 2. [Fitur Utama](#-fitur-utama)
-3. [Prasyarat Sistem](#-prasyarat-sistem)
-4. [Panduan Instalasi Lokal (Mode Pengembang)](#-panduan-instalasi-lokal-mode-pengembang)
-5. [Panduan Instalasi & Deployment ke cPanel](#-panduan-instalasi--deployment-ke-cpanel)
-6. [Kredensial Akun Demo Pengujian](#-kredensial-akun-demo-pengujian)
-7. [Alur & Hak Akses Administrator](#-alur--hak-akses-administrator)
-8. [Struktur Folder Proyek](#-struktur-folder-proyek)
-9. [Konfigurasi Tambahan (OAuth, reCAPTCHA, GPS)](#-konfigurasi-tambahan)
-10. [Pemecahan Masalah (Troubleshooting)](#-pemecahan-masalah-troubleshooting)
-11. [Lisensi](#-lisensi)
+3. [Arsitektur & Alur Kerja Sistem](#-arsitektur--alur-kerja-sistem)
+4. [Basis Data & Sinkronisasi Hibrida (LAN & Cloud)](#-basis-data--sinkronisasi-hibrida-lan--cloud)
+5. [Keamanan, Validasi & Integritas Ujian](#-keamanan-validasi--integritas-ujian)
+6. [Skalabilitas & Panduan Pelaksanaan 700+ Peserta](#-skalabilitas--panduan-pelaksanaan-700-peserta)
+7. [Prasyarat Sistem](#-prasyarat-sistem)
+8. [Panduan Instalasi Lokal (Mode Pengembang)](#-panduan-instalasi-lokal-mode-pengembang)
+9. [Panduan Instalasi & Deployment ke cPanel](#-panduan-instalasi--deployment-ke-cpanel)
+10. [Kredensial Akun Demo Pengujian](#-kredensial-akun-demo-pengujian)
+11. [Alur & Hak Akses Administrator](#-alur--hak-akses-administrator)
+12. [Struktur Folder Proyek](#-struktur-folder-proyek)
+13. [Konfigurasi Tambahan (OAuth, reCAPTCHA, GPS)](#-konfigurasi-tambahan)
+14. [Pemecahan Masalah (Troubleshooting)](#-pemecahan-masalah-troubleshooting)
+15. [Lisensi](#-lisensi)
 
 ---
 
 ## 💡 Tentang ExamGuard
 
-**ExamGuard** adalah aplikasi *proctoring web* (pengawasan ujian) ringan, modern, dan mandiri yang membungkus formulir **Google Form** dalam lingkungan ujian yang aman dan terpantau. Dirancang khusus untuk sekolah (SD, SMP, SMA/SMK) maupun perguruan tinggi yang membutuhkan sistem ujian digital berstandar tinggi tanpa perlu infrastruktur server rumit.
+**ExamGuard** adalah aplikasi *proctoring web* (pengawasan ujian) ringan, modern, dan mandiri yang membungkus formulir **Google Form** dalam lingkungan ujian yang aman dan terpantau. Dirancang khusus untuk sekolah (SD, SMP, SMA/SMK) maupun perguruan tinggi yang membutuhkan sistem ujian digital berstandar tinggi tanpa perlu infrastruktur server database yang rumit.
 
-Aplikasi ini **100% Client-Side Ready** dan telah dioptimalkan untuk berjalan mulus di **Shared Hosting cPanel (Apache / LiteSpeed)** hanya dengan mengunggah paket build `.zip`.
+Aplikasi ini **100% Client-Side Ready** dan telah dioptimalkan untuk berjalan mulus baik di **Jaringan Wi-Fi/LAN Lokal** maupun di **Shared Hosting cPanel (Apache / LiteSpeed)** hanya dengan mengunggah paket build `.zip`.
 
 ---
 
@@ -47,12 +51,16 @@ Aplikasi ini **100% Client-Side Ready** dan telah dioptimalkan untuk berjalan mu
 - **🔒 Anti-Curang Proctoring Engine:**
   - Deteksi perpindahan tab browser (`visibilitychange`).
   - Deteksi hilangnya fokus jendela (`window.blur`).
-  - Deteksi keluar dari mode Fullscreen.
-  - **Auto-Lock Screen** seketika saat terjadi pelanggaran dengan counter pelanggaran tercatat.
+  - Deteksi keluar dari mode Fullscreen (Layar Penuh).
+  - **Auto-Lock Screen** seketika saat terjadi pelanggaran dengan counter akumulasi pelanggaran.
   - Pemblokiran klik kanan, inspect element (`F12`), `Ctrl+C`, `Ctrl+V`, `Ctrl+U`, `Alt+Tab`, serta *anti-translate*.
+- **🆔 Validasi 3 Kunci Identitas Anti-Duplikasi:**
+  - Verifikasi *real-time* bahwa **Nomor Ujian**, **NISN**, dan **NIS** wajib unik antar siswa.
+  - Penandaan kolom merah dan badge `Duplikat` seketika saat admin mengetik data ganda.
+  - **Laporan Validasi Import Massal (CSV/Excel):** Mendeteksi duplikasi terhadap data sistem maupun bentrok antar baris dalam file import, lengkap dengan rincian baris dan tombol salin laporan.
 - **📍 GPS Geofencing Interaktif (Leaflet & OpenStreetMap):**
   - Preview peta interaktif gratis tanpa Google Maps API berbayar.
-  - Pengaturan radius toleransi ujian (50m, 100m, 200m, 500m, dst).
+  - Pengaturan radius toleransi ujian (50m, 100m, 200m, 500m, dst) menggunakan formula trigonometri *Haversine*.
   - Fitur pencarian lokasi langsung (*live search Nominatim*) dan input tautan Google Maps langsung.
 - **🔐 Dua Tingkat Akses Administrator (RBAC):**
   - **Super Admin:** Akses mutlak ke semua fitur, termasuk *Pengaturan Instansi* dan *Kelola Akun Administrator*.
@@ -60,13 +68,106 @@ Aplikasi ini **100% Client-Side Ready** dan telah dioptimalkan untuk berjalan mu
 - **⚡ Kontrol Pengawas Real-Time:**
   - **Unlock:** Membuka kembali siswa yang terkunci tanpa reload.
   - **Reset Login:** Melepas ikatan *Device ID* siswa jika ganti perangkat.
-  - **Reset Jawaban:** Mengembalikan status `COMPLETED` menjadi `RESET_BY_PROCTOR`.
+  - **Reset Pekerjaan:** Mengembalikan status ujian menjadi `RESET_BY_PROCTOR` agar siswa dapat mengulang dari awal.
   - **Reset Password & Reset SSO:** Reset password instan ke default NIS dan pencabutan koneksi Google SSO per siswa.
 - **🏷️ Sticky Header Ujian:** Timer hitung mundur pengerjaan, chip token soal sekali-klik salin (*click-to-copy*), dan konfirmasi submit ujian.
 - **🌐 Google Workspace SSO & reCAPTCHA v2:** Dukungan integrasi OAuth login sekolah dan verifikasi bot reCAPTCHA v2 dengan kontrol toggle on/off.
 - **🏫 Identitas Sekolah & NPSN Resmi:** Konfigurasi nama sekolah, jenjang pendidikan, serta input validasi **NPSN 8 digit angka numerik** yang tersimpan di basis data sistem dan tampil pada header aplikasi.
 - **💾 Backup & Restore Terenkripsi (AES-256-GCM):** Fasilitas pencadangan dan pemulihan data instansi, link bank soal, basis data siswa, serta riwayat ujian dengan **enkripsi militer AES-256-GCM** otomatis untuk password dan kunci rahasia Google.
-- **ℹ️ Menu Informasi & Repositori (About):** Halaman identitas resmi aplikasi, spesifikasi teknologi, tim pengembang, lisensi MIT, serta tombol resmi repositori GitHub.
+- **⚡ Code-Splitting Modular:** Bundle portal siswa dipisah secara *lazy load* (`~100 KB gzipped`) sehingga loading di smartphone peserta sangat cepat dan hemat kuota/RAM.
+
+---
+
+## 🏗️ Arsitektur & Alur Kerja Sistem
+
+ExamGuard mengusung arsitektur **Hybrid Client-Centric Single Page Application (SPA)**. Alih-alih membebani server sekolah dengan ribuan kueri database SQL setiap detik, ExamGuard memisahkan beban secara cerdas:
+
+```mermaid
+flowchart TD
+    subgraph Klien Peserta
+        HP["Smartphone / Laptop Siswa<br>(Menjalankan Kiosk Lockdown & Timer)"]
+    end
+
+    subgraph Infrastruktur Google
+        GF["Google Forms Cloud Engine<br>(Penyajian Soal & Penyimpanan Jawaban)"]
+    end
+
+    subgraph Server ExamGuard
+        SRV["Vite LAN Server / cPanel Apache<br>(Aset Statis & Endpoint /api/sync)"]
+        PROCTOR["Laptop / PC Dashboard Proktor<br>(Monitoring Status & Kontrol Unlock)"]
+    end
+
+    HP -->|"1. Unduh WebApp Ringan (~100 KB)"| SRV
+    HP -->|"2. Render Soal & Kirim Jawaban Langsung"| GF
+    HP <-->|"3. Sinkronisasi Pelanggaran & Status Kunci (/api/sync)"| SRV
+    PROCTOR <-->|"4. Kontrol Live Pengawas (Unlock / Reset)"| SRV
+```
+
+### 1. Pemisahan Beban Komputasi
+* **Beban Soal & Jawaban:** Ditangani 100% oleh **Google Forms**. Server sekolah tidak akan pernah mengalami *database connection pool timeout* atau *MySQL crash* saat ratusan siswa menekan tombol submit bersamaan.
+* **Beban Pengawasan (Proctoring):** Timer ujian, deteksi fullscreen, pendeteksi ganti aplikasi, dan GPS Geofencing berjalan di memori browser HP masing-masing siswa.
+
+### 2. Dual-Mode Deployment (Fleksibilitas Jalur Penerapan)
+* **Mode Offline LAN / Wi-Fi Lokal:** Komputer proktor menjalankan server lokal via Vite dengan plugin bawaan `examGuardLanSyncPlugin`. Laptop proktor bertindak sebagai host di jaringan lokal, dan peserta cukup mengakses alamat IP lokal (contoh: `http://192.168.2.11:5173`).
+* **Mode Online Web Hosting (cPanel / Apache):** Aplikasi di-*build* menjadi file statis HTML/JS/CSS dan diunggah ke cPanel. Dilengkapi file `.htaccess` bawaan untuk menangani *SPA routing* dan *Force HTTPS*.
+
+---
+
+## 🗄️ Basis Data & Sinkronisasi Hibrida (LAN & Cloud)
+
+ExamGuard mengimplementasikan **Virtual Relational Storage Layer** berbasis peramban (*offline-first*) yang diorkestrasikan oleh `storageService.js`:
+
+### 1. Skema Entitas Data Terstruktur
+* `USERS`: Menyimpan identitas siswa dan administrator (`id`, `nama`, `nomor_ujian`, `nisn`, `nis`, `kelas`, `tingkat`, `email`, `role`, `is_active`, `google_linked`, `active_device_id`).
+* `EXAM_SESSIONS`: Bank soal dan sesi ujian aktif (`id`, `title`, `token`, `google_form_url`, `duration_minutes`, `target_grades`, `is_archived`).
+* `STUDENT_ATTEMPTS`: Log riwayat pengerjaan (`status`: *NOT_STARTED*, *IN_PROGRESS*, *LOCKED*, *COMPLETED*, *RESET_BY_PROCTOR*, `violation_count`, `last_violation_reason`, `time_spent_seconds`, `unlocked_at`).
+* `EXAM_ATTENDANCE`: Rekap presensi kehadiran ujian per siswa dan sesi ujian.
+* `INSTITUTION` & `APP_MODE_CONFIG`: Profil sekolah, koordinat GPS geofence, radius toleransi, serta konfigurasi mode produksi (*STRICT*) vs simulasi (*DEV*).
+
+### 2. Mekanisme Sinkronisasi Real-Time Hibrida
+* **Sinkronisasi Tab Lokal:** Menggunakan `BroadcastChannel` dan `CustomEvent` browser untuk sinkronisasi instan antar-tab tanpa latensi.
+* **Sinkronisasi Antar-Perangkat (LAN/Cloud):** Menggunakan endpoint `/api/sync` dengan algoritma **Smart Conflict-Resolution**:
+  * Status `LOCKED` dan riwayat pelanggaran tertinggi peserta diproteksi di level kernel aplikasi agar **tidak dapat dimanipulasi atau di-downgrade** oleh HP siswa tanpa otorisasi resmi proktor.
+
+---
+
+## 🛡️ Keamanan, Validasi & Integritas Ujian
+
+### 1. Kiosk Lockdown Engine
+* **Fullscreen Enforcer:** Siswa wajib berada dalam mode layar penuh. Jika keluar dari mode fullscreen, layar terkunci dan sistem mencatat pelanggaran.
+* **Focus & Tab Switch Detection:** Event `visibilitychange` dan `window.blur` memantau apakah siswa berpindah tab atau membuka aplikasi split-screen.
+* **Pencegahan Tombol Pintasan:** Memblokir kombinasi tombol berbahaya seperti `Alt+Tab`, `Windows Key`, `Ctrl+W`, `Ctrl+C`, `Ctrl+V`, `F11`, `F12` (Inspect Element), serta klik kanan.
+
+### 2. Validasi 3 Kunci Anti-Duplikasi (No Ujian, NISN, NIS)
+* **Pada Formulir Tambah & Edit Siswa:** Kolom No. Ujian, NISN, dan NIS memiliki validasi reaktif. Jika ditemukan kesamaan dengan siswa lain, sistem langsung mengunci tombol simpan dan menampilkan nama serta kelas pemilik data asli.
+* **Pada Import Massal (CSV / Excel):** Sistem menjalankan audit mendalam sebelum data masuk ke sistem. Jika terdapat data ganda (baik bentrok dengan data yang sudah ada di sekolah maupun antar-baris dalam file import itu sendiri), proses import dibatalkan secara aman dan sistem memunculkan tabel rincian kesalahan lengkap dengan nomor barisnya.
+
+### 3. Keamanan Perangkat & Akun
+* **One-Device Lock (Kunci Perangkat):** Akun peserta diikat ke satu perangkat melalui fingerprint `device_id`. Siswa tidak dapat login di perangkat lain secara bersamaan kecuali login perangkat direset oleh proktor.
+* **Google SSO Security Auto-Reset:** Jika admin atau proktor memperbarui alamat email siswa di dashboard, tautan SSO Google siswa otomatis diputus (*status OFF*) demi mencegah potensi pembajakan akun.
+
+---
+
+## 📈 Skalabilitas & Panduan Pelaksanaan 700+ Peserta
+
+ExamGuard **sangat aman dan sanggup melayani 700 peserta sekaligus**, karena beban komputasi berat (kuis soal, gambar, dan submit ratusan jawaban) ditangani oleh infrastruktur Google Forms.
+
+Namun, untuk memastikan kelancaran ujian massal di lapangan, perhatikan panduan infrastruktur berikut:
+
+### 1. Titik Kritis Jaringan (*Network Bottlenecks*) & Solusinya
+* **Kapasitas Access Point Wi-Fi:** 1 router Wi-Fi standar hanya mampu menampung 30–50 HP. Untuk 700 siswa (~20 ruang kelas), pastikan tiap ruang kelas memiliki Access Point terpisah, atau izinkan siswa menggunakan kuota internet seluler (4G/5G).
+* **Efek Stampede Login Serentak:** Hindari 700 siswa membuka aplikasi pada detik yang persis sama. Bagi waktu mulai login per tingkatan kelas dengan selisih 2–3 menit (misal: Kelas 12 pukul 07:45, Kelas 11 pukul 07:48, Kelas 10 pukul 07:51).
+
+### 2. Perbandingan Dua Skenario Penerapan Terbaik
+
+| Parameter | Skenario A: Web Hosting cPanel + Cloudflare (Sangat Direkomendasikan) | Skenario B: Mode Jaringan Lokal Offline (LAN) |
+| :--- | :--- | :--- |
+| **Bentuk Penerapan** | Diunggah ke cPanel domain sekolah (misal: `cbt.sekolah.sch.id`) dengan CDN gratis Cloudflare. | Komputer/Laptop bertindak sebagai server lokal di jaringan LAN sekolah. |
+| **Koneksi Siswa** | Siswa fleksibel menggunakan Wi-Fi sekolah maupun kuota internet HP pribadi. | Siswa wajib terhubung ke Wi-Fi / kabel LAN sekolah yang sama dengan proktor. |
+| **Model Pengawasan** | 1 Super Admin & beberapa Proktor dapat memantau 700 siswa secara terpusat dari mana saja. | **Model Terdistribusi:** Bagi per proktor per ruangan (1 Laptop Proktor melayani 30–60 siswa di ruangannya). |
+| **Kestabilan** | **Sangat Tinggi (99.9%)**, file statis dilayani oleh edge server CDN Cloudflare. | **Tinggi**, asalkan kapasitas Access Point Wi-Fi di tiap ruang kelas memadai. |
+
+---
 
 ---
 
@@ -192,13 +293,13 @@ Fitur **Geolocation GPS**, **Fullscreen API**, dan **Pembersih Clipboard** mewaj
 
 Aplikasi telah terisi dengan data bawaan (*seed database*) untuk memudahkan pengujian seluruh fitur dan skenario:
 
-| Peran (Role) | Username / NISN | Password Default | Keterangan & Hak Akses |
-| :--- | :--- | :--- | :--- |
-| **Super Admin** | `admin` | `admin` | **Akses Penuh:** Kelola Instansi, Akun Admin, Bank Soal, Sesi Ujian, & Monitoring |
-| **Proktor Ujian** | `proktor` | `proktor` | **Operasional Ujian:** Monitoring Siswa Live, Bank Sesi, Reset Password/SSO Siswa |
-| **Siswa 1** | `0058291021` | `22101` (NIS) | Ahmad Fauzi Ridwan (XII MIPA 1) • **Terverifikasi**, **SSO Google On** |
-| **Siswa 2** | `0058291022` | `22102` (NIS) | Siti Rahmawati Putri (XII MIPA 2) • **Terverifikasi**, **SSO Google Off** |
-| **Siswa 3** | `0068291033` | `23101` (NIS) | Bambang Pamungkas (XI IPS 1) • **Terverifikasi**, **SSO Google Off** |
+| Peran (Role) | Username / NISN | Password Default | Nomor Ujian | Keterangan & Hak Akses |
+| :--- | :--- | :--- | :--- | :--- |
+| **Super Admin** | `admin` | `admin` | `-` | **Akses Penuh:** Kelola Instansi, Akun Admin, Bank Soal, Sesi Ujian, & Monitoring |
+| **Proktor Ujian** | `proktor` | `proktor` | `-` | **Operasional Ujian:** Monitoring Siswa Live, Bank Sesi, Reset Password/SSO Siswa |
+| **Siswa 1** | `0058291021` | `22101` (NIS) | `UJN-12-001` | Ahmad Fauzi Ridwan (XII MIPA 1) • **Terverifikasi**, **SSO Google On** |
+| **Siswa 2** | `0058291022` | `22102` (NIS) | `UJN-12-002` | Siti Rahmawati Putri (XII MIPA 2) • **Terverifikasi**, **SSO Google Off** |
+| **Siswa 3** | `0068291033` | `23101` (NIS) | `UJN-11-001` | Bambang Pamungkas (XI IPS 1) • **Terverifikasi**, **SSO Google Off** |
 
 > [!NOTE]
 > - **Aturan Default Kredensial Siswa:** `Username` = **NISN**, `Password` = **NIS**.

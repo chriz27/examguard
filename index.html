@@ -7,10 +7,13 @@
     <meta name="theme-color" content="#18181b" />
     <meta name="description" content="ExamGuard - Sistem Pengawasan & Proctoring Ujian Berbasis Google Form Terintegrasi" />
     <title>ExamGuard - GForm Proctoring System</title>
-    <!-- Inter & JetBrains Mono Fonts -->
+    <!-- Inter & JetBrains Mono Fonts (Non-blocking untuk LAN/Offline Wi-Fi) -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+    <noscript>
+      <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    </noscript>
   </head>
   <body class="bg-zinc-50 text-zinc-900 font-sans antialiased selection:bg-zinc-900 selection:text-white select-none">
     <div id="root"></div>

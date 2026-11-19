@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { storageService } from './services/storageService';
 import LoginPortal from './pages/auth/LoginPortal';
-import AdminDashboard from './pages/admin/AdminDashboard';
-import StudentPortal from './pages/student/StudentPortal';
+
+// Code-splitting dengan lazy load agar HP peserta tidak perlu mengunduh 9.000+ baris AdminDashboard
+const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'));
+const StudentPortal = lazy(() => import('./pages/student/StudentPortal'));
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
@@ -46,12 +48,30 @@ export default function App() {
     return <LoginPortal institution={institution} onLoginSuccess={handleLoginSuccess} />;
   }
 
+  // Loading spinner fallback saat lazy component sedang dimuat
+  const pageLoadingFallback = (
+    <div className="min-h-screen bg-zinc-50 flex items-center justify-center">
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-8 h-8 border-2 border-zinc-900 border-t-transparent rounded-full animate-spin"></div>
+        <p className="text-xs font-medium text-zinc-500 font-mono">Memuat antarmuka...</p>
+      </div>
+    </div>
+  );
+
   // Jika login sebagai Admin atau Pengawas (Proctor)
   if (currentUser.role === 'admin' || currentUser.role === 'proctor') {
-    return <AdminDashboard currentUser={currentUser} onLogout={handleLogout} />;
+    return (
+      <Suspense fallback={pageLoadingFallback}>
+        <AdminDashboard currentUser={currentUser} onLogout={handleLogout} />
+      </Suspense>
+    );
   }
 
   // Jika login sebagai Peserta (Student)
-  return <StudentPortal currentUser={currentUser} onLogout={handleLogout} />;
+  return (
+    <Suspense fallback={pageLoadingFallback}>
+      <StudentPortal currentUser={currentUser} onLogout={handleLogout} />
+    </Suspense>
+  );
 }
 

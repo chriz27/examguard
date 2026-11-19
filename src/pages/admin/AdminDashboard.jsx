@@ -488,6 +488,9 @@ export default function AdminDashboard({ currentUser, onLogout }) {
   const [showImportModal, setShowImportModal] = useState(false);
   const [importCsvText, setImportCsvText] = useState('');
   const [copiedText, setCopiedText] = useState(false);
+  const [importStep, setImportStep] = useState('input'); // 'input' | 'error_report'
+  const [importValidationErrors, setImportValidationErrors] = useState(null);
+  const [copiedErrorText, setCopiedErrorText] = useState(false);
 
   // QR Code Modal State
   const [showQrModal, setShowQrModal] = useState(false);
@@ -559,6 +562,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
 
   // Modal Tambah Siswa Manual
   const [showAddStudentModal, setShowAddStudentModal] = useState(false);
+  const [addStudentError, setAddStudentError] = useState('');
   const [newStudentForm, setNewStudentForm] = useState({
     nama: '',
     nisn: '',
@@ -571,7 +575,91 @@ export default function AdminDashboard({ currentUser, onLogout }) {
 
   // Modal Edit Siswa
   const [showEditStudentModal, setShowEditStudentModal] = useState(false);
+  const [editStudentError, setEditStudentError] = useState('');
   const [editingStudent, setEditingStudent] = useState(null);
+
+  // ========================================================
+  // DETEKSI DUPLIKASI REAL-TIME: TAMBAH PESERTA MANUAL
+  // ========================================================
+  const trimmedAddNisn = String(newStudentForm?.nisn || '').trim();
+  const cleanAddNoUjian = cleanNomorUjian(newStudentForm?.nomor_ujian, trimmedAddNisn);
+  const trimmedAddNis = String(newStudentForm?.nis || '').trim();
+
+  // 1. Duplikasi NISN (Tambah Siswa)
+  const duplicateAddNisn = trimmedAddNisn
+    ? users.find(
+        (u) =>
+          u.role === 'student' &&
+          ((u.nisn && u.nisn.trim().toLowerCase() === trimmedAddNisn.toLowerCase()) ||
+            (u.username && u.username.trim().toLowerCase() === trimmedAddNisn.toLowerCase()))
+      )
+    : null;
+
+  // 2. Duplikasi Nomor Ujian (Tambah Siswa)
+  const duplicateAddNoUjian = cleanAddNoUjian
+    ? users.find(
+        (u) =>
+          u.role === 'student' &&
+          cleanNomorUjian(u.nomor_ujian, u.nisn).toLowerCase() === cleanAddNoUjian.toLowerCase()
+      )
+    : null;
+
+  // 3. Duplikasi NIS (Tambah Siswa - jika diisi)
+  const duplicateAddNis = (trimmedAddNis && trimmedAddNis !== '-')
+    ? users.find(
+        (u) =>
+          u.role === 'student' &&
+          u.nis &&
+          u.nis.trim() !== '-' &&
+          u.nis.trim().toLowerCase() === trimmedAddNis.toLowerCase()
+      )
+    : null;
+
+  const duplicateAddStudent = duplicateAddNisn;
+  const hasAddDuplicate = Boolean(duplicateAddNisn || duplicateAddNoUjian || duplicateAddNis);
+
+  // ========================================================
+  // DETEKSI DUPLIKASI REAL-TIME: EDIT PESERTA
+  // ========================================================
+  const trimmedEditNisn = String(editingStudent?.nisn || '').trim();
+  const cleanEditNoUjian = cleanNomorUjian(editingStudent?.nomor_ujian, trimmedEditNisn);
+  const trimmedEditNis = String(editingStudent?.nis || '').trim();
+
+  // 1. Duplikasi NISN (Edit Siswa)
+  const duplicateEditNisn = trimmedEditNisn && editingStudent?.id
+    ? users.find(
+        (u) =>
+          u.role === 'student' &&
+          u.id !== editingStudent.id &&
+          ((u.nisn && u.nisn.trim().toLowerCase() === trimmedEditNisn.toLowerCase()) ||
+            (u.username && u.username.trim().toLowerCase() === trimmedEditNisn.toLowerCase()))
+      )
+    : null;
+
+  // 2. Duplikasi Nomor Ujian (Edit Siswa)
+  const duplicateEditNoUjian = cleanEditNoUjian && editingStudent?.id
+    ? users.find(
+        (u) =>
+          u.role === 'student' &&
+          u.id !== editingStudent.id &&
+          cleanNomorUjian(u.nomor_ujian, u.nisn).toLowerCase() === cleanEditNoUjian.toLowerCase()
+      )
+    : null;
+
+  // 3. Duplikasi NIS (Edit Siswa - jika diisi)
+  const duplicateEditNis = (trimmedEditNis && trimmedEditNis !== '-' && editingStudent?.id)
+    ? users.find(
+        (u) =>
+          u.role === 'student' &&
+          u.id !== editingStudent.id &&
+          u.nis &&
+          u.nis.trim() !== '-' &&
+          u.nis.trim().toLowerCase() === trimmedEditNis.toLowerCase()
+      )
+    : null;
+
+  const duplicateEditStudent = duplicateEditNisn;
+  const hasEditDuplicate = Boolean(duplicateEditNisn || duplicateEditNoUjian || duplicateEditNis);
 
   // URL Repositori GitHub Resmi ExamGuard (Dapat diedit langsung sebelum rilis)
   const GITHUB_REPO_URL = 'https://github.com/your-username/examguard';
@@ -1855,47 +1943,199 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     });
   };
 
-  // Handler Import Peserta
-  const handleImportSubmit = (e) => {
-    e.preventDefault();
-    if (!importCsvText.trim()) {
-      showNotification('Isi teks CSV terlebih dahulu.', 'error');
-      return;
+  // Parser Teks CSV Import Peserta
+  const parseCsvStudents = (rawText) => {
+    if (!rawText || !rawText.trim()) return [];
+    const lines = rawText.trim().split(/\r?\n/);
+    if (lines.length === 0) return [];
+
+    let headerMap = null;
+    const firstLine = lines[0].trim();
+    // Cek apakah baris 0 adalah baris header
+    if (
+      firstLine.toLowerCase().includes('nisn') ||
+      firstLine.toLowerCase().includes('nama') ||
+      firstLine.toLowerCase().includes('ujian')
+    ) {
+      const headerCols = firstLine.split(/[,;\t]/).map((c) => c.trim().toLowerCase().replace(/^"|"$/g, ''));
+      headerMap = {
+        nama: headerCols.findIndex((c) => c.includes('nama') || c === 'name'),
+        nomor_ujian: headerCols.findIndex((c) => c.includes('ujian') || c.includes('peserta')),
+        nisn: headerCols.findIndex((c) => c.includes('nisn')),
+        nis: headerCols.findIndex((c) => c === 'nis' || (c.includes('nis') && !c.includes('nisn'))),
+        kelas: headerCols.findIndex((c) => c.includes('kelas') || c.includes('rombel')),
+        tingkat: headerCols.findIndex((c) => c.includes('tingkat') || c.includes('grade')),
+        email: headerCols.findIndex((c) => c.includes('email') || c.includes('mail')),
+        jenis_kelamin: headerCols.findIndex((c) => c.includes('jk') || c.includes('gender') || c.includes('kelamin')),
+        agama: headerCols.findIndex((c) => c.includes('agama') || c.includes('religion')),
+      };
     }
 
-    const lines = importCsvText.trim().split('\n');
-    const parsedStudents = [];
+    const startIndex = headerMap ? 1 : 0;
+    const parsed = [];
 
-    lines.forEach((line, idx) => {
-      // Abaikan header jika ada
-      if (idx === 0 && line.toLowerCase().includes('nisn')) return;
-      const cols = line.split(/[,;\t]/).map((c) => c.trim().replace(/^"|"$/g, ''));
-      if (cols.length >= 2) {
-        parsedStudents.push({
-          nama: cols[0] || '',
-          nisn: cols[1] || '',
-          nis: cols[2] || '',
-          kelas: cols[3] || '',
-          tingkat: cols[4] || institution.allowed_grades[0] || 0,
-          email: cols[5] || '',
+    for (let i = startIndex; i < lines.length; i++) {
+      const rawLine = lines[i].trim();
+      if (!rawLine) continue;
+      const cols = rawLine.split(/[,;\t]/).map((c) => c.trim().replace(/^"|"$/g, ''));
+      if (cols.length < 2) continue;
+
+      const rowNumber = i + 1; // Baris asli di file CSV (1-based)
+
+      if (headerMap && headerMap.nama !== -1 && headerMap.nisn !== -1) {
+        const nisnVal = cols[headerMap.nisn] || '';
+        const rawNoUjian = headerMap.nomor_ujian !== -1 ? cols[headerMap.nomor_ujian] : '';
+        parsed.push({
+          rowNumber,
+          nama: cols[headerMap.nama] || '',
+          nomor_ujian: cleanNomorUjian(rawNoUjian, nisnVal),
+          nisn: nisnVal,
+          nis: headerMap.nis !== -1 ? cols[headerMap.nis] || '' : '',
+          kelas: headerMap.kelas !== -1 ? cols[headerMap.kelas] || '' : '',
+          tingkat: headerMap.tingkat !== -1 ? parseInt(cols[headerMap.tingkat], 10) || 10 : 10,
+          email: headerMap.email !== -1 ? cols[headerMap.email] || '' : '',
+          jenis_kelamin: headerMap.jenis_kelamin !== -1 ? cols[headerMap.jenis_kelamin] || 'L' : 'L',
+          agama: headerMap.agama !== -1 ? cols[headerMap.agama] || 'Islam' : 'Islam',
+        });
+      } else {
+        // Fallback positional:
+        let nama = cols[0] || '';
+        let noUjian = '';
+        let nisn = '';
+        let nis = '';
+        let kelas = '';
+        let tingkat = 10;
+        let email = '';
+
+        if (cols.length >= 7) {
+          // Format 7 kolom: [nama, nomor_ujian, nisn, nis, kelas, tingkat, email]
+          // Atau jika col[1] adalah 10 digit angka, berarti [nama, nisn, nis, kelas, tingkat, email, nomor_ujian]
+          if (cols[2].length >= 8 && /^\d+$/.test(cols[2])) {
+            noUjian = cols[1];
+            nisn = cols[2];
+            nis = cols[3];
+            kelas = cols[4];
+            tingkat = parseInt(cols[5], 10) || 10;
+            email = cols[6];
+          } else {
+            nisn = cols[1];
+            nis = cols[2];
+            kelas = cols[3];
+            tingkat = parseInt(cols[4], 10) || 10;
+            email = cols[5];
+            noUjian = cols[6];
+          }
+        } else {
+          // Format 6 kolom standar: [nama, nisn, nis, kelas, tingkat, email]
+          nisn = cols[1] || '';
+          nis = cols[2] || '';
+          kelas = cols[3] || '';
+          tingkat = parseInt(cols[4], 10) || 10;
+          email = cols[5] || '';
+        }
+
+        parsed.push({
+          rowNumber,
+          nama,
+          nomor_ujian: cleanNomorUjian(noUjian, nisn),
+          nisn,
+          nis,
+          kelas,
+          tingkat,
+          email,
+          jenis_kelamin: 'L',
+          agama: 'Islam',
         });
       }
-    });
+    }
 
-    if (parsedStudents.length === 0) {
-      showNotification('Format data CSV tidak valid atau kosong.', 'error');
+    return parsed;
+  };
+
+  // Handler Import Peserta dengan Validasi Anti-Duplikasi
+  const handleImportSubmit = (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (!importCsvText.trim()) {
+      showNotification('Isi teks atau pilih file CSV terlebih dahulu.', 'error');
       return;
     }
 
-    const count = storageService.importStudents(parsedStudents);
-    setShowImportModal(false);
-    setImportCsvText('');
-    refreshData();
-    showNotification(`Berhasil mengimpor ${count} peserta. Password awal otomatis diset ke NISN.`);
+    const parsedStudents = parseCsvStudents(importCsvText);
+    if (parsedStudents.length === 0) {
+      showNotification('Format data CSV tidak valid atau tidak ada data peserta yang terbaca.', 'error');
+      return;
+    }
+
+    // Validasi Anti-Duplikasi terhadap Sistem dan File Import
+    const validation = storageService.validateImportStudents(parsedStudents);
+
+    if (!validation.isValid) {
+      setImportValidationErrors(validation.errors);
+      setImportStep('error_report');
+      showNotification(
+        `Validasi gagal: Ditemukan ${validation.errors.length} duplikasi data pada file import. Harap periksa daftar kesalahan.`,
+        'error'
+      );
+      return;
+    }
+
+    // Jika validasi sukses, proses simpan data
+    const res = storageService.importStudents(validation.validStudents);
+    if (res.success) {
+      setShowImportModal(false);
+      setImportCsvText('');
+      setImportValidationErrors(null);
+      setImportStep('input');
+      refreshData();
+      showNotification(`Berhasil mengimpor ${res.count} peserta baru tanpa duplikasi. Password diset ke nomor NIS/NISN.`);
+    } else {
+      setImportValidationErrors(res.errors || []);
+      setImportStep('error_report');
+      showNotification(res.message || 'Gagal mengimpor data.', 'error');
+    }
+  };
+
+  // Salin Rincian Error Duplikasi ke Clipboard
+  const copyImportErrorsText = () => {
+    if (!importValidationErrors || importValidationErrors.length === 0) return;
+    const textLines = [
+      `=== LAPORAN DUPLIKASI DATA IMPORT EXAMGUARD ===`,
+      `Total Masalah: ${importValidationErrors.length} data`,
+      `Tanggal: ${new Date().toLocaleString('id-ID')}`,
+      `--------------------------------------------------`,
+      ...importValidationErrors.map((err, i) =>
+        `[#${i + 1}] Baris ${err.rowNumber} (${err.nama}): ${err.fieldLabel} "${err.value}" bentrok dengan ${err.conflictWith}. Detail: ${err.description}`
+      ),
+      `--------------------------------------------------`,
+      `Harap perbaiki nilai pada baris-baris tersebut sebelum melakukan import kembali.`,
+    ].join('\n');
+
+    navigator.clipboard.writeText(textLines);
+    setCopiedErrorText(true);
+    setTimeout(() => setCopiedErrorText(false), 2500);
+  };
+
+  // Handler Upload File CSV
+  const handleImportFileUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const content = evt.target?.result;
+      if (typeof content === 'string') {
+        setImportCsvText(content);
+        setImportStep('input');
+        setImportValidationErrors(null);
+        showNotification(`File "${file.name}" berhasil dimuat ke editor import.`);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
   };
 
   // Handler Tambah Peserta Manual
   const handleOpenAddModal = () => {
+    setAddStudentError('');
     setNewStudentForm({
       nama: '',
       nomor_ujian: '',
@@ -1913,19 +2153,44 @@ export default function AdminDashboard({ currentUser, onLogout }) {
 
   const handleAddStudentSubmit = (e) => {
     e.preventDefault();
-    if (!newStudentForm.nama.trim() || !newStudentForm.nisn.trim()) {
+    const trimmedNisn = String(newStudentForm.nisn || '').trim();
+    if (!newStudentForm.nama.trim() || !trimmedNisn) {
+      setAddStudentError('Nama Lengkap Peserta dan NISN wajib diisi.');
       showNotification('Nama Peserta dan NISN wajib diisi.', 'error');
+      return;
+    }
+
+    if (duplicateAddNisn) {
+      const msg = `Siswa dengan NISN "${trimmedAddNisn}" sudah terdaftar atas nama "${duplicateAddNisn.nama}" (${duplicateAddNisn.kelas || 'Kelas -'}). Silakan gunakan NISN lain yang unik.`;
+      setAddStudentError(msg);
+      showNotification(msg, 'error');
+      return;
+    }
+
+    if (duplicateAddNoUjian) {
+      const msg = `Nomor Ujian "${cleanAddNoUjian}" sudah terdaftar atas nama "${duplicateAddNoUjian.nama}" (${duplicateAddNoUjian.kelas || 'Kelas -'}). Silakan gunakan Nomor Ujian unik.`;
+      setAddStudentError(msg);
+      showNotification(msg, 'error');
+      return;
+    }
+
+    if (duplicateAddNis) {
+      const msg = `NIS "${trimmedAddNis}" sudah terdaftar atas nama "${duplicateAddNis.nama}" (${duplicateAddNis.kelas || 'Kelas -'}). Silakan gunakan NIS unik.`;
+      setAddStudentError(msg);
+      showNotification(msg, 'error');
       return;
     }
 
     const res = storageService.addStudent(newStudentForm);
     if (res.success) {
       refreshData();
+      setAddStudentError('');
       setShowAddStudentModal(false);
       showNotification(
         `Peserta ${res.user.nama} (NISN: ${res.user.nisn}) berhasil ditambahkan. Status SSO awal: OFF.`
       );
     } else {
+      setAddStudentError(res.message);
       showNotification(res.message, 'error');
     }
   };
@@ -2026,8 +2291,12 @@ export default function AdminDashboard({ currentUser, onLogout }) {
 
   // Handler Edit Akun Peserta (jika email di-update dan berbeda dengan sebelumnya maka status SSO off)
   const handleOpenEditModal = (student) => {
+    setEditStudentError('');
     setEditingStudent({
       ...student,
+      nomor_ujian: student.nomor_ujian || cleanNomorUjian(student.nomor_ujian, student.nisn),
+      jenis_kelamin: student.jenis_kelamin || 'L',
+      agama: student.agama || 'Islam',
       original_email: student.email || '',
     });
     setShowEditStudentModal(true);
@@ -2035,14 +2304,38 @@ export default function AdminDashboard({ currentUser, onLogout }) {
 
   const handleSaveEditStudent = (e) => {
     e.preventDefault();
-    if (!editingStudent?.nama?.trim() || !editingStudent?.nisn?.trim()) {
+    const trimmedNisn = String(editingStudent?.nisn || '').trim();
+    if (!editingStudent?.nama?.trim() || !trimmedNisn) {
+      setEditStudentError('Nama Peserta dan NISN tidak boleh kosong.');
       showNotification('Nama Peserta dan NISN tidak boleh kosong.', 'error');
+      return;
+    }
+
+    if (duplicateEditNisn) {
+      const msg = `NISN "${trimmedEditNisn}" sudah terdaftar untuk siswa lain: "${duplicateEditNisn.nama}" (${duplicateEditNisn.kelas || 'Kelas -'}).`;
+      setEditStudentError(msg);
+      showNotification(msg, 'error');
+      return;
+    }
+
+    if (duplicateEditNoUjian) {
+      const msg = `Nomor Ujian "${cleanEditNoUjian}" sudah terdaftar untuk siswa lain: "${duplicateEditNoUjian.nama}" (${duplicateEditNoUjian.kelas || 'Kelas -'}).`;
+      setEditStudentError(msg);
+      showNotification(msg, 'error');
+      return;
+    }
+
+    if (duplicateEditNis) {
+      const msg = `NIS "${trimmedEditNis}" sudah terdaftar untuk siswa lain: "${duplicateEditNis.nama}" (${duplicateEditNis.kelas || 'Kelas -'}).`;
+      setEditStudentError(msg);
+      showNotification(msg, 'error');
       return;
     }
 
     const res = storageService.updateStudent(editingStudent.id, editingStudent);
     if (res.success) {
       refreshData();
+      setEditStudentError('');
       setShowEditStudentModal(false);
       if (res.emailChanged) {
         showNotification(
@@ -2053,6 +2346,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
         showNotification(`Data peserta ${res.user.nama} berhasil diperbarui.`);
       }
     } else {
+      setEditStudentError(res.message);
       showNotification(res.message, 'error');
     }
   };
@@ -2462,12 +2756,12 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     }
   };
 
-  // Template CSV Siswa
-  const sampleCsvContent = `nama,nisn,nis,kelas,tingkat,email
-Ahmad Fauzi Ridwan,0058291021,22101,XII MIPA 1,12,ahmad.fauzi@student.sch.id
-Siti Rahmawati Putri,0058291022,22102,XII MIPA 2,12,siti.rahma@student.sch.id
-Bambang Pamungkas,0068291033,23101,XI IPS 1,11,bambang.p@student.sch.id
-Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
+  // Template CSV Siswa (Mendukung No Ujian, NISN, NIS, Kelas, Tingkat, Email)
+  const sampleCsvContent = `nama,nomor_ujian,nisn,nis,kelas,tingkat,email
+Ahmad Fauzi Ridwan,UJN-12-001,0058291021,22101,XII MIPA 1,12,ahmad.fauzi@student.sch.id
+Siti Rahmawati Putri,UJN-12-002,0058291022,22102,XII MIPA 2,12,siti.rahma@student.sch.id
+Bambang Pamungkas,UJN-11-001,0068291033,23101,XI IPS 1,11,bambang.p@student.sch.id
+Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
 
   const copySampleCsv = () => {
     navigator.clipboard.writeText(sampleCsvContent);
@@ -2677,7 +2971,7 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
       {/* Toast Alert */}
       {toast.show && (
         <div
-          className={`fixed bottom-6 right-6 z-50 px-4 py-3 rounded-xl shadow-lg border text-xs font-medium flex items-center gap-2.5 transition-all animate-in slide-in-from-bottom-2 ${toast.type === 'error'
+          className={`fixed bottom-6 right-6 z-[9999] px-4 py-3 rounded-xl shadow-2xl border text-xs font-medium flex items-center gap-2.5 transition-all animate-in slide-in-from-bottom-2 ${toast.type === 'error'
               ? 'bg-rose-50 text-rose-800 border-rose-200'
               : 'bg-zinc-900 text-white border-zinc-800'
             }`}
@@ -8748,66 +9042,245 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
         </div>
       )}
 
-      {/* MODAL: IMPORT PESERTA CSV */}
+      {/* MODAL: IMPORT PESERTA CSV DENGAN VALIDASI ANTI-DUPLIKASI */}
       {showImportModal && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-zinc-200">
-            <div className="flex items-center justify-between pb-3 border-b border-zinc-100 mb-3">
-              <h3 className="font-semibold text-zinc-900 text-sm">Import Data Peserta (CSV / Excel)</h3>
-              <button
-                onClick={() => setShowImportModal(false)}
-                className="text-zinc-400 hover:text-zinc-600 p-1"
-              >
-                &times;
-              </button>
-            </div>
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className={`bg-white rounded-2xl w-full shadow-2xl border border-zinc-200 animate-in zoom-in-95 max-h-[92vh] overflow-y-auto ${
+            importStep === 'error_report' ? 'max-w-3xl p-6' : 'max-w-xl p-6'
+          }`}>
+            {importStep === 'error_report' && importValidationErrors ? (
+              /* VIEW: LAPORAN ERROR & DUPLIKASI DATA IMPORT */
+              <div>
+                <div className="flex items-center justify-between pb-3 border-b border-zinc-100 mb-4">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                      <AlertTriangle className="w-5 h-5 text-rose-600" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-zinc-900 text-sm">
+                        Validasi Gagal: Terdeteksi {importValidationErrors.length} Data Duplikat
+                      </h3>
+                      <p className="text-[11px] text-zinc-500">
+                        Harap perbaiki data di bawah ini sebelum data dapat diimpor ke sistem
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setShowImportModal(false);
+                      setImportStep('input');
+                      setImportValidationErrors(null);
+                    }}
+                    className="text-zinc-400 hover:text-zinc-600 p-1 text-base cursor-pointer"
+                  >
+                    &times;
+                  </button>
+                </div>
 
-            <p className="text-xs text-zinc-600 mb-3">
-              Tempel (paste) data teks peserta dengan format kolom:{' '}
-              <code className="bg-zinc-100 px-1 py-0.5 rounded font-mono text-[11px]">
-                nama, nisn, nis, kelas, tingkat (0-12), email
-              </code>
-              . Username dan Password awal peserta otomatis diset ke <strong>NISN</strong>.
-            </p>
+                {/* Banner Peringatan */}
+                <div className="mb-4 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-xs flex items-start gap-2.5">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <div className="font-semibold">Import Dibatalkan Demi Menjaga Keunikan Identitas Siswa</div>
+                    <p className="text-[11px] text-rose-700 mt-0.5 leading-relaxed">
+                      Sistem mendeteksi <strong>{importValidationErrors.length} konflik</strong> pada kolom <strong>No. Ujian</strong>, <strong>NISN</strong>, atau <strong>NIS</strong>. Konflik terjadi baik terhadap data siswa yang sudah ada di sistem maupun antar baris dalam data yang Anda masukkan.
+                    </p>
+                  </div>
+                </div>
 
-            <div className="mb-3 flex justify-between items-center">
-              <span className="text-[11px] font-medium text-zinc-500">Contoh Format:</span>
-              <button
-                type="button"
-                onClick={copySampleCsv}
-                className="text-[11px] text-blue-600 hover:underline flex items-center gap-1"
-              >
-                <Copy className="w-3 h-3" />
-                <span>{copiedText ? 'Tersalin!' : 'Salin Contoh'}</span>
-              </button>
-            </div>
+                {/* Tabel Daftar Kesalahan / Duplikasi */}
+                <div className="border border-zinc-200 rounded-xl overflow-hidden mb-4">
+                  <div className="max-h-[48vh] overflow-y-auto">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead className="bg-zinc-50 text-zinc-600 text-[11px] font-semibold sticky top-0 border-b border-zinc-200 z-10">
+                        <tr>
+                          <th className="py-2.5 px-3 whitespace-nowrap">Baris</th>
+                          <th className="py-2.5 px-3">Nama Siswa</th>
+                          <th className="py-2.5 px-3">Kolom Duplikat</th>
+                          <th className="py-2.5 px-3">Nilai Duplikat</th>
+                          <th className="py-2.5 px-3">Bentrok Dengan</th>
+                          <th className="py-2.5 px-3">Keterangan</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-zinc-100">
+                        {importValidationErrors.map((err, idx) => (
+                          <tr key={idx} className="hover:bg-rose-50/40 transition-colors">
+                            <td className="py-2.5 px-3 font-mono font-semibold text-rose-700 whitespace-nowrap">
+                              Baris {err.rowNumber}
+                            </td>
+                            <td className="py-2.5 px-3 font-medium text-zinc-900 whitespace-nowrap">
+                              {err.nama}
+                            </td>
+                            <td className="py-2.5 px-3 whitespace-nowrap">
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                                err.field === 'nisn'
+                                  ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                                  : err.field === 'nomor_ujian'
+                                  ? 'bg-blue-100 text-blue-800 border border-blue-200'
+                                  : 'bg-purple-100 text-purple-800 border border-purple-200'
+                              }`}>
+                                {err.fieldLabel}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 font-mono font-bold text-rose-700 whitespace-nowrap">
+                              <code className="bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">
+                                {err.value}
+                              </code>
+                            </td>
+                            <td className="py-2.5 px-3 text-[11px]">
+                              {err.conflictType === 'system' ? (
+                                <span className="inline-flex items-center gap-1 text-rose-800 bg-rose-50 px-2 py-0.5 rounded border border-rose-200 font-medium">
+                                  {err.conflictWith}
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 font-medium">
+                                  {err.conflictWith}
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-3 text-zinc-600 text-[11px] leading-snug">
+                              {err.description}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
 
-            <form onSubmit={handleImportSubmit} className="space-y-4">
-              <textarea
-                rows="7"
-                required
-                value={importCsvText}
-                onChange={(e) => setImportCsvText(e.target.value)}
-                placeholder="nama,nisn,nis,kelas,tingkat,email&#10;Ahmad Fauzi,0058291021,22101,XII MIPA 1,12,ahmad@student.sch.id"
-                className="w-full p-3 border border-zinc-300 rounded-xl font-mono text-xs focus:ring-2 focus:ring-zinc-900 focus:outline-none"
-              ></textarea>
+                {/* Tombol Aksi Error View */}
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-zinc-100">
+                  <button
+                    type="button"
+                    onClick={copyImportErrorsText}
+                    className="py-2 px-3 rounded-xl border border-zinc-300 text-xs font-medium text-zinc-700 hover:bg-zinc-50 flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>{copiedErrorText ? 'Laporan Tersalin!' : 'Salin Laporan Error'}</span>
+                  </button>
 
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowImportModal(false)}
-                  className="flex-1 py-2.5 rounded-xl border border-zinc-300 text-xs font-medium text-zinc-600 hover:bg-zinc-50"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 py-2.5 rounded-xl bg-zinc-900 text-white text-xs font-medium hover:bg-zinc-800 shadow-xs"
-                >
-                  Proses Import Peserta
-                </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowImportModal(false);
+                        setImportStep('input');
+                        setImportValidationErrors(null);
+                      }}
+                      className="py-2 px-4 rounded-xl border border-zinc-300 text-xs font-medium text-zinc-600 hover:bg-zinc-50 cursor-pointer"
+                    >
+                      Batal
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setImportStep('input')}
+                      className="py-2 px-4 rounded-xl bg-zinc-900 text-white text-xs font-medium hover:bg-zinc-800 shadow-xs flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                      <span>Perbaiki Teks Data (Kembali ke Editor)</span>
+                    </button>
+                  </div>
+                </div>
               </div>
-            </form>
+            ) : (
+              /* VIEW: FORM INPUT CSV DENGAN PREVIEW & UPLOAD FILE */
+              <div>
+                <div className="flex items-center justify-between pb-3 border-b border-zinc-100 mb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-lg bg-zinc-900 text-white flex items-center justify-center">
+                      <FileSpreadsheet className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-zinc-900 text-sm">Import Data Peserta (CSV / Excel)</h3>
+                      <p className="text-[11px] text-zinc-500">Mendukung format No. Ujian, NISN, NIS, Kelas, dan Email</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setShowImportModal(false);
+                      setImportStep('input');
+                      setImportValidationErrors(null);
+                    }}
+                    className="text-zinc-400 hover:text-zinc-600 p-1 text-base cursor-pointer"
+                  >
+                    &times;
+                  </button>
+                </div>
+
+                <div className="bg-zinc-50 p-3 rounded-xl border border-zinc-200/80 mb-3 text-xs text-zinc-600 space-y-1.5">
+                  <div className="font-semibold text-zinc-800">Format Kolom yang Didukung:</div>
+                  <div className="flex flex-wrap gap-1 font-mono text-[11px]">
+                    <span className="bg-white px-1.5 py-0.5 rounded border border-zinc-200 text-zinc-800">nama</span>
+                    <span className="bg-white px-1.5 py-0.5 rounded border border-zinc-200 text-blue-700 font-semibold">nomor_ujian</span>
+                    <span className="bg-white px-1.5 py-0.5 rounded border border-zinc-200 text-amber-700 font-semibold">nisn</span>
+                    <span className="bg-white px-1.5 py-0.5 rounded border border-zinc-200 text-purple-700 font-semibold">nis</span>
+                    <span className="bg-white px-1.5 py-0.5 rounded border border-zinc-200 text-zinc-800">kelas</span>
+                    <span className="bg-white px-1.5 py-0.5 rounded border border-zinc-200 text-zinc-800">tingkat</span>
+                    <span className="bg-white px-1.5 py-0.5 rounded border border-zinc-200 text-zinc-800">email</span>
+                  </div>
+                  <p className="text-[10px] text-zinc-500 leading-relaxed">
+                    * Format 6 kolom standar (tanpa nomor_ujian) juga tetap didukung (nomor ujian akan otomatis disamakan dengan NISN).
+                  </p>
+                </div>
+
+                <div className="mb-2.5 flex flex-wrap justify-between items-center gap-2">
+                  <label className="cursor-pointer text-[11px] text-zinc-700 bg-zinc-100 hover:bg-zinc-200 px-2.5 py-1.5 rounded-lg border border-zinc-300 flex items-center gap-1.5 font-medium transition-colors">
+                    <Upload className="w-3.5 h-3.5 text-zinc-600" />
+                    <span>Upload File CSV (.csv / .txt)</span>
+                    <input
+                      type="file"
+                      accept=".csv,.txt"
+                      onChange={handleImportFileUpload}
+                      className="hidden"
+                    />
+                  </label>
+
+                  <button
+                    type="button"
+                    onClick={copySampleCsv}
+                    className="text-[11px] text-blue-600 hover:underline flex items-center gap-1"
+                  >
+                    <Copy className="w-3 h-3" />
+                    <span>{copiedText ? 'Format Tersalin!' : 'Salin Contoh Format'}</span>
+                  </button>
+                </div>
+
+                <form onSubmit={handleImportSubmit} className="space-y-3.5">
+                  <textarea
+                    rows="8"
+                    required
+                    value={importCsvText}
+                    onChange={(e) => {
+                      setImportCsvText(e.target.value);
+                      if (importValidationErrors) setImportValidationErrors(null);
+                    }}
+                    placeholder="nama,nomor_ujian,nisn,nis,kelas,tingkat,email&#10;Ahmad Fauzi,UJN-12-001,0058291021,22101,XII MIPA 1,12,ahmad@student.sch.id&#10;Siti Rahmawati,UJN-12-002,0058291022,22102,XII MIPA 2,12,siti.rahma@student.sch.id"
+                    className="w-full p-3 border border-zinc-300 rounded-xl font-mono text-xs focus:ring-2 focus:ring-zinc-900 focus:outline-none transition-colors"
+                  ></textarea>
+
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowImportModal(false);
+                        setImportStep('input');
+                        setImportValidationErrors(null);
+                      }}
+                      className="flex-1 py-2.5 rounded-xl border border-zinc-300 text-xs font-medium text-zinc-600 hover:bg-zinc-50 cursor-pointer"
+                    >
+                      Batal
+                    </button>
+                    <button
+                      type="submit"
+                      className="flex-1 py-2.5 rounded-xl bg-zinc-900 text-white text-xs font-medium hover:bg-zinc-800 shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>Validasi & Proses Import Peserta</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -8815,7 +9288,7 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
       {/* MODAL: TAMBAH PESERTA MANUAL */}
       {showAddStudentModal && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-zinc-200 animate-in zoom-in-95">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-zinc-200 animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-zinc-100 mb-4">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-lg bg-zinc-900 text-white flex items-center justify-center">
@@ -8831,12 +9304,45 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                 </div>
               </div>
               <button
-                onClick={() => setShowAddStudentModal(false)}
+                onClick={() => {
+                  setShowAddStudentModal(false);
+                  setAddStudentError('');
+                }}
                 className="text-zinc-400 hover:text-zinc-600 p-1 text-base cursor-pointer"
               >
                 &times;
               </button>
             </div>
+
+            {/* Banner Peringatan / Validasi Form di Dalam Modal */}
+            {(addStudentError || hasAddDuplicate) && (
+              <div className="mb-4 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start gap-2.5 animate-in fade-in duration-150">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <div className="flex-1 space-y-1">
+                  <div className="font-semibold text-rose-900">
+                    {hasAddDuplicate ? 'Peringatan: Terdeteksi Data Duplikat' : 'Validasi Data Gagal'}
+                  </div>
+                  {duplicateAddNisn && (
+                    <div className="text-[11px] text-rose-700 leading-relaxed">
+                      &bull; <strong>NISN:</strong> Nilai &quot;{trimmedAddNisn}&quot; sudah digunakan oleh <strong>{duplicateAddNisn.nama}</strong> ({duplicateAddNisn.kelas || '-'}).
+                    </div>
+                  )}
+                  {duplicateAddNoUjian && (
+                    <div className="text-[11px] text-rose-700 leading-relaxed">
+                      &bull; <strong>No. Ujian:</strong> Nilai &quot;{cleanAddNoUjian}&quot; sudah digunakan oleh <strong>{duplicateAddNoUjian.nama}</strong> ({duplicateAddNoUjian.kelas || '-'}).
+                    </div>
+                  )}
+                  {duplicateAddNis && (
+                    <div className="text-[11px] text-rose-700 leading-relaxed">
+                      &bull; <strong>NIS:</strong> Nilai &quot;{trimmedAddNis}&quot; sudah digunakan oleh <strong>{duplicateAddNis.nama}</strong> ({duplicateAddNis.kelas || '-'}).
+                    </div>
+                  )}
+                  {addStudentError && !hasAddDuplicate && (
+                    <div className="text-[11px] text-rose-700 leading-relaxed">{addStudentError}</div>
+                  )}
+                </div>
+              </div>
+            )}
 
             <form onSubmit={handleAddStudentSubmit} className="space-y-3.5">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -8848,31 +9354,134 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                     type="text"
                     required
                     value={newStudentForm.nama}
-                    onChange={(e) =>
-                      setNewStudentForm({ ...newStudentForm, nama: e.target.value })
-                    }
+                    onChange={(e) => {
+                      setNewStudentForm({ ...newStudentForm, nama: e.target.value });
+                      if (addStudentError) setAddStudentError('');
+                    }}
                     placeholder="Contoh: Muhammad Rizky Pratama"
                     className="w-full px-3 py-2 border border-zinc-300 rounded-xl text-xs focus:ring-2 focus:ring-zinc-900 focus:outline-none"
                   />
                 </div>
 
                 <div>
-                  <div>
-                  <label className="block text-xs font-medium text-zinc-700 mb-1">
-                    Nomor Ujian Peserta <span className="text-zinc-400 font-normal">(Opsional)</span>
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-medium text-zinc-700">
+                      NISN (Username Akun) <span className="text-rose-500">*</span>
+                    </label>
+                    {duplicateAddStudent && (
+                      <span className="text-[10px] font-semibold text-rose-600 flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3 text-rose-500" />
+                        Duplikat
+                      </span>
+                    )}
+                  </div>
+                  <input
+                    type="text"
+                    required
+                    value={newStudentForm.nisn}
+                    onChange={(e) => {
+                      setNewStudentForm({ ...newStudentForm, nisn: e.target.value });
+                      if (addStudentError) setAddStudentError('');
+                    }}
+                    placeholder="Contoh: 0078192031"
+                    className={`w-full px-3 py-2 border rounded-xl text-xs font-mono focus:outline-none transition-colors ${
+                      duplicateAddStudent
+                        ? 'border-rose-400 bg-rose-50/50 text-rose-900 focus:ring-2 focus:ring-rose-500 focus:border-rose-500'
+                        : 'border-zinc-300 focus:ring-2 focus:ring-zinc-900'
+                    }`}
+                  />
+                  {duplicateAddStudent ? (
+                    <div className="mt-1.5 p-2 rounded-lg bg-rose-50 border border-rose-200/80 text-[11px] text-rose-700 flex items-start gap-1.5 leading-snug animate-in fade-in duration-150">
+                      <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0 mt-0.5" />
+                      <span>
+                        Sudah dipakai oleh <strong>{duplicateAddStudent.nama}</strong> ({duplicateAddStudent.kelas || '-'}).
+                      </span>
+                    </div>
+                  ) : (
+                    <p className="text-[10px] text-zinc-400 mt-0.5">
+                      Otomatis jadi Username & Password awal
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-medium text-zinc-700">
+                      Nomor Ujian Peserta <span className="text-zinc-400 font-normal">(Opsional)</span>
+                    </label>
+                    {duplicateAddNoUjian && (
+                      <span className="text-[10px] font-semibold text-rose-600 flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3 text-rose-500" />
+                        Duplikat
+                      </span>
+                    )}
+                  </div>
                   <input
                     type="text"
                     value={newStudentForm.nomor_ujian || ''}
-                    onChange={(e) =>
-                      setNewStudentForm({ ...newStudentForm, nomor_ujian: cleanNomorUjian(e.target.value) })
-                    }
+                    onChange={(e) => {
+                      setNewStudentForm({ ...newStudentForm, nomor_ujian: cleanNomorUjian(e.target.value) });
+                      if (addStudentError) setAddStudentError('');
+                    }}
                     placeholder="Kosongkan untuk otomatis pakai NISN"
-                    className="w-full px-3 py-2 border border-zinc-300 rounded-xl text-xs font-mono focus:ring-2 focus:ring-zinc-900 focus:outline-none"
+                    className={`w-full px-3 py-2 border rounded-xl text-xs font-mono focus:outline-none transition-colors ${
+                      duplicateAddNoUjian
+                        ? 'border-rose-400 bg-rose-50/50 text-rose-900 focus:ring-2 focus:ring-rose-500 focus:border-rose-500'
+                        : 'border-zinc-300 focus:ring-2 focus:ring-zinc-900'
+                    }`}
                   />
-                  <p className="text-[10px] text-zinc-400 mt-0.5">
-                    Hanya huruf, angka, tanda strip dan titik
-                  </p>
+                  {duplicateAddNoUjian ? (
+                    <div className="mt-1.5 p-2 rounded-lg bg-rose-50 border border-rose-200/80 text-[11px] text-rose-700 flex items-start gap-1.5 leading-snug animate-in fade-in duration-150">
+                      <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0 mt-0.5" />
+                      <span>
+                        Sudah dipakai oleh <strong>{duplicateAddNoUjian.nama}</strong> ({duplicateAddNoUjian.kelas || '-'}).
+                      </span>
+                    </div>
+                  ) : (
+                    <p className="text-[10px] text-zinc-400 mt-0.5">
+                      Hanya huruf, angka, tanda strip dan titik (harus unik)
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-medium text-zinc-700">
+                      NIS (Nomor Induk Sekolah)
+                    </label>
+                    {duplicateAddNis && (
+                      <span className="text-[10px] font-semibold text-rose-600 flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3 text-rose-500" />
+                        Duplikat
+                      </span>
+                    )}
+                  </div>
+                  <input
+                    type="text"
+                    value={newStudentForm.nis}
+                    onChange={(e) => {
+                      setNewStudentForm({ ...newStudentForm, nis: e.target.value });
+                      if (addStudentError) setAddStudentError('');
+                    }}
+                    placeholder="Contoh: 23105 (Opsional)"
+                    className={`w-full px-3 py-2 border rounded-xl text-xs font-mono focus:outline-none transition-colors ${
+                      duplicateAddNis
+                        ? 'border-rose-400 bg-rose-50/50 text-rose-900 focus:ring-2 focus:ring-rose-500 focus:border-rose-500'
+                        : 'border-zinc-300 focus:ring-2 focus:ring-zinc-900'
+                    }`}
+                  />
+                  {duplicateAddNis ? (
+                    <div className="mt-1.5 p-2 rounded-lg bg-rose-50 border border-rose-200/80 text-[11px] text-rose-700 flex items-start gap-1.5 leading-snug animate-in fade-in duration-150">
+                      <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0 mt-0.5" />
+                      <span>
+                        Sudah dipakai oleh <strong>{duplicateAddNis.nama}</strong> ({duplicateAddNis.kelas || '-'}).
+                      </span>
+                    </div>
+                  ) : (
+                    <p className="text-[10px] text-zinc-400 mt-0.5">
+                      Nomor induk lokal sekolah (harus unik jika diisi)
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -8905,39 +9514,6 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                       <option value="Khonghucu">Khonghucu</option>
                     </select>
                   </div>
-                </div>
-
-                <label className="block text-xs font-medium text-zinc-700 mb-1">
-                    NISN (Nomor Induk Siswa Nasional) <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={newStudentForm.nisn}
-                    onChange={(e) =>
-                      setNewStudentForm({ ...newStudentForm, nisn: e.target.value })
-                    }
-                    placeholder="Contoh: 0078192031"
-                    className="w-full px-3 py-2 border border-zinc-300 rounded-xl text-xs font-mono focus:ring-2 focus:ring-zinc-900 focus:outline-none"
-                  />
-                  <p className="text-[10px] text-zinc-400 mt-0.5">
-                    Otomatis jadi Username & Password awal
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-zinc-700 mb-1">
-                    NIS (Nomor Induk Sekolah)
-                  </label>
-                  <input
-                    type="text"
-                    value={newStudentForm.nis}
-                    onChange={(e) =>
-                      setNewStudentForm({ ...newStudentForm, nis: e.target.value })
-                    }
-                    placeholder="Contoh: 23105 (Opsional)"
-                    className="w-full px-3 py-2 border border-zinc-300 rounded-xl text-xs font-mono focus:ring-2 focus:ring-zinc-900 focus:outline-none"
-                  />
                 </div>
 
                 <div>
@@ -9019,14 +9595,22 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
               <div className="flex gap-2 pt-3 border-t border-zinc-100">
                 <button
                   type="button"
-                  onClick={() => setShowAddStudentModal(false)}
+                  onClick={() => {
+                    setShowAddStudentModal(false);
+                    setAddStudentError('');
+                  }}
                   className="flex-1 py-2.5 rounded-xl border border-zinc-300 text-xs font-medium text-zinc-600 hover:bg-zinc-50 cursor-pointer"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 rounded-xl bg-zinc-900 text-white text-xs font-medium hover:bg-zinc-800 shadow-xs cursor-pointer"
+                  disabled={hasAddDuplicate}
+                  className={`flex-1 py-2.5 rounded-xl text-xs font-medium shadow-xs transition-all ${
+                    hasAddDuplicate
+                      ? 'bg-zinc-400 text-white cursor-not-allowed opacity-60'
+                      : 'bg-zinc-900 text-white hover:bg-zinc-800 cursor-pointer'
+                  }`}
                 >
                   Simpan Peserta Baru
                 </button>
@@ -9039,7 +9623,7 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
       {/* MODAL: EDIT AKUN PESERTA */}
       {showEditStudentModal && editingStudent && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-zinc-200 animate-in zoom-in-95">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-zinc-200 animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-zinc-100 mb-4">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-lg bg-zinc-900 text-white flex items-center justify-center">
@@ -9055,12 +9639,45 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                 </div>
               </div>
               <button
-                onClick={() => setShowEditStudentModal(false)}
+                onClick={() => {
+                  setShowEditStudentModal(false);
+                  setEditStudentError('');
+                }}
                 className="text-zinc-400 hover:text-zinc-600 p-1 text-base cursor-pointer"
               >
                 &times;
               </button>
             </div>
+
+            {/* Banner Peringatan / Validasi Form di Dalam Modal Edit */}
+            {(editStudentError || hasEditDuplicate) && (
+              <div className="mb-4 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start gap-2.5 animate-in fade-in duration-150">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <div className="flex-1 space-y-1">
+                  <div className="font-semibold text-rose-900">
+                    {hasEditDuplicate ? 'Peringatan: Terdeteksi Data Duplikat' : 'Validasi Data Gagal'}
+                  </div>
+                  {duplicateEditNisn && (
+                    <div className="text-[11px] text-rose-700 leading-relaxed">
+                      &bull; <strong>NISN:</strong> Nilai &quot;{trimmedEditNisn}&quot; sudah digunakan oleh peserta lain <strong>{duplicateEditNisn.nama}</strong> ({duplicateEditNisn.kelas || '-'}).
+                    </div>
+                  )}
+                  {duplicateEditNoUjian && (
+                    <div className="text-[11px] text-rose-700 leading-relaxed">
+                      &bull; <strong>No. Ujian:</strong> Nilai &quot;{cleanEditNoUjian}&quot; sudah digunakan oleh peserta lain <strong>{duplicateEditNoUjian.nama}</strong> ({duplicateEditNoUjian.kelas || '-'}).
+                    </div>
+                  )}
+                  {duplicateEditNis && (
+                    <div className="text-[11px] text-rose-700 leading-relaxed">
+                      &bull; <strong>NIS:</strong> Nilai &quot;{trimmedEditNis}&quot; sudah digunakan oleh peserta lain <strong>{duplicateEditNis.nama}</strong> ({duplicateEditNis.kelas || '-'}).
+                    </div>
+                  )}
+                  {editStudentError && !hasEditDuplicate && (
+                    <div className="text-[11px] text-rose-700 leading-relaxed">{editStudentError}</div>
+                  )}
+                </div>
+              </div>
+            )}
 
             <form onSubmit={handleSaveEditStudent} className="space-y-3.5">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -9072,40 +9689,163 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                     type="text"
                     required
                     value={editingStudent.nama}
-                    onChange={(e) =>
-                      setEditingStudent({ ...editingStudent, nama: e.target.value })
-                    }
+                    onChange={(e) => {
+                      setEditingStudent({ ...editingStudent, nama: e.target.value });
+                      if (editStudentError) setEditStudentError('');
+                    }}
                     className="w-full px-3 py-2 border border-zinc-300 rounded-xl text-xs focus:ring-2 focus:ring-zinc-900 focus:outline-none"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-zinc-700 mb-1">
-                    NISN (Username Akun) <span className="text-rose-500">*</span>
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-medium text-zinc-700">
+                      NISN (Username Akun) <span className="text-rose-500">*</span>
+                    </label>
+                    {duplicateEditNisn && (
+                      <span className="text-[10px] font-semibold text-rose-600 flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3 text-rose-500" />
+                        Duplikat
+                      </span>
+                    )}
+                  </div>
                   <input
                     type="text"
                     required
                     value={editingStudent.nisn}
-                    onChange={(e) =>
-                      setEditingStudent({ ...editingStudent, nisn: e.target.value })
-                    }
-                    className="w-full px-3 py-2 border border-zinc-300 rounded-xl text-xs font-mono focus:ring-2 focus:ring-zinc-900 focus:outline-none"
+                    onChange={(e) => {
+                      setEditingStudent({ ...editingStudent, nisn: e.target.value });
+                      if (editStudentError) setEditStudentError('');
+                    }}
+                    className={`w-full px-3 py-2 border rounded-xl text-xs font-mono focus:outline-none transition-colors ${
+                      duplicateEditNisn
+                        ? 'border-rose-400 bg-rose-50/50 text-rose-900 focus:ring-2 focus:ring-rose-500 focus:border-rose-500'
+                        : 'border-zinc-300 focus:ring-2 focus:ring-zinc-900'
+                    }`}
                   />
+                  {duplicateEditNisn ? (
+                    <div className="mt-1.5 p-2 rounded-lg bg-rose-50 border border-rose-200/80 text-[11px] text-rose-700 flex items-start gap-1.5 leading-snug animate-in fade-in duration-150">
+                      <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0 mt-0.5" />
+                      <span>
+                        Sudah dipakai oleh <strong>{duplicateEditNisn.nama}</strong> ({duplicateEditNisn.kelas || '-'}).
+                      </span>
+                    </div>
+                  ) : (
+                    <p className="text-[10px] text-zinc-400 mt-0.5">
+                      Identitas unik untuk akun login siswa
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-medium text-zinc-700">
+                      Nomor Ujian Peserta
+                    </label>
+                    {duplicateEditNoUjian && (
+                      <span className="text-[10px] font-semibold text-rose-600 flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3 text-rose-500" />
+                        Duplikat
+                      </span>
+                    )}
+                  </div>
+                  <input
+                    type="text"
+                    value={editingStudent.nomor_ujian || ''}
+                    onChange={(e) => {
+                      setEditingStudent({ ...editingStudent, nomor_ujian: cleanNomorUjian(e.target.value) });
+                      if (editStudentError) setEditStudentError('');
+                    }}
+                    placeholder="Kosongkan untuk otomatis pakai NISN"
+                    className={`w-full px-3 py-2 border rounded-xl text-xs font-mono focus:outline-none transition-colors ${
+                      duplicateEditNoUjian
+                        ? 'border-rose-400 bg-rose-50/50 text-rose-900 focus:ring-2 focus:ring-rose-500 focus:border-rose-500'
+                        : 'border-zinc-300 focus:ring-2 focus:ring-zinc-900'
+                    }`}
+                  />
+                  {duplicateEditNoUjian ? (
+                    <div className="mt-1.5 p-2 rounded-lg bg-rose-50 border border-rose-200/80 text-[11px] text-rose-700 flex items-start gap-1.5 leading-snug animate-in fade-in duration-150">
+                      <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0 mt-0.5" />
+                      <span>
+                        Sudah dipakai oleh <strong>{duplicateEditNoUjian.nama}</strong> ({duplicateEditNoUjian.kelas || '-'}).
+                      </span>
+                    </div>
+                  ) : (
+                    <p className="text-[10px] text-zinc-400 mt-0.5">
+                      Nomor kartu ujian peserta (harus unik)
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-medium text-zinc-700">
+                      NIS (Nomor Induk Sekolah)
+                    </label>
+                    {duplicateEditNis && (
+                      <span className="text-[10px] font-semibold text-rose-600 flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3 text-rose-500" />
+                        Duplikat
+                      </span>
+                    )}
+                  </div>
+                  <input
+                    type="text"
+                    value={editingStudent.nis || ''}
+                    onChange={(e) => {
+                      setEditingStudent({ ...editingStudent, nis: e.target.value });
+                      if (editStudentError) setEditStudentError('');
+                    }}
+                    className={`w-full px-3 py-2 border rounded-xl text-xs font-mono focus:outline-none transition-colors ${
+                      duplicateEditNis
+                        ? 'border-rose-400 bg-rose-50/50 text-rose-900 focus:ring-2 focus:ring-rose-500 focus:border-rose-500'
+                        : 'border-zinc-300 focus:ring-2 focus:ring-zinc-900'
+                    }`}
+                  />
+                  {duplicateEditNis ? (
+                    <div className="mt-1.5 p-2 rounded-lg bg-rose-50 border border-rose-200/80 text-[11px] text-rose-700 flex items-start gap-1.5 leading-snug animate-in fade-in duration-150">
+                      <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0 mt-0.5" />
+                      <span>
+                        Sudah dipakai oleh <strong>{duplicateEditNis.nama}</strong> ({duplicateEditNis.kelas || '-'}).
+                      </span>
+                    </div>
+                  ) : (
+                    <p className="text-[10px] text-zinc-400 mt-0.5">
+                      Nomor induk lokal sekolah (harus unik jika diisi)
+                    </p>
+                  )}
                 </div>
 
                 <div>
                   <label className="block text-xs font-medium text-zinc-700 mb-1">
-                    NIS (Nomor Induk Sekolah)
+                    Jenis Kelamin & Agama <span className="text-rose-500">*</span>
                   </label>
-                  <input
-                    type="text"
-                    value={editingStudent.nis || ''}
-                    onChange={(e) =>
-                      setEditingStudent({ ...editingStudent, nis: e.target.value })
-                    }
-                    className="w-full px-3 py-2 border border-zinc-300 rounded-xl text-xs font-mono focus:ring-2 focus:ring-zinc-900 focus:outline-none"
-                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <select
+                      value={editingStudent.jenis_kelamin || 'L'}
+                      onChange={(e) =>
+                        setEditingStudent({ ...editingStudent, jenis_kelamin: e.target.value })
+                      }
+                      className="w-full px-3 py-2 border border-zinc-300 rounded-xl text-xs focus:ring-2 focus:ring-zinc-900 focus:outline-none"
+                    >
+                      <option value="L">Laki-laki (L)</option>
+                      <option value="P">Perempuan (P)</option>
+                    </select>
+                    <select
+                      value={editingStudent.agama || 'Islam'}
+                      onChange={(e) =>
+                        setEditingStudent({ ...editingStudent, agama: e.target.value })
+                      }
+                      className="w-full px-3 py-2 border border-zinc-300 rounded-xl text-xs focus:ring-2 focus:ring-zinc-900 focus:outline-none"
+                    >
+                      <option value="Islam">Islam</option>
+                      <option value="Kristen">Kristen</option>
+                      <option value="Katolik">Katolik</option>
+                      <option value="Hindu">Hindu</option>
+                      <option value="Buddha">Buddha</option>
+                      <option value="Konghucu">Konghucu</option>
+                    </select>
+                  </div>
                 </div>
 
                 <div>
@@ -9243,14 +9983,22 @@ Dewi Lestari,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
               <div className="flex gap-2 pt-3 border-t border-zinc-100">
                 <button
                   type="button"
-                  onClick={() => setShowEditStudentModal(false)}
+                  onClick={() => {
+                    setShowEditStudentModal(false);
+                    setEditStudentError('');
+                  }}
                   className="flex-1 py-2.5 rounded-xl border border-zinc-300 text-xs font-medium text-zinc-600 hover:bg-zinc-50 cursor-pointer"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 rounded-xl bg-zinc-900 text-white text-xs font-medium hover:bg-zinc-800 shadow-xs cursor-pointer"
+                  disabled={hasEditDuplicate}
+                  className={`flex-1 py-2.5 rounded-xl text-xs font-medium shadow-xs transition-all ${
+                    hasEditDuplicate
+                      ? 'bg-zinc-400 text-white cursor-not-allowed opacity-60'
+                      : 'bg-zinc-900 text-white hover:bg-zinc-800 cursor-pointer'
+                  }`}
                 >
                   Simpan Perubahan
                 </button>

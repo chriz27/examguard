@@ -28,6 +28,7 @@ export default function LoginPortal({ institution, onLoginSuccess }) {
   const [errorMsg, setErrorMsg] = useState('');
   const [ssoModalOpen, setSsoModalOpen] = useState(false);
   const [ssoEmail, setSsoEmail] = useState('');
+  const [logoError, setLogoError] = useState(false);
 
   const currentDeviceId = getOrCreateDeviceId();
 
@@ -214,11 +215,12 @@ export default function LoginPortal({ institution, onLoginSuccess }) {
       {/* Header Institusi */}
       <header className="w-full max-w-md pt-6 pb-2 text-center">
         <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-zinc-900 text-white shadow-sm mb-3 overflow-hidden">
-          {institution?.logo_url ? (
+          {institution?.logo_url && !logoError ? (
             <img
               src={institution.logo_url}
               alt="Logo Sekolah"
               className="w-full h-full object-contain p-1.5 bg-white"
+              onError={() => setLogoError(true)}
             />
           ) : (
             <Shield className="w-6 h-6 text-zinc-100" />

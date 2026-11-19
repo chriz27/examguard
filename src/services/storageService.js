@@ -43,10 +43,13 @@ export function broadcastSync(action, payload = {}) {
     try {
       const attempts = JSON.parse(localStorage.getItem(STORAGE_KEYS.STUDENT_ATTEMPTS) || '[]');
       const attendance = JSON.parse(localStorage.getItem(STORAGE_KEYS.EXAM_ATTENDANCE) || '[]');
+      const institution = JSON.parse(localStorage.getItem(STORAGE_KEYS.INSTITUTION) || 'null');
+      const appModeConfig = JSON.parse(localStorage.getItem(STORAGE_KEYS.APP_MODE_CONFIG) || 'null');
+      const examSessions = JSON.parse(localStorage.getItem(STORAGE_KEYS.EXAM_SESSIONS) || 'null');
       fetch('/api/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, payload, attempts, attendance }),
+        body: JSON.stringify({ action, payload, attempts, attendance, institution, appModeConfig, examSessions }),
       }).catch(() => {});
     } catch {}
   }
@@ -87,7 +90,35 @@ function initLanSyncPoller() {
           lastProcessedServerTimestamp = data.lastUpdated;
 
           let storageModified = false;
-          // Sinkronisasi daftar attempts pengerjaan peserta
+
+          // 1. Sinkronisasi institusi (logo, nama instansi) jika dikirim oleh admin
+          if (data.institution && typeof data.institution === 'object') {
+            const currentInst = JSON.parse(localStorage.getItem(STORAGE_KEYS.INSTITUTION) || '{}');
+            if (JSON.stringify(currentInst) !== JSON.stringify(data.institution)) {
+              localStorage.setItem(STORAGE_KEYS.INSTITUTION, JSON.stringify(data.institution));
+              storageModified = true;
+            }
+          }
+
+          // 2. Sinkronisasi mode aplikasi (produksi vs simulasi)
+          if (data.appModeConfig && typeof data.appModeConfig === 'object') {
+            const currentMode = JSON.parse(localStorage.getItem(STORAGE_KEYS.APP_MODE_CONFIG) || '{}');
+            if (JSON.stringify(currentMode) !== JSON.stringify(data.appModeConfig)) {
+              localStorage.setItem(STORAGE_KEYS.APP_MODE_CONFIG, JSON.stringify(data.appModeConfig));
+              storageModified = true;
+            }
+          }
+
+          // 3. Sinkronisasi sesi ujian yang aktif
+          if (Array.isArray(data.examSessions) && data.examSessions.length > 0) {
+            const currentSessions = JSON.parse(localStorage.getItem(STORAGE_KEYS.EXAM_SESSIONS) || '[]');
+            if (JSON.stringify(currentSessions) !== JSON.stringify(data.examSessions)) {
+              localStorage.setItem(STORAGE_KEYS.EXAM_SESSIONS, JSON.stringify(data.examSessions));
+              storageModified = true;
+            }
+          }
+
+          // 4. Sinkronisasi daftar attempts pengerjaan peserta dengan smart conflict resolution
           if (Array.isArray(data.attempts) && data.attempts.length > 0) {
             const currentAttempts = JSON.parse(localStorage.getItem(STORAGE_KEYS.STUDENT_ATTEMPTS) || '[]');
             data.attempts.forEach((srvAtt) => {
@@ -95,14 +126,29 @@ function initLanSyncPoller() {
                 (loc) => loc.id === srvAtt.id || (loc.student_id === srvAtt.student_id && loc.exam_session_id === srvAtt.exam_session_id)
               );
               if (idx >= 0) {
-                // Bandingkan apakah ada pembaruan status, violations, atau waktu
+                const loc = currentAttempts[idx];
+                const isProctorAction = Boolean(srvAtt.is_proctor_action || srvAtt.is_reset_violations);
+                const mergedViolations = isProctorAction
+                  ? (srvAtt.violation_count ?? 0)
+                  : Math.max(Number(loc.violation_count || 0), Number(srvAtt.violation_count || 0));
+
+                let mergedStatus = srvAtt.status || loc.status;
+                if (loc.status === 'LOCKED' && !isProctorAction && mergedStatus !== 'COMPLETED' && mergedStatus !== 'RESET_BY_PROCTOR') {
+                  mergedStatus = 'LOCKED';
+                }
+
                 if (
-                  currentAttempts[idx].status !== srvAtt.status ||
-                  currentAttempts[idx].violation_count !== srvAtt.violation_count ||
-                  currentAttempts[idx].time_spent_seconds !== srvAtt.time_spent_seconds ||
-                  currentAttempts[idx].unlocked_at !== srvAtt.unlocked_at
+                  loc.status !== mergedStatus ||
+                  loc.violation_count !== mergedViolations ||
+                  loc.unlocked_at !== srvAtt.unlocked_at ||
+                  (srvAtt.time_spent_seconds && srvAtt.time_spent_seconds > (loc.time_spent_seconds || 0))
                 ) {
-                  currentAttempts[idx] = { ...currentAttempts[idx], ...srvAtt };
+                  currentAttempts[idx] = {
+                    ...loc,
+                    ...srvAtt,
+                    violation_count: mergedViolations,
+                    status: mergedStatus,
+                  };
                   storageModified = true;
                 }
               } else {
@@ -115,7 +161,7 @@ function initLanSyncPoller() {
             }
           }
 
-          // Proses event terbaru (misal: attempt_unlocked, attempt_updated, work_reset)
+          // 5. Proses event terbaru (misal: attempt_unlocked, attempt_updated, work_reset)
           if (Array.isArray(data.events) && data.events.length > 0) {
             const recentEvents = data.events.slice(-5);
             recentEvents.forEach((ev) => {
@@ -291,12 +337,14 @@ export const DEFAULT_BERITA_ACARA_CONFIG = {
  * Jika kosong / tidak diisi, otomatis fallback ke NISN siswa.
  */
 export function cleanNomorUjian(input, defaultNisn = '') {
-  if (!input || typeof input !== 'string' || !input.trim()) {
-    return String(defaultNisn || '').trim();
+  const strInput = String(input ?? '').trim();
+  const fallback = String(defaultNisn ?? '').trim();
+  if (!strInput) {
+    return fallback;
   }
   // Filter hanya alfanumerik dan simbol dasar (- _ . /)
-  const cleaned = input.trim().replace(/[^a-zA-Z0-9\-_./]/g, '');
-  return cleaned || String(defaultNisn || '').trim();
+  const cleaned = strInput.replace(/[^a-zA-Z0-9\-_./]/g, '');
+  return cleaned || fallback;
 }
 
 const DEFAULT_USERS = [
@@ -565,6 +613,14 @@ export const storageService = {
     }
     // Aktifkan sinkronisasi otomatis antar-perangkat LAN
     initLanSyncPoller();
+    if (typeof window !== 'undefined' && !window.__eg_sync_init_done) {
+      window.__eg_sync_init_done = true;
+      setTimeout(() => {
+        try {
+          broadcastSync('init_client', {});
+        } catch {}
+      }, 500);
+    }
   },
 
   // 1. INSTITUSI
@@ -641,6 +697,7 @@ export const storageService = {
       allowed_grades,
     };
     localStorage.setItem(STORAGE_KEYS.INSTITUTION, JSON.stringify(updated));
+    broadcastSync('institution_updated', { institution: updated });
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('examguard_storage_updated', { detail: updated }));
     }
@@ -815,6 +872,8 @@ export const storageService = {
     }
 
     const current = users[index];
+    const otherStudents = users.filter((u) => u.role === 'student' && u.id !== id);
+
     const oldEmail = (current.email || '').toLowerCase().trim();
     const newEmail = (data.email || '').toLowerCase().trim();
 
@@ -825,21 +884,58 @@ export const storageService = {
     const googleEmail = emailChanged ? null : (current.google_email || null);
     const googleLinkedAt = emailChanged ? null : (current.google_linked_at || null);
 
-    const nisn = String(data.nisn || current.nisn).trim();
+    const nisn = String(data.nisn !== undefined ? data.nisn : current.nisn).trim();
+    if (!nisn) {
+      return { success: false, message: 'NISN siswa wajib diisi.' };
+    }
 
-    // Validasi duplikasi NISN jika NISN diubah
-    if (nisn !== current.nisn) {
-      const duplicate = users.find((u) => u.id !== id && (u.nisn === nisn || u.username === nisn));
-      if (duplicate) {
-        return { success: false, message: `NISN ${nisn} sudah terdaftar untuk siswa lain.` };
+    // 1. Validasi duplikasi NISN (terhadap peserta lain)
+    const duplicateNisn = otherStudents.find(
+      (u) =>
+        (u.nisn && u.nisn.trim().toLowerCase() === nisn.toLowerCase()) ||
+        (u.username && u.username.trim().toLowerCase() === nisn.toLowerCase())
+    );
+    if (duplicateNisn) {
+      return {
+        success: false,
+        field: 'nisn',
+        message: `NISN "${nisn}" sudah terdaftar untuk siswa lain: "${duplicateNisn.nama}" (${duplicateNisn.kelas || 'Kelas -'}).`,
+      };
+    }
+
+    // 2. Validasi duplikasi Nomor Ujian (terhadap peserta lain)
+    const rawNoUjian = data.nomor_ujian !== undefined ? String(data.nomor_ujian).trim() : current.nomor_ujian;
+    const nomorUjian = cleanNomorUjian(rawNoUjian, nisn);
+    const duplicateNoUjian = otherStudents.find((u) => {
+      const uNoUjian = cleanNomorUjian(u.nomor_ujian, u.nisn);
+      return uNoUjian.toLowerCase() === nomorUjian.toLowerCase();
+    });
+    if (duplicateNoUjian) {
+      return {
+        success: false,
+        field: 'nomor_ujian',
+        message: `Nomor Ujian "${nomorUjian}" sudah terdaftar untuk siswa lain: "${duplicateNoUjian.nama}" (${duplicateNoUjian.kelas || 'Kelas -'}).`,
+      };
+    }
+
+    // 3. Validasi duplikasi NIS (jika diisi dan bukan '-')
+    const nis = String(data.nis !== undefined ? data.nis : current.nis || '').trim();
+    if (nis && nis !== '-') {
+      const duplicateNis = otherStudents.find((u) => {
+        const uNis = String(u.nis || '').trim();
+        return uNis && uNis !== '-' && uNis.toLowerCase() === nis.toLowerCase();
+      });
+      if (duplicateNis) {
+        return {
+          success: false,
+          field: 'nis',
+          message: `NIS "${nis}" sudah terdaftar untuk siswa lain: "${duplicateNis.nama}" (${duplicateNis.kelas || 'Kelas -'}).`,
+        };
       }
     }
 
     const isVerified = typeof data.is_verified === 'boolean' ? data.is_verified : current.is_verified;
     const isActive = isVerified ? (typeof data.is_active === 'boolean' ? data.is_active : current.is_active) : false;
-
-    const rawNoUjian = data.nomor_ujian !== undefined ? String(data.nomor_ujian).trim() : current.nomor_ujian;
-    const nomorUjian = cleanNomorUjian(rawNoUjian, nisn);
     const jenisKelamin = data.jenis_kelamin !== undefined ? (data.jenis_kelamin === 'P' ? 'P' : 'L') : (current.jenis_kelamin || 'L');
     const agama = data.agama !== undefined ? String(data.agama).trim() : (current.agama || 'Islam');
 
@@ -851,7 +947,7 @@ export const storageService = {
       agama: agama,
       nisn: nisn,
       username: nisn, // Sinkronisasi username dengan NISN
-      nis: data.nis !== undefined ? String(data.nis).trim() : current.nis,
+      nis: nis,
       kelas: (data.kelas || current.kelas).trim(),
       tingkat: data.tingkat !== undefined ? parseInt(data.tingkat, 10) : current.tingkat,
       ruang: data.ruang !== undefined ? String(data.ruang).trim() : (current.ruang || 'Ruang 01'),
@@ -865,6 +961,7 @@ export const storageService = {
     };
 
     localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+    broadcastSync('update_student', { studentId: id });
     return {
       success: true,
       emailChanged,
@@ -875,22 +972,60 @@ export const storageService = {
   // Tambah peserta manual (status SSO awal otomatis OFF)
   addStudent(data) {
     const users = this.getUsers();
+    const students = users.filter((u) => u.role === 'student');
     const nisn = String(data.nisn || '').trim();
     if (!nisn) {
       return { success: false, message: 'NISN siswa wajib diisi.' };
     }
 
-    const exists = users.find((u) => u.nisn === nisn || u.username === nisn);
-    if (exists) {
-      return { success: false, message: `Siswa dengan NISN ${nisn} sudah terdaftar.` };
+    // 1. Cek duplikasi NISN
+    const duplicateNisn = students.find(
+      (u) =>
+        (u.nisn && u.nisn.trim().toLowerCase() === nisn.toLowerCase()) ||
+        (u.username && u.username.trim().toLowerCase() === nisn.toLowerCase())
+    );
+    if (duplicateNisn) {
+      return {
+        success: false,
+        field: 'nisn',
+        message: `Siswa dengan NISN "${nisn}" sudah terdaftar atas nama "${duplicateNisn.nama}" (${duplicateNisn.kelas || 'Kelas -'}).`,
+      };
+    }
+
+    // 2. Cek duplikasi Nomor Ujian
+    const rawNoUjian = String(data.nomor_ujian || '').trim();
+    const nomorUjian = cleanNomorUjian(rawNoUjian, nisn);
+    const duplicateNoUjian = students.find((u) => {
+      const uNoUjian = cleanNomorUjian(u.nomor_ujian, u.nisn);
+      return uNoUjian.toLowerCase() === nomorUjian.toLowerCase();
+    });
+    if (duplicateNoUjian) {
+      return {
+        success: false,
+        field: 'nomor_ujian',
+        message: `Nomor Ujian "${nomorUjian}" sudah terdaftar atas nama "${duplicateNoUjian.nama}" (${duplicateNoUjian.kelas || 'Kelas -'}).`,
+      };
+    }
+
+    // 3. Cek duplikasi NIS (jika diisi dan bukan '-')
+    const rawNis = String(data.nis || '').trim();
+    if (rawNis && rawNis !== '-') {
+      const duplicateNis = students.find((u) => {
+        const uNis = String(u.nis || '').trim();
+        return uNis && uNis !== '-' && uNis.toLowerCase() === rawNis.toLowerCase();
+      });
+      if (duplicateNis) {
+        return {
+          success: false,
+          field: 'nis',
+          message: `NIS "${rawNis}" sudah terdaftar atas nama "${duplicateNis.nama}" (${duplicateNis.kelas || 'Kelas -'}).`,
+        };
+      }
     }
 
     const isVerified = typeof data.is_verified === 'boolean' ? data.is_verified : true;
     const isActive = isVerified ? (typeof data.is_active === 'boolean' ? data.is_active : true) : false;
 
-    // Nomor Ujian: jika tidak diisi, default menggunakan NISN. Hanya angka, huruf, dan simbol dasar (- _ . /)
-    const rawNoUjian = String(data.nomor_ujian || '').trim();
-    const nomorUjian = cleanNomorUjian(rawNoUjian, nisn);
     const jenisKelamin = data.jenis_kelamin === 'P' ? 'P' : 'L';
     const agama = String(data.agama || 'Islam').trim() || 'Islam';
 
@@ -903,7 +1038,7 @@ export const storageService = {
       jenis_kelamin: jenisKelamin,
       agama: agama,
       nisn: nisn,
-      nis: String(data.nis || '').trim(),
+      nis: rawNis,
       kelas: String(data.kelas || '-').trim(),
       tingkat: parseInt(data.tingkat, 10) || 0,
       ruang: String(data.ruang || 'Ruang 01').trim(),
@@ -921,6 +1056,7 @@ export const storageService = {
 
     users.push(newStudent);
     localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+    broadcastSync('add_student', { student: newStudent });
     return { success: true, user: newStudent };
   },
 
@@ -970,17 +1106,220 @@ export const storageService = {
     return target;
   },
 
+  /**
+   * Validasi Lengkap Data Import Peserta (Anti-Duplikasi No Ujian, NISN, dan NIS)
+   * Memeriksa duplikasi terhadap database sistem dan antar baris dalam file import itu sendiri.
+   */
+  validateImportStudents(studentsList) {
+    const existingStudents = this.getUsers().filter((u) => u.role === 'student');
+    const errors = [];
+    const validStudents = [];
+
+    // Map untuk mendeteksi duplikasi internal di dalam list import sendiri
+    const seenNisnInFile = new Map(); // nisn.toLowerCase() -> { rowNum, nama }
+    const seenNoUjianInFile = new Map(); // noUjian.toLowerCase() -> { rowNum, nama }
+    const seenNisInFile = new Map(); // nis.toLowerCase() -> { rowNum, nama }
+
+    studentsList.forEach((row, index) => {
+      const rowNum = row.rowNumber || index + 1;
+      const nama = String(row.nama || '').trim();
+      const nisn = String(row.nisn || '').trim();
+      const rawNoUjian = String(row.nomor_ujian || '').trim();
+      const nomorUjian = cleanNomorUjian(rawNoUjian, nisn);
+      const rawNis = String(row.nis || '').trim();
+
+      let rowHasError = false;
+
+      // 1. Validasi Keberadaan Nama & NISN
+      if (!nama) {
+        errors.push({
+          rowNumber: rowNum,
+          nama: '(Nama Kosong)',
+          field: 'nama',
+          fieldLabel: 'Nama Peserta',
+          value: '-',
+          conflictType: 'format',
+          conflictWith: '-',
+          description: 'Nama peserta wajib diisi.',
+        });
+        rowHasError = true;
+      }
+
+      if (!nisn) {
+        errors.push({
+          rowNumber: rowNum,
+          nama: nama || `Baris ${rowNum}`,
+          field: 'nisn',
+          fieldLabel: 'NISN',
+          value: '-',
+          conflictType: 'format',
+          conflictWith: '-',
+          description: 'NISN peserta wajib diisi.',
+        });
+        rowHasError = true;
+      }
+
+      if (!nisn) return; // Jika NISN kosong, jangan lanjut cek duplikasi
+
+      const nisnLower = nisn.toLowerCase();
+      const noUjianLower = nomorUjian.toLowerCase();
+      const nisLower = rawNis.toLowerCase();
+
+      // 2. Cek Duplikasi NISN
+      // A. Terhadap file import (internal)
+      if (seenNisnInFile.has(nisnLower)) {
+        const prev = seenNisnInFile.get(nisnLower);
+        errors.push({
+          rowNumber: rowNum,
+          nama,
+          field: 'nisn',
+          fieldLabel: 'NISN',
+          value: nisn,
+          conflictType: 'file',
+          conflictWith: `Baris ${prev.rowNum} (${prev.nama})`,
+          description: `NISN "${nisn}" duplikat dengan Baris ${prev.rowNum} (${prev.nama}) pada file import.`,
+        });
+        rowHasError = true;
+      } else {
+        seenNisnInFile.set(nisnLower, { rowNum, nama });
+      }
+
+      // B. Terhadap data siswa yang sudah ada di sistem
+      const existingWithNisn = existingStudents.find(
+        (u) =>
+          (u.nisn && u.nisn.trim().toLowerCase() === nisnLower) ||
+          (u.username && u.username.trim().toLowerCase() === nisnLower)
+      );
+      if (existingWithNisn) {
+        errors.push({
+          rowNumber: rowNum,
+          nama,
+          field: 'nisn',
+          fieldLabel: 'NISN',
+          value: nisn,
+          conflictType: 'system',
+          conflictWith: `Sistem: ${existingWithNisn.nama} (${existingWithNisn.kelas || 'Kelas -'})`,
+          description: `NISN "${nisn}" sudah terdaftar di sistem pada siswa "${existingWithNisn.nama}" (${existingWithNisn.kelas || 'Kelas -'}).`,
+        });
+        rowHasError = true;
+      }
+
+      // 3. Cek Duplikasi Nomor Ujian
+      if (nomorUjian) {
+        // A. Terhadap file import (internal)
+        if (seenNoUjianInFile.has(noUjianLower)) {
+          const prev = seenNoUjianInFile.get(noUjianLower);
+          errors.push({
+            rowNumber: rowNum,
+            nama,
+            field: 'nomor_ujian',
+            fieldLabel: 'Nomor Ujian',
+            value: nomorUjian,
+            conflictType: 'file',
+            conflictWith: `Baris ${prev.rowNum} (${prev.nama})`,
+            description: `Nomor Ujian "${nomorUjian}" duplikat dengan Baris ${prev.rowNum} (${prev.nama}) pada file import.`,
+          });
+          rowHasError = true;
+        } else {
+          seenNoUjianInFile.set(noUjianLower, { rowNum, nama });
+        }
+
+        // B. Terhadap data siswa yang sudah ada di sistem
+        const existingWithNoUjian = existingStudents.find((u) => {
+          const uNoUjian = cleanNomorUjian(u.nomor_ujian, u.nisn);
+          return uNoUjian.toLowerCase() === noUjianLower;
+        });
+        if (existingWithNoUjian) {
+          errors.push({
+            rowNumber: rowNum,
+            nama,
+            field: 'nomor_ujian',
+            fieldLabel: 'Nomor Ujian',
+            value: nomorUjian,
+            conflictType: 'system',
+            conflictWith: `Sistem: ${existingWithNoUjian.nama} (${existingWithNoUjian.kelas || 'Kelas -'})`,
+            description: `Nomor Ujian "${nomorUjian}" sudah terdaftar di sistem pada siswa "${existingWithNoUjian.nama}" (${existingWithNoUjian.kelas || 'Kelas -'}).`,
+          });
+          rowHasError = true;
+        }
+      }
+
+      // 4. Cek Duplikasi NIS (jika diisi dan bukan '-')
+      if (rawNis && rawNis !== '-') {
+        // A. Terhadap file import (internal)
+        if (seenNisInFile.has(nisLower)) {
+          const prev = seenNisInFile.get(nisLower);
+          errors.push({
+            rowNumber: rowNum,
+            nama,
+            field: 'nis',
+            fieldLabel: 'NIS',
+            value: rawNis,
+            conflictType: 'file',
+            conflictWith: `Baris ${prev.rowNum} (${prev.nama})`,
+            description: `NIS "${rawNis}" duplikat dengan Baris ${prev.rowNum} (${prev.nama}) pada file import.`,
+          });
+          rowHasError = true;
+        } else {
+          seenNisInFile.set(nisLower, { rowNum, nama });
+        }
+
+        // B. Terhadap data siswa yang sudah ada di sistem
+        const existingWithNis = existingStudents.find((u) => {
+          const uNis = String(u.nis || '').trim();
+          return uNis && uNis !== '-' && uNis.toLowerCase() === nisLower;
+        });
+        if (existingWithNis) {
+          errors.push({
+            rowNumber: rowNum,
+            nama,
+            field: 'nis',
+            fieldLabel: 'NIS',
+            value: rawNis,
+            conflictType: 'system',
+            conflictWith: `Sistem: ${existingWithNis.nama} (${existingWithNis.kelas || 'Kelas -'})`,
+            description: `NIS "${rawNis}" sudah terdaftar di sistem pada siswa "${existingWithNis.nama}" (${existingWithNis.kelas || 'Kelas -'}).`,
+          });
+          rowHasError = true;
+        }
+      }
+
+      if (!rowHasError) {
+        validStudents.push({
+          ...row,
+          nama,
+          nisn,
+          nomor_ujian: nomorUjian,
+          nis: rawNis,
+        });
+      }
+    });
+
+    return {
+      isValid: errors.length === 0,
+      errors,
+      validStudents,
+      totalParsed: studentsList.length,
+    };
+  },
+
   importStudents(studentsList) {
+    const validation = this.validateImportStudents(studentsList);
+    if (!validation.isValid) {
+      return {
+        success: false,
+        message: `Ditemukan ${validation.errors.length} duplikasi atau kesalahan data pada file import.`,
+        errors: validation.errors,
+        count: 0,
+      };
+    }
+
     const users = this.getUsers();
     let importedCount = 0;
 
-    studentsList.forEach((row) => {
+    validation.validStudents.forEach((row) => {
       const nisn = String(row.nisn || '').trim();
       if (!nisn) return;
-
-      const existingIndex = users.findIndex((u) => u.nisn === nisn || u.username === nisn);
-      const isVerified = existingIndex >= 0 ? users[existingIndex].is_verified : true;
-      const isActive = isVerified ? (existingIndex >= 0 ? users[existingIndex].is_active : true) : false;
 
       const rawNoUjian = String(row.nomor_ujian || '').trim();
       const nomorUjian = cleanNomorUjian(rawNoUjian, nisn);
@@ -988,40 +1327,43 @@ export const storageService = {
       const jenisKelamin = rawJk.startsWith('P') ? 'P' : 'L';
       const agama = String(row.agama || 'Islam').trim() || 'Islam';
 
-      const studentData = {
-        id: existingIndex >= 0 ? users[existingIndex].id : generateUUID(),
+      const newStudent = {
+        id: generateUUID(),
         username: nisn,
-        password: existingIndex >= 0 ? users[existingIndex].password : String(row.nis || nisn).trim(), // Default password adalah nomor NIS
+        password: String(row.nis || nisn).trim(), // Default password adalah nomor NIS (atau NISN jika NIS kosong)
         nama: row.nama || `Siswa ${nisn}`,
-        nomor_ujian: existingIndex >= 0 ? (row.nomor_ujian ? nomorUjian : users[existingIndex].nomor_ujian || nisn) : nomorUjian,
-        jenis_kelamin: existingIndex >= 0 ? (row.jenis_kelamin ? jenisKelamin : users[existingIndex].jenis_kelamin || 'L') : jenisKelamin,
-        agama: existingIndex >= 0 ? (row.agama ? agama : users[existingIndex].agama || 'Islam') : agama,
+        nomor_ujian: nomorUjian,
+        jenis_kelamin: jenisKelamin,
+        agama: agama,
         nisn: nisn,
         nis: String(row.nis || '').trim(),
         kelas: String(row.kelas || '-').trim(),
         tingkat: parseInt(row.tingkat, 10) || 0,
-        ruang: String(row.ruang || (existingIndex >= 0 ? users[existingIndex].ruang : 'Ruang 01') || 'Ruang 01').trim(),
+        ruang: String(row.ruang || 'Ruang 01').trim(),
         email: (row.email || `${nisn}@student.sch.id`).toLowerCase().trim(),
         role: 'student',
-        is_active: isActive,
-        is_verified: isVerified,
-        google_linked: existingIndex >= 0 ? Boolean(users[existingIndex].google_linked && users[existingIndex].google_id) : false,
-        google_id: existingIndex >= 0 ? users[existingIndex].google_id : null,
-        google_email: existingIndex >= 0 ? users[existingIndex].google_email : null,
-        google_linked_at: existingIndex >= 0 ? users[existingIndex].google_linked_at : null,
-        active_device_id: existingIndex >= 0 ? users[existingIndex].active_device_id : null,
+        is_active: true,
+        is_verified: true,
+        google_linked: false,
+        google_id: null,
+        google_email: null,
+        google_linked_at: null,
+        active_device_id: null,
       };
 
-      if (existingIndex >= 0) {
-        users[existingIndex] = { ...users[existingIndex], ...studentData };
-      } else {
-        users.push(studentData);
-      }
+      users.push(newStudent);
       importedCount++;
     });
 
     localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
-    return importedCount;
+    broadcastSync('import_students', { count: importedCount });
+    return {
+      success: true,
+      count: importedCount,
+      valueOf() {
+        return importedCount;
+      },
+    };
   },
 
   // Mengambil data kedua akun pengawas (Super Admin & Proktor)
@@ -1138,6 +1480,7 @@ export const storageService = {
       exams.push(examToSave);
     }
     localStorage.setItem(STORAGE_KEYS.EXAM_SESSIONS, JSON.stringify(exams));
+    broadcastSync('sessions_updated', { examSessions: exams });
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('examguard_storage_updated'));
     }
@@ -1151,6 +1494,7 @@ export const storageService = {
       target.is_archived = true;
       target.is_active = false; // Saat diarsipkan otomatis nonaktif di jadwal aktif siswa
       localStorage.setItem(STORAGE_KEYS.EXAM_SESSIONS, JSON.stringify(exams));
+      broadcastSync('sessions_updated', { examSessions: exams });
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('examguard_storage_updated'));
       }
@@ -1165,6 +1509,7 @@ export const storageService = {
       target.is_archived = false;
       target.is_active = true; // Otomatis aktif kembali di jadwal ujian
       localStorage.setItem(STORAGE_KEYS.EXAM_SESSIONS, JSON.stringify(exams));
+      broadcastSync('sessions_updated', { examSessions: exams });
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('examguard_storage_updated'));
       }
@@ -1175,6 +1520,7 @@ export const storageService = {
   deleteExamSession(id) {
     const exams = this.getExamSessions().filter((e) => e.id !== id);
     localStorage.setItem(STORAGE_KEYS.EXAM_SESSIONS, JSON.stringify(exams));
+    broadcastSync('sessions_updated', { examSessions: exams });
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('examguard_storage_updated'));
     }
@@ -1186,6 +1532,7 @@ export const storageService = {
     if (target) {
       target.is_active = !target.is_active;
       localStorage.setItem(STORAGE_KEYS.EXAM_SESSIONS, JSON.stringify(exams));
+      broadcastSync('sessions_updated', { examSessions: exams });
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('examguard_storage_updated'));
       }
@@ -1889,6 +2236,7 @@ export const storageService = {
       };
 
       localStorage.setItem(STORAGE_KEYS.APP_MODE_CONFIG, JSON.stringify(updated));
+      broadcastSync('app_mode_updated', { appModeConfig: updated });
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('examguard_storage_updated', { detail: updated }));
       }
