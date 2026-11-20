@@ -3841,7 +3841,7 @@ const renderVerificationPopup = () => {
                                                                       </div>
 
                                                                       {/* Tampilkan Token Selesai jika sesi ujian memiliki token selesai */}
-                                                                      {Boolean(activeExam?.finish_token) && remainingSeconds <= (institution?.finish_token_lead_minutes || 10) * 60 && (
+                                                                      {Boolean(activeExam?.finish_token) && (
                                                                         <div className="p-3 bg-amber-500/10 border border-amber-300 rounded-xl text-xs text-amber-900 space-y-1.5">
                                                                           <div className="font-bold flex items-center gap-1.5 text-amber-900">
                                                                             <KeyRound className="w-4 h-4 text-amber-600" />

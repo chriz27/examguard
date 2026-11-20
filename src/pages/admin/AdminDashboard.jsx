@@ -415,6 +415,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
 
   // State Nilai Token Ujian (Standar 6 Digit Huruf Besar)
   const [examTokenValue, setExamTokenValue] = useState('');
+  const [finishTokenValue, setFinishTokenValue] = useState('');
 
   // State Token Copied ID untuk Feedback Visual 1-Klik Copy
   const [copiedTokenId, setCopiedTokenId] = useState(null);
@@ -1870,21 +1871,23 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     showNotification('File QR Code PNG berhasil diunduh.');
   };
 
-  // Helper Buka Modal Tambah Soal (Token Standar 6 Digit Otomatis & Default Mulai Hari Ini 07:30 Selesai Sesuai Durasi)
+  // Helper Buka Modal Tambah Soal (Token Mulai & Selesai 6 Digit Otomatis & Default Mulai Hari Ini 07:30 Selesai Sesuai Durasi)
   const handleOpenAddExamModal = () => {
     const def = getDefaultExamTimes(90);
     setEditingExam(null);
     setExamTokenValue(generateRandomToken6());
+    setFinishTokenValue(generateRandomToken6());
     setExamDuration(90);
     setExamStartTime(def.startTime);
     setExamEndTime(def.endTime);
     setShowExamModal(true);
   };
 
-  // Helper Buka Modal Edit Soal (Normalisasi Token 6 Digit & Pertahankan/Sinkron Jam)
+  // Helper Buka Modal Edit Soal (Normalisasi Token Mulai & Selesai 6 Digit & Pertahankan/Sinkron Jam)
   const handleOpenEditExamModal = (exam) => {
     setEditingExam(exam);
     setExamTokenValue(formatExamToken(exam.exam_token));
+    setFinishTokenValue(formatExamToken(exam.finish_token || generateRandomToken6()));
     const dur = parseInt(exam.duration_minutes, 10) || 90;
     setExamDuration(dur);
     const def = getDefaultExamTimes(dur);
@@ -1895,12 +1898,13 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     setShowExamModal(true);
   };
 
-  // Handler Simpan / Edit Ujian (Standar Token 6 Digit Huruf Besar)
+  // Handler Simpan / Edit Ujian (Standar Token Mulai & Selesai 6 Digit Huruf Besar)
   const handleSaveExamSubmit = (e) => {
     e.preventDefault();
     const form = e.target;
     const isArchived = Boolean(form.is_archived?.checked);
     const token = formatExamToken(examTokenValue || form.exam_token?.value);
+    const finishToken = formatExamToken(finishTokenValue || form.finish_token?.value);
 
     const finalDuration = parseInt(examDuration || form.duration_minutes?.value, 10) || 90;
     const finalStartTime = examStartTime || form.start_time?.value || getDefaultExamTimes(finalDuration).startTime;
@@ -1918,6 +1922,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
       gform_base_url: convertGoogleFormUrl(form.gform_base_url.value.trim()),
       respon_base_url: form.respon_base_url.value.trim(),
       exam_token: token,
+      finish_token: finishToken,
       start_time: finalStartTime,
       end_time: finalEndTime,
       duration_minutes: finalDuration,
@@ -1930,7 +1935,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     showNotification(
       isArchived
         ? 'Soal berhasil disimpan ke Bank Soal (Arsip).'
-        : `Sesi ujian GForm berhasil disimpan dengan Token: ${token}`
+        : `Sesi ujian GForm berhasil disimpan dengan Token Mulai: ${token} & Token Selesai: ${finishToken}`
     );
   };
 
@@ -3793,7 +3798,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                       <tr className="bg-zinc-50/70 border-b border-zinc-200/80 text-zinc-500 font-medium">
                         <th className="py-3.5 px-4">Mata Pelajaran & Judul Ujian</th>
                         <th className="py-3.5 px-4">Kelompok Sesi</th>
-                        <th className="py-3.5 px-4">Token Soal</th>
+                        <th className="py-3.5 px-4">Token Mulai & Selesai</th>
                         <th className="py-3.5 px-4">Durasi</th>
                         <th className="py-3.5 px-4">{examSubTab === 'bank' ? 'Asal Jadwal' : 'Jadwal Sesi'}</th>
                         <th className="py-3.5 px-4">Status</th>
@@ -3844,24 +3849,51 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                               </span>
                             </td>
 
-                            {/* Kolom 3: Token Soal (Klik untuk Salin ke Clipboard) */}
-                            <td className="py-3.5 px-4 font-mono font-semibold text-zinc-900">
-                              <button
-                                type="button"
-                                onClick={() => handleCopyToken(exam.exam_token, exam.id)}
-                                title="Klik untuk menyalin token ke clipboard"
-                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-mono font-bold tracking-wider transition-all cursor-pointer group active:scale-95 ${copiedTokenId === exam.id
-                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-300 ring-2 ring-emerald-200'
-                                    : 'bg-zinc-100 hover:bg-zinc-200/80 text-zinc-800 border-zinc-200/80 hover:border-zinc-300 shadow-2xs'
-                                  }`}
-                              >
-                                <span>{exam.exam_token}</span>
-                                {copiedTokenId === exam.id ? (
-                                  <Check className="w-3 h-3 text-emerald-600 shrink-0" />
-                                ) : (
-                                  <Copy className="w-3 h-3 text-zinc-400 group-hover:text-zinc-700 shrink-0 transition-colors" />
-                                )}
-                              </button>
+                            {/* Kolom 3: Token Mulai & Token Selesai */}
+                            <td className="py-3.5 px-4 font-mono font-semibold text-zinc-900 whitespace-nowrap">
+                              <div className="flex flex-col gap-1.5">
+                                {/* Token Mulai */}
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[10px] text-zinc-400 font-sans font-medium w-12">Mulai:</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCopyToken(exam.exam_token, `start-${exam.id}`)}
+                                    title="Klik untuk menyalin token mulai ke clipboard"
+                                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-xs font-mono font-bold tracking-wider transition-all cursor-pointer group active:scale-95 ${copiedTokenId === `start-${exam.id}`
+                                        ? 'bg-emerald-50 text-emerald-700 border-emerald-300 ring-2 ring-emerald-200'
+                                        : 'bg-zinc-100 hover:bg-zinc-200/80 text-zinc-800 border-zinc-200/80 shadow-2xs'
+                                      }`}
+                                  >
+                                    <span>{exam.exam_token || '-'}</span>
+                                    {copiedTokenId === `start-${exam.id}` ? (
+                                      <Check className="w-3 h-3 text-emerald-600 shrink-0" />
+                                    ) : (
+                                      <Copy className="w-3 h-3 text-zinc-400 group-hover:text-zinc-700 shrink-0 transition-colors" />
+                                    )}
+                                  </button>
+                                </div>
+
+                                {/* Token Selesai */}
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[10px] text-amber-600 font-sans font-medium w-12">Selesai:</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCopyToken(exam.finish_token, `fin-${exam.id}`)}
+                                    title="Klik untuk menyalin token selesai ke clipboard"
+                                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-xs font-mono font-bold tracking-wider transition-all cursor-pointer group active:scale-95 ${copiedTokenId === `fin-${exam.id}`
+                                        ? 'bg-emerald-50 text-emerald-700 border-emerald-300 ring-2 ring-emerald-200'
+                                        : 'bg-amber-50/80 hover:bg-amber-100 text-amber-800 border-amber-200/80 shadow-2xs'
+                                      }`}
+                                  >
+                                    <span>{exam.finish_token || '-'}</span>
+                                    {copiedTokenId === `fin-${exam.id}` ? (
+                                      <Check className="w-3 h-3 text-emerald-600 shrink-0" />
+                                    ) : (
+                                      <Copy className="w-3 h-3 text-amber-500 group-hover:text-amber-800 shrink-0 transition-colors" />
+                                    )}
+                                  </button>
+                                </div>
+                              </div>
                             </td>
 
                             <td className="py-3.5 px-4 text-zinc-600 font-mono-num">
@@ -4360,7 +4392,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                                     <td className="py-3 px-3">
                                       <div className="font-medium text-zinc-800">{exam.title}</div>
                                       <div className="text-[10px] text-zinc-400 font-mono mt-0.5">
-                                        Token: <span className="font-bold text-zinc-600">{exam.exam_token}</span> &bull; {exam.duration_minutes} Menit
+                                        Mulai: <span className="font-bold text-zinc-700">{exam.exam_token}</span> &bull; Selesai: <span className="font-bold text-amber-600">{exam.finish_token || '-'}</span> &bull; {exam.duration_minutes} Menit
                                       </div>
                                     </td>
 
@@ -10212,11 +10244,14 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                 />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {/* Blok Token Mulai & Token Selesai Ujian */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 bg-zinc-50 border border-zinc-200/90 rounded-xl">
+                {/* 1. Token Mulai (Masuk) */}
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <label className="font-medium text-zinc-700">
-                      Token Soal (6 Digit) <span className="text-rose-500">*</span>
+                    <label className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
+                      <KeyRound className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Token Mulai (Masuk)</span> <span className="text-rose-500">*</span>
                     </label>
                     <button
                       type="button"
@@ -10239,12 +10274,49 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                         e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6)
                       )
                     }
-                    placeholder="PASMTK"
-                    className="w-full px-3 py-2 border border-zinc-300 rounded-lg font-mono font-bold tracking-widest uppercase focus:ring-2 focus:ring-zinc-900 focus:outline-none text-zinc-900"
+                    placeholder="MULAI1"
+                    className="w-full px-3 py-2 bg-white border border-zinc-300 rounded-lg font-mono font-bold tracking-widest uppercase focus:ring-2 focus:ring-blue-600 focus:outline-none text-zinc-900 text-sm"
                   />
-                  <p className="text-[10px] text-zinc-400 mt-1">Standar 6 karakter huruf kapital/angka</p>
+                  <p className="text-[10px] text-zinc-500 mt-1">Token untuk membuka & memulai pengerjaan</p>
                 </div>
 
+                {/* 2. Token Selesai (Submit) */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
+                      <KeyRound className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Token Selesai (Submit)</span> <span className="text-rose-500">*</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setFinishTokenValue(generateRandomToken6())}
+                      className="text-[10px] text-amber-600 hover:text-amber-800 font-medium hover:underline inline-flex items-center gap-0.5 cursor-pointer"
+                      title="Generate 6 Karakter Huruf Besar Acak"
+                    >
+                      <RefreshCw className="w-2.5 h-2.5" />
+                      <span>Acak</span>
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    name="finish_token"
+                    required
+                    maxLength={6}
+                    value={finishTokenValue}
+                    onChange={(e) =>
+                      setFinishTokenValue(
+                        e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6)
+                      )
+                    }
+                    placeholder="SLSAI1"
+                    className="w-full px-3 py-2 bg-white border border-zinc-300 rounded-lg font-mono font-bold tracking-widest uppercase focus:ring-2 focus:ring-amber-500 focus:outline-none text-zinc-900 text-sm"
+                  />
+                  <p className="text-[10px] text-zinc-500 mt-1">Token konfirmasi submit / pengiriman jawaban</p>
+                </div>
+              </div>
+
+              {/* Blok Waktu Mulai & Waktu Selesai Sesi */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <label className="block font-medium text-zinc-700">Mulai Sesi</label>
