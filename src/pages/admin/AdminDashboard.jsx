@@ -9580,44 +9580,6 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                       </button>
                     </div>
 
-                    {/* Item 6: Block Clipboard */}
-                    <div className="p-4 rounded-xl border border-zinc-200/90 bg-zinc-50/50 hover:bg-zinc-50 transition-colors flex items-start justify-between gap-3 shadow-2xs">
-                      <div className="flex items-start gap-3 min-w-0">
-                        <div className="p-2 rounded-lg bg-indigo-100/70 text-indigo-700 shrink-0 mt-0.5">
-                          <ClipboardCheck className="w-4 h-4" />
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="text-xs font-semibold text-zinc-900">
-                              6. Block Clipboard (Sanitizer)
-                            </span>
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di HP">
-                              <Smartphone className="w-2.5 h-2.5" /> HP
-                            </span>
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di Laptop">
-                              <Laptop className="w-2.5 h-2.5" /> Laptop
-                            </span>
-                          </div>
-                          <p className="text-[11px] text-zinc-500 mt-1 leading-relaxed">
-                            Membersihkan papan klip dari teks bocoran jawaban dan memblokir shortcut tombol salin-tempel (Ctrl+C/V).
-                          </p>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-checked={Boolean(institution.browser_permissions?.block_clipboard)}
-                        onClick={() => handleToggleBrowserPermission('block_clipboard', 'Block Clipboard')}
-                        className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors duration-200 ease-in-out cursor-pointer shadow-2xs mt-1 ${institution.browser_permissions?.block_clipboard ? 'bg-emerald-500' : 'bg-zinc-300'
-                          }`}
-                      >
-                        <span
-                          className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-xs transition duration-200 ease-in-out ${institution.browser_permissions?.block_clipboard ? 'translate-x-4' : 'translate-x-1'
-                            }`}
-                        />
-                      </button>
-                    </div>
-
                     {/* Item 7: Sensor Kamera & Mikrofon */}
                     <div className="p-4 rounded-xl border border-zinc-200/90 bg-zinc-50/50 hover:bg-zinc-50 transition-colors flex items-start justify-between gap-3 shadow-2xs">
                       <div className="flex items-start gap-3 min-w-0">
