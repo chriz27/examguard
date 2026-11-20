@@ -1373,8 +1373,11 @@ const handleConfirmStartExam = async () => {
 
   // Dapatkan atau buat attempt
   const existingAttempt = storageService.getAttempt(currentUser.id, selectedExam.id);
-  const initialTimeSpent = existingAttempt ? existingAttempt.time_spent_seconds || 0 : 0;
+  const isResetAttempt = existingAttempt?.status === 'RESET_BY_PROCTOR';
+  // Jika attempt sebelumnya direset pengawas, jatah waktu mulai dari 0 dan waktu mulai diperbarui
+  const initialTimeSpent = (existingAttempt && !isResetAttempt) ? (existingAttempt.time_spent_seconds || 0) : 0;
   const remaining = Math.max(0, selectedExam.duration_minutes * 60 - initialTimeSpent);
+  const freshStartTime = (!existingAttempt || isResetAttempt || !existingAttempt.started_at) ? new Date().toISOString() : existingAttempt.started_at;
 
   const updatedAttempt = storageService.saveAttempt({
     id: existingAttempt?.id,
@@ -1385,10 +1388,11 @@ const handleConfirmStartExam = async () => {
     student_kelas: currentUser.kelas,
     student_tingkat: currentUser.tingkat || selectedExam.grade_level || 0,
     exam_title: selectedExam.title,
-    status: existingAttempt?.status === 'LOCKED' ? 'LOCKED' : 'IN_PROGRESS',
-    violation_count: existingAttempt ? existingAttempt.violation_count : 0,
-    last_violation_reason: existingAttempt?.last_violation_reason || '',
+    status: (existingAttempt?.status === 'LOCKED') ? 'LOCKED' : 'IN_PROGRESS',
+    violation_count: (existingAttempt && !isResetAttempt) ? (existingAttempt.violation_count || 0) : 0,
+    last_violation_reason: (existingAttempt && !isResetAttempt) ? (existingAttempt.last_violation_reason || '') : '',
     time_spent_seconds: initialTimeSpent,
+    started_at: freshStartTime,
   });
 
   setActiveExam(selectedExam);
@@ -1403,7 +1407,7 @@ const handleConfirmStartExam = async () => {
   setProctorPinError('');
   examEnterTimestampRef.current = Date.now();
   setCurrentStage('exam');
-  // Catatan: Sesuai aturan presensi, siswa yang baru mulai/sedang mengerjakan status kehadirannya masih "-" (belum diset HADIR hingga selesai ujian).
+  // Catatan: Sesuai aturan presensi, peserta yang baru mulai/sedang mengerjakan status kehadirannya masih "-" (belum diset HADIR hingga selesai ujian).
 };
 
 // 5b. Sensor Koneksi Ping Google Real-Time (Latency ke Server Google dalam ms)
@@ -1627,7 +1631,7 @@ useEffect(() => {
 
     // Jeda toleransi 300ms untuk memastikan apakah fokus sebenarnya berpindah ke Google Form iframe
     setTimeout(() => {
-      // Jika activeElement adalah iframe (Google Form), siswa sedang berinteraksi dengan soal ujian, BUKAN pelanggaran!
+      // Jika activeElement adalah iframe (Google Form), peserta sedang berinteraksi dengan soal ujian, BUKAN pelanggaran!
       if (document.activeElement && document.activeElement.tagName === 'IFRAME') {
         return;
       }
@@ -1786,7 +1790,7 @@ const handleFinishExam = (isAutoTimeOut = false) => {
       activeExam.id,
       currentUser.id,
       { status: 'HADIR' },
-      'Sistem Siswa'
+      'Sistem Peserta'
     );
   } catch { }
 

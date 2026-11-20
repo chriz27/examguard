@@ -193,6 +193,33 @@ const INDONESIAN_MONTHS = [
   'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
 ];
 
+// Helper Format Jam & Tanggal Live Lengkap (Pemantauan Langsung Pengawas)
+function formatIndonesianLiveDateTime(d = new Date()) {
+  const dateObj = d instanceof Date && !isNaN(d.getTime()) ? d : new Date();
+  const dayName = INDONESIAN_DAYS[dateObj.getDay()] || 'Hari';
+  const dateNum = dateObj.getDate();
+  const monthName = INDONESIAN_MONTHS[dateObj.getMonth()] || '';
+  const yearNum = dateObj.getFullYear();
+  const h = String(dateObj.getHours()).padStart(2, '0');
+  const m = String(dateObj.getMinutes()).padStart(2, '0');
+  const s = String(dateObj.getSeconds()).padStart(2, '0');
+  return {
+    dayDate: `${dayName}, ${dateNum} ${monthName} ${yearNum}`,
+    clock: `${h}:${m}:${s} WIB`,
+  };
+}
+
+// Helper Format Hitung Mundur Rilis Token Selesai
+function formatCountdownSeconds(totalSec) {
+  if (totalSec <= 0) return '0s';
+  const hours = Math.floor(totalSec / 3600);
+  const minutes = Math.floor((totalSec % 3600) / 60);
+  const seconds = totalSec % 60;
+  if (hours > 0) return `${hours}j ${minutes}m ${seconds}s`;
+  if (minutes > 0) return `${minutes}m ${seconds}s`;
+  return `${seconds}s`;
+}
+
 function formatIndonesianDateText(dateObj = new Date()) {
   const d = dateObj instanceof Date ? dateObj : new Date(dateObj);
   const dayName = INDONESIAN_DAYS[d.getDay()] || 'Hari';
@@ -422,6 +449,16 @@ export default function AdminDashboard({ currentUser, onLogout }) {
   const [attempts, setAttempts] = useState(storageService.getAttempts());
   const [attendance, setAttendance] = useState(() => storageService.getAttendance());
   const [isRefreshingProctor, setIsRefreshingProctor] = useState(false);
+
+  // State Jam & Tanggal Live Real-time (Pemantauan Pengawas)
+  const [currentLiveTime, setCurrentLiveTime] = useState(() => new Date());
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentLiveTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // State Intip Token Selesai (Klik Tahan untuk Mengintip Token Asli)
+  const [isHoldingFinishToken, setIsHoldingFinishToken] = useState(false);
   const [gmapsInput, setGmapsInput] = useState(
     () => institution?.gmaps_url || (institution?.center_lat ? `https://maps.google.com/?q=${institution.center_lat},${institution.center_lng}` : '')
   );
@@ -677,7 +714,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     };
   });
 
-  // Modal Tambah Siswa Manual
+  // Modal Tambah Peserta Manual
   const [showAddStudentModal, setShowAddStudentModal] = useState(false);
   const [addStudentError, setAddStudentError] = useState('');
   const [newStudentForm, setNewStudentForm] = useState({
@@ -691,7 +728,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     is_verified: true,
   });
 
-  // Modal Edit Siswa
+  // Modal Edit Peserta
   const [showEditStudentModal, setShowEditStudentModal] = useState(false);
   const [editStudentError, setEditStudentError] = useState('');
   const [editingStudent, setEditingStudent] = useState(null);
@@ -703,7 +740,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
   const cleanAddNoUjian = cleanNomorUjian(newStudentForm?.nomor_ujian, trimmedAddNisn);
   const trimmedAddNis = String(newStudentForm?.nis || '').trim();
 
-  // 1. Duplikasi NISN (Tambah Siswa)
+  // 1. Duplikasi NISN (Tambah Peserta)
   const duplicateAddNisn = trimmedAddNisn
     ? users.find(
         (u) =>
@@ -713,7 +750,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
       )
     : null;
 
-  // 2. Duplikasi Nomor Ujian (Tambah Siswa)
+  // 2. Duplikasi Nomor Ujian (Tambah Peserta)
   const duplicateAddNoUjian = cleanAddNoUjian
     ? users.find(
         (u) =>
@@ -722,7 +759,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
       )
     : null;
 
-  // 3. Duplikasi NIS (Tambah Siswa - jika diisi)
+  // 3. Duplikasi NIS (Tambah Peserta - jika diisi)
   const duplicateAddNis = (trimmedAddNis && trimmedAddNis !== '-')
     ? users.find(
         (u) =>
@@ -743,7 +780,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
   const cleanEditNoUjian = cleanNomorUjian(editingStudent?.nomor_ujian, trimmedEditNisn);
   const trimmedEditNis = String(editingStudent?.nis || '').trim();
 
-  // 1. Duplikasi NISN (Edit Siswa)
+  // 1. Duplikasi NISN (Edit Peserta)
   const duplicateEditNisn = trimmedEditNisn && editingStudent?.id
     ? users.find(
         (u) =>
@@ -754,7 +791,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
       )
     : null;
 
-  // 2. Duplikasi Nomor Ujian (Edit Siswa)
+  // 2. Duplikasi Nomor Ujian (Edit Peserta)
   const duplicateEditNoUjian = cleanEditNoUjian && editingStudent?.id
     ? users.find(
         (u) =>
@@ -764,7 +801,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
       )
     : null;
 
-  // 3. Duplikasi NIS (Edit Siswa - jika diisi)
+  // 3. Duplikasi NIS (Edit Peserta - jika diisi)
   const duplicateEditNis = (trimmedEditNis && trimmedEditNis !== '-' && editingStudent?.id)
     ? users.find(
         (u) =>
@@ -797,7 +834,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
 
   
   // ========================================================
-  // STATE PRESENSI UJIAN & REKAP KEHADIRAN SISWA
+  // STATE PRESENSI UJIAN & REKAP KEHADIRAN PESERTA
   // ========================================================
   const [selectedAttendanceExamId, setSelectedAttendanceExamId] = useState(() => {
     const ex = storageService.getExamSessions();
@@ -840,7 +877,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
       return copy;
     });
 
-    showNotification('Status presensi siswa berhasil disimpan.');
+    showNotification('Status presensi peserta berhasil disimpan.');
   };
 
   const handleResetAttendance = (studentId) => {
@@ -870,7 +907,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     return exams.find((e) => e.id === selectedResetExamId) || exams[0] || null;
   }, [exams, selectedResetExamId]);
 
-  // Daftar siswa yang memenuhi syarat untuk mapel terpilih berserta status pengerjaannya
+  // Daftar peserta yang memenuhi syarat untuk mapel terpilih berserta status pengerjaannya
   const resetExamStudents = React.useMemo(() => {
     if (!currentResetExam) return [];
     const grade = currentResetExam.grade_level;
@@ -920,7 +957,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     });
   }, [currentResetExam, users, attempts]);
 
-  // Filter siswa per mapel berdasarkan status & kata kunci pencarian
+  // Filter peserta per mapel berdasarkan status & kata kunci pencarian
   const filteredResetExamStudents = React.useMemo(() => {
     return resetExamStudents.filter((item) => {
       if (resetStatusFilter !== 'ALL' && item.status !== resetStatusFilter) {
@@ -1102,7 +1139,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     setSystemErrorLogs(storageService.getSystemErrorLogs());
   };
 
-  // Refresh hanya data aktivitas dinamis (siswa, ujian, attempt) tanpa menimpa formulir instansi yang sedang diedit
+  // Refresh hanya data aktivitas dinamis (peserta, ujian, attempt) tanpa menimpa formulir instansi yang sedang diedit
   const refreshMonitoringData = () => {
     setUsers(storageService.getUsers());
     setExams(storageService.getExamSessions());
@@ -1201,7 +1238,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
           <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-900 space-y-1">
             <p className="font-semibold">Peringatan Penting:</p>
             <p>
-              Seluruh data instansi, daftar sesi soal Google Form, dan basis data siswa saat ini akan{' '}
+              Seluruh data instansi, daftar sesi soal Google Form, dan basis data peserta saat ini akan{' '}
               <strong>ditimpa dan digantikan</strong> sepenuhnya dengan data dari berkas cadangan ini.
             </p>
           </div>
@@ -1251,7 +1288,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
       } else if (event === 'app_mode_updated') {
         setAppModeConfig(storageService.getAppModeConfig());
       } else {
-        // Pembaruan aktivitas pengerjaan siswa & ujian (tidak menimpa formulir instansi)
+        // Pembaruan aktivitas pengerjaan peserta & ujian (tidak menimpa formulir instansi)
         refreshMonitoringData();
       }
     };
@@ -1269,7 +1306,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     // 3. Storage event native browser (hanya monitoring data)
     window.addEventListener('storage', handleStorageChange);
 
-    // 4. Polling interval 2 detik HANYA untuk pemantauan live data aktivitas siswa (refreshMonitoringData)
+    // 4. Polling interval 2 detik HANYA untuk pemantauan live data aktivitas peserta (refreshMonitoringData)
     // Tidak lagi memanggil refreshData() agar formulir konfigurasi yang sedang diketik tidak tereset!
     const interval = setInterval(refreshMonitoringData, 2000);
 
@@ -1390,7 +1427,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     showNotification('Konfigurasi instansi dan lokasi GPS berhasil disimpan.');
   };
 
-  // Handler Switch On/Off Ceklis Izin Browser Siswa (Pre-flight Permissions)
+  // Handler Switch On/Off Ceklis Izin Browser Peserta (Pre-flight Permissions)
   const handleToggleBrowserPermission = (permKey, permLabel) => {
     const currentPerms = institution.browser_permissions || {};
     const updatedVal = !currentPerms[permKey];
@@ -1491,7 +1528,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
             Apakah Anda yakin ingin <strong>mengosongkan settingan dan menonaktifkan Google OAuth 2.0</strong>?
           </p>
           <p className="text-[11px] text-zinc-500 bg-amber-50 border border-amber-200 p-2.5 rounded-xl text-amber-900">
-            Kredensial Client ID & Client Secret akan dikosongkan. Status OAuth otomatis beralih ke <strong>OFF</strong> dan tombol Google SSO disembunyikan di halaman login siswa.
+            Kredensial Client ID & Client Secret akan dikosongkan. Status OAuth otomatis beralih ke <strong>OFF</strong> dan tombol Google SSO disembunyikan di halaman login peserta.
           </p>
         </div>
       ),
@@ -2192,9 +2229,62 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     });
   };
 
-  // Aksi Pengawas 5: Ubah Presensi Cepat Mapel Ini
-  const handleSetAttendanceQuick = (studentId, status, studentName) => {
+  // Aksi Pengawas 1b: Logout Paksa Seluruh Peserta di Tingkat Ini (Header Tombol Logout)
+  const handleProctorBulkLogoutGrade = (targetGrade, targetStudents = []) => {
+    const gradeLabel = targetGrade ? getGradeLabel(targetGrade) : 'Tingkat Ini';
+    const students = targetStudents && targetStudents.length > 0
+      ? targetStudents
+      : (users || []).filter((u) => u.role === 'student' && (!targetGrade || Number(u.tingkat) === Number(targetGrade)));
+
+    if (students.length === 0) {
+      showNotification(`Tidak ada data peserta di ${gradeLabel}.`, 'warning');
+      return;
+    }
+
+    const activeLoginCount = students.filter((s) => Boolean(s.active_device_id)).length;
+
+    openConfirm({
+      title: `Logout Paksa Seluruh Peserta ${gradeLabel}?`,
+      message: (
+        <div className="space-y-2">
+          <p>
+            Apakah Anda yakin ingin melakukan <strong>logout paksa</strong> untuk seluruh peserta{' '}
+            <strong>{gradeLabel} ({students.length} peserta)</strong>?
+          </p>
+          <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 space-y-1.5">
+            <p className="font-semibold flex items-center gap-1.5 text-amber-800">
+              <Smartphone className="w-4 h-4 text-amber-600" />
+              <span>Reset & Pelepasan Kunci Perangkat</span>
+            </p>
+            <p>
+              Seluruh peserta pada tingkat ini (termasuk <strong>{activeLoginCount} peserta yang sedang online/login</strong>) akan dikeluarkan dari aplikasi ujian dan kunci perangkatnya akan direset sehingga mereka dapat login kembali dari perangkat lain jika diperlukan.
+            </p>
+          </div>
+        </div>
+      ),
+      confirmText: `Ya, Logout ${students.length} Peserta`,
+      variant: 'warning',
+      icon: LogOut,
+      onConfirm: () => {
+        const studentIds = students.map((s) => s.id);
+        const count = storageService.proctorResetBulkStudentDevices(studentIds);
+        refreshMonitoringData();
+        showNotification(`Berhasil melakukan logout paksa & reset perangkat untuk ${count} peserta di ${gradeLabel}.`, 'success');
+      },
+    });
+  };
+
+  // Aksi Pengawas 5: Ubah Presensi Cepat Mapel Ini (Klik 2x / Klik status aktif untuk mengosongkan)
+  const handleSetAttendanceQuick = (studentId, status, studentName, isCurrentlySelected = false) => {
     if (!currentProctorExam) return;
+    if (isCurrentlySelected) {
+      // Jika status yang diklik sudah aktif, kosongkan isian presensi
+      storageService.removeExamAttendance(currentProctorExam.id, studentId);
+      setAttendance([...storageService.getAttendance()]);
+      showNotification(`Presensi ${studentName} dikosongkan (tidak aktif).`, 'info');
+      return;
+    }
+    // Set status baru
     storageService.saveExamAttendance(currentProctorExam.id, studentId, {
       status,
       updated_by: currentUser?.nama || 'Proktor',
@@ -2667,7 +2757,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     }
 
     if (duplicateAddNisn) {
-      const msg = `Siswa dengan NISN "${trimmedAddNisn}" sudah terdaftar atas nama "${duplicateAddNisn.nama}" (${duplicateAddNisn.kelas || 'Kelas -'}). Silakan gunakan NISN lain yang unik.`;
+      const msg = `Peserta dengan NISN "${trimmedAddNisn}" sudah terdaftar atas nama "${duplicateAddNisn.nama}" (${duplicateAddNisn.kelas || 'Kelas -'}). Silakan gunakan NISN lain yang unik.`;
       setAddStudentError(msg);
       showNotification(msg, 'error');
       return;
@@ -2819,21 +2909,21 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     }
 
     if (duplicateEditNisn) {
-      const msg = `NISN "${trimmedEditNisn}" sudah terdaftar untuk siswa lain: "${duplicateEditNisn.nama}" (${duplicateEditNisn.kelas || 'Kelas -'}).`;
+      const msg = `NISN "${trimmedEditNisn}" sudah terdaftar untuk peserta lain: "${duplicateEditNisn.nama}" (${duplicateEditNisn.kelas || 'Kelas -'}).`;
       setEditStudentError(msg);
       showNotification(msg, 'error');
       return;
     }
 
     if (duplicateEditNoUjian) {
-      const msg = `Nomor Ujian "${cleanEditNoUjian}" sudah terdaftar untuk siswa lain: "${duplicateEditNoUjian.nama}" (${duplicateEditNoUjian.kelas || 'Kelas -'}).`;
+      const msg = `Nomor Ujian "${cleanEditNoUjian}" sudah terdaftar untuk peserta lain: "${duplicateEditNoUjian.nama}" (${duplicateEditNoUjian.kelas || 'Kelas -'}).`;
       setEditStudentError(msg);
       showNotification(msg, 'error');
       return;
     }
 
     if (duplicateEditNis) {
-      const msg = `NIS "${trimmedEditNis}" sudah terdaftar untuk siswa lain: "${duplicateEditNis.nama}" (${duplicateEditNis.kelas || 'Kelas -'}).`;
+      const msg = `NIS "${trimmedEditNis}" sudah terdaftar untuk peserta lain: "${duplicateEditNis.nama}" (${duplicateEditNis.kelas || 'Kelas -'}).`;
       setEditStudentError(msg);
       showNotification(msg, 'error');
       return;
@@ -2998,7 +3088,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
         source: 'Jaringan Google Forms',
         level: 'warning',
         message: 'Latensi respon ke formulir Google Forms tinggi (> 750ms)',
-        details: 'Waktu respon ping ke Google server lambat karena koneksi internet siswa tidak stabil.',
+        details: 'Waktu respon ping ke Google server lambat karena koneksi internet peserta tidak stabil.',
         solution: 'Periksa bandwidth internet atau gunakan koneksi Wi-Fi cadangan.',
       },
     ];
@@ -3294,7 +3384,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     }
   };
 
-  // Template CSV Siswa (Mendukung No Ujian, NISN, NIS, Kelas, Tingkat, Email)
+  // Template CSV Peserta (Mendukung No Ujian, NISN, NIS, Kelas, Tingkat, Email)
   const sampleCsvContent = `nama,nomor_ujian,nisn,nis,kelas,tingkat,email
 Ahmad Fauzi Ridwan,UJN-12-001,0058291021,22101,XII MIPA 1,12,ahmad.fauzi@student.sch.id
 Siti Rahmawati Putri,UJN-12-002,0058291022,22102,XII MIPA 2,12,siti.rahma@student.sch.id
@@ -3363,7 +3453,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
     return Array.from(gradesSet).sort((a, b) => a - b);
   }, [institution, users, exams]);
 
-  // 2. Baris Data Peserta Ujian Pengawas (Attempts + Siswa Sedang Online / Login)
+  // 2. Baris Data Peserta Ujian Pengawas (Attempts + Peserta Sedang Online / Login)
   const proctorStudentRows = React.useMemo(() => {
     const studentUsers = (users || []).filter((u) => u.role === 'student');
     const studentMap = new Map(studentUsers.map((s) => [s.id, s]));
@@ -3373,7 +3463,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
     const rows = [];
     const processedStudentIds = new Set();
 
-    // 2a. Urutkan attempts: Siswa yang LOCKED ditaruh paling atas, lalu yang terupdate
+    // 2a. Urutkan attempts: Peserta yang LOCKED ditaruh paling atas, lalu yang terupdate
     const sortedAttempts = [...(attempts || [])].sort((a, b) => {
       if (a.status === 'LOCKED' && b.status !== 'LOCKED') return -1;
       if (b.status === 'LOCKED' && a.status !== 'LOCKED') return 1;
@@ -3394,7 +3484,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
       const exam = att.exam_session_id ? examMap.get(att.exam_session_id) : null;
       const tingkat = Number(att.student_tingkat || stu?.tingkat || exam?.grade_level || 0);
 
-      // Cek apakah siswa ini sudah pernah dimasukkan (hindari duplikat attempt untuk siswa yang sama di list pemantauan)
+      // Cek apakah peserta ini sudah pernah dimasukkan (hindari duplikat attempt untuk peserta yang sama di list pemantauan)
       const studentIdentifier = String(att.student_id || stu?.id || att.student_nisn || stu?.nisn || att.student_name);
       if (processedStudentIds.has(studentIdentifier)) {
         return;
@@ -3404,7 +3494,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
         rowKey: att.id || `att-${studentIdentifier}`,
         attemptId: att.id,
         studentId: att.student_id || stu?.id,
-        studentName: att.student_name || stu?.nama || 'Siswa',
+        studentName: att.student_name || stu?.nama || 'Peserta',
         studentNisn: att.student_nisn || stu?.nisn || '-',
         studentKelas: att.student_kelas || stu?.kelas || '-',
         studentTingkat: tingkat,
@@ -3427,7 +3517,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
       processedStudentIds.add(studentIdentifier);
     });
 
-    // 2b. Masukkan juga siswa yang sedang ONLINE / LOGIN atau terdaftar tapi belum ada catatan attempt
+    // 2b. Masukkan juga peserta yang sedang ONLINE / LOGIN atau terdaftar tapi belum ada catatan attempt
     studentUsers.forEach((stu) => {
       const isAlreadyIncluded =
         processedStudentIds.has(String(stu.id)) ||
@@ -3568,7 +3658,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                   {activeTab === 'overview' && 'Ringkasan Sistem & Pemantauan'}
                   {activeTab === 'exams' && 'Bank Sesi Ujian Google Form'}
                   {activeTab === 'proctor' && (proctorSubView === 'list' ? 'Kontrol Pengawas: Daftar Mapel Aktif' : proctorSubView === 'monitor' ? 'Kontrol Pengawas: Pemantauan Live Peserta' : proctorSubView === 'reset' ? 'Kontrol Pengawas: Reset Status & Perangkat' : 'Kontrol Pengawas: Presensi & Berita Acara')}
-                  {activeTab === 'users' && 'Basis Data Siswa & Import CSV'}
+                  {activeTab === 'users' && 'Basis Data Peserta & Import CSV'}
                   {activeTab === 'account' && 'Pengaturan Akun Administrator'}
                   {activeTab === 'institution' && 'Konfigurasi Instansi, Logo & GPS'}
                   {activeTab === 'backup' && 'Backup & Restore Data Sistem'}
@@ -3905,7 +3995,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                 <div className="p-3.5 rounded-xl bg-amber-50/80 border border-amber-200 text-xs text-amber-900 flex items-start gap-2.5">
                   <FolderArchive className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                   <div>
-                    <strong>Bank Soal (Arsip Master):</strong> Soal yang berada di tab ini disimpan sebagai draf/arsip dan <strong>tidak ditayangkan</strong> di beranda peserta ujian. Klik tombol <ArchiveRestore className="w-3.5 h-3.5 inline mx-1 text-emerald-600" /> <em>Aktifkan ke Sesi Ujian</em> pada kolom aksi untuk memunculkannya kembali ke jadwal siswa.
+                    <strong>Bank Soal (Arsip Master):</strong> Soal yang berada di tab ini disimpan sebagai draf/arsip dan <strong>tidak ditayangkan</strong> di beranda peserta ujian. Klik tombol <ArchiveRestore className="w-3.5 h-3.5 inline mx-1 text-emerald-600" /> <em>Aktifkan ke Sesi Ujian</em> pada kolom aksi untuk memunculkannya kembali ke jadwal peserta.
                   </div>
                 </div>
               )}
@@ -4198,7 +4288,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
             const presentCount = completedCount;
             const notStartedCount = Math.max(0, totalEligible - completedCount - inProgressCount - absentCount);
 
-            // Filter Siswa untuk Tabel
+            // Filter Peserta untuk Tabel
             const filteredAttendanceStudents = roomFilteredEligible.filter((stu) => {
               const q = attendanceSearch.toLowerCase();
               const noUjian = (stu.nomor_ujian || stu.nisn || '').toLowerCase();
@@ -4713,11 +4803,21 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                               <span>Kembali ke Daftar Mapel</span>
                             </button>
                             <div className="h-4 w-px bg-zinc-200 hidden sm:block"></div>
-                            <div className="flex items-center gap-1.5">
-                              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                              <span className="text-xs font-semibold text-emerald-800">
-                                Pemantauan Langsung (Live)
-                              </span>
+                            <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-1.5">
+                                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                <span className="text-xs font-semibold text-emerald-800">
+                                  Pemantauan Langsung (Live)
+                                </span>
+                              </div>
+                              <div className="h-4 w-px bg-zinc-200 hidden sm:block"></div>
+                              {/* Keterangan Hari, Tanggal dan Jam Live Real-time */}
+                              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-zinc-100 border border-zinc-200/80 text-zinc-700 text-xs shadow-2xs font-medium">
+                                <Clock className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
+                                <span>{formatIndonesianLiveDateTime(currentLiveTime).dayDate}</span>
+                                <span className="text-zinc-300 font-light">•</span>
+                                <span className="font-mono font-bold text-zinc-900">{formatIndonesianLiveDateTime(currentLiveTime).clock}</span>
+                              </div>
                             </div>
                           </div>
 
@@ -4787,53 +4887,138 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                                 Khusus seluruh peserta tingkat {currentExam.grade_level}
                               </div>
                               <div className="pt-1 text-[11px] font-mono text-zinc-500">
-                                Total di Basis Data: <strong className="text-zinc-800">{sameGradeStudents.length} Siswa</strong>
+                                Total di Basis Data: <strong className="text-zinc-800">{sameGradeStudents.length} Peserta</strong>
                               </div>
                             </div>
 
                             {/* 3. Token Masuk & Selesai */}
-                            <div className="p-3.5 bg-zinc-50/70 border border-zinc-200/70 rounded-xl space-y-1.5">
-                              <div className="flex items-center gap-1.5 text-zinc-500 text-[11px] font-medium uppercase tracking-wider">
-                                <KeyRound className="w-3.5 h-3.5 text-amber-600" />
-                                <span>Token Masuk & Selesai</span>
-                              </div>
-                              <div className="flex items-center justify-between gap-2 pt-0.5">
-                                <div className="text-[11px] text-zinc-600">Token Mulai:</div>
-                                <div className="flex items-center gap-1">
-                                  <span className="font-mono font-bold text-xs px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 tracking-wider">
-                                    {currentExam.exam_token || '-'}
-                                  </span>
-                                  {currentExam.exam_token && (
-                                    <button
-                                      type="button"
-                                      onClick={() => handleCopyProctorToken(currentExam.exam_token, 'Token Masuk')}
-                                      className="p-1 text-zinc-400 hover:text-zinc-700 rounded hover:bg-zinc-200/70 transition-colors cursor-pointer"
-                                      title="Salin Token Masuk"
-                                    >
-                                      <Copy className="w-3 h-3" />
-                                    </button>
+                            {(() => {
+                              // Hitung mundur waktu token selesai muncul berbasis waktu pengerjaan peserta & pengaturan instansi
+                              const leadMinutes = Number(institution?.finish_token_lead_minutes ?? 10);
+                              const durationSec = Number(currentExam.duration_minutes || 90) * 60;
+                              const leadSeconds = leadMinutes * 60;
+
+                              // Peserta yang sedang aktif mengerjakan sesi ujian ini
+                              const activeWorkingAttempts = (attempts || []).filter(
+                                (a) => a.exam_session_id === currentExam.id && (a.status === 'IN_PROGRESS' || a.status === 'LOCKED')
+                              );
+
+                              let secToRelease = null;
+                              let countUnlocked = 0;
+                              const hasActiveWorkers = activeWorkingAttempts.length > 0;
+
+                              if (hasActiveWorkers) {
+                                const releaseDiffs = activeWorkingAttempts.map((att) => {
+                                  const timeSpent = Number(att.time_spent_seconds || 0);
+                                  const remainingSec = Math.max(0, durationSec - timeSpent);
+                                  const diffToRelease = remainingSec - leadSeconds;
+                                  if (diffToRelease <= 0) countUnlocked++;
+                                  return diffToRelease;
+                                });
+                                secToRelease = Math.min(...releaseDiffs);
+                              } else {
+                                secToRelease = Math.max(0, durationSec - leadSeconds);
+                              }
+
+                              const hasFinishToken = Boolean(currentExam.finish_token);
+                              const isFinishRevealed = isHoldingFinishToken;
+                              const finishTokenDisplay = !hasFinishToken
+                                ? '-'
+                                : isFinishRevealed
+                                ? currentExam.finish_token
+                                : '******';
+
+                              return (
+                                <div className="p-3.5 bg-zinc-50/70 border border-zinc-200/70 rounded-xl space-y-2">
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-1.5 text-zinc-500 text-[11px] font-medium uppercase tracking-wider">
+                                      <KeyRound className="w-3.5 h-3.5 text-amber-600" />
+                                      <span>Token Masuk & Selesai</span>
+                                    </div>
+                                    <span className="text-[10px] text-zinc-400 font-mono">Real-time</span>
+                                  </div>
+
+                                  {/* Token Mulai / Masuk */}
+                                  <div className="flex items-center justify-between gap-2 pt-0.5">
+                                    <div className="text-[11px] text-zinc-600 font-medium">Token Mulai:</div>
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="font-mono font-bold text-xs px-2.5 py-0.5 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 tracking-wider shadow-2xs">
+                                        {currentExam.exam_token || '-'}
+                                      </span>
+                                      {currentExam.exam_token && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleCopyProctorToken(currentExam.exam_token, 'Token Masuk')}
+                                          className="p-1 text-zinc-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-md border border-zinc-200 transition-all cursor-pointer shadow-2xs"
+                                          title="Salin Token Masuk"
+                                        >
+                                          <Copy className="w-3 h-3" />
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {/* Token Selesai (Masked ****** & Klik Tahan untuk Mengintip) */}
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="text-[11px] text-zinc-600 font-medium">Token Selesai:</div>
+                                    <div className="flex items-center gap-1.5">
+                                      <span
+                                        onMouseDown={() => hasFinishToken && setIsHoldingFinishToken(true)}
+                                        onMouseUp={() => setIsHoldingFinishToken(false)}
+                                        onMouseLeave={() => setIsHoldingFinishToken(false)}
+                                        onTouchStart={() => hasFinishToken && setIsHoldingFinishToken(true)}
+                                        onTouchEnd={() => setIsHoldingFinishToken(false)}
+                                        className={`font-mono font-bold text-xs px-2.5 py-0.5 rounded-lg border tracking-wider transition-all select-none ${
+                                          isFinishRevealed
+                                            ? 'bg-purple-100 text-purple-900 border-purple-300 ring-2 ring-purple-400/50'
+                                            : 'bg-purple-50 text-purple-800 border-purple-200 cursor-pointer hover:border-purple-300'
+                                        }`}
+                                        title={hasFinishToken ? 'Klik dan tahan mouse untuk mengintip token selesai asli' : 'Token selesai belum diset'}
+                                      >
+                                        {finishTokenDisplay}
+                                      </span>
+                                      {hasFinishToken && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleCopyProctorToken(currentExam.finish_token, 'Token Selesai')}
+                                          className="p-1 text-zinc-500 hover:text-purple-700 hover:bg-purple-50 rounded-md border border-zinc-200 transition-all cursor-pointer shadow-2xs"
+                                          title="Salin Token Selesai Asli (walau sedang tersembunyi)"
+                                        >
+                                          <Copy className="w-3 h-3" />
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {/* Hitung Mundur Waktu Token Selesai Muncul */}
+                                  {hasFinishToken && (
+                                    <div className="pt-1.5 border-t border-zinc-200/70 space-y-0.5">
+                                      <div className="flex items-center justify-between text-[10px]">
+                                        <span className="text-zinc-500 font-medium">Rilis Token Peserta:</span>
+                                        {hasActiveWorkers && countUnlocked > 0 ? (
+                                          <span className="font-mono font-bold text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 flex items-center gap-1 shadow-2xs">
+                                            <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
+                                            <span>Terbuka ({countUnlocked} Peserta)</span>
+                                          </span>
+                                        ) : hasActiveWorkers && secToRelease !== null && secToRelease > 0 ? (
+                                          <span className="font-mono font-bold text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 flex items-center gap-1 shadow-2xs">
+                                            <Clock className="w-2.5 h-2.5 text-amber-600 animate-pulse" />
+                                            <span>Muncul dlm {formatCountdownSeconds(secToRelease)}</span>
+                                          </span>
+                                        ) : (
+                                          <span className="font-mono text-zinc-600 bg-zinc-100 px-1.5 py-0.5 rounded border border-zinc-200">
+                                            {leadMinutes}m sblm waktu habis
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="text-[9px] text-zinc-400 italic text-right select-none">
+                                        *Klik & tahan mouse pada ****** untuk melihat token
+                                      </div>
+                                    </div>
                                   )}
                                 </div>
-                              </div>
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="text-[11px] text-zinc-600">Token Selesai:</div>
-                                <div className="flex items-center gap-1">
-                                  <span className="font-mono font-bold text-xs px-2 py-0.5 rounded bg-purple-50 text-purple-800 border border-purple-200 tracking-wider">
-                                    {currentExam.finish_token || '-'}
-                                  </span>
-                                  {currentExam.finish_token && (
-                                    <button
-                                      type="button"
-                                      onClick={() => handleCopyProctorToken(currentExam.finish_token, 'Token Selesai')}
-                                      className="p-1 text-zinc-400 hover:text-zinc-700 rounded hover:bg-zinc-200/70 transition-colors cursor-pointer"
-                                      title="Salin Token Selesai"
-                                    >
-                                      <Copy className="w-3 h-3" />
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
+                              );
+                            })()}
 
                             {/* 4. Tanggal & Waktu */}
                             <div className="p-3.5 bg-zinc-50/70 border border-zinc-200/70 rounded-xl space-y-1">
@@ -5019,7 +5204,17 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                                 <th className="py-3 px-3">Pelanggaran</th>
                                 <th className="py-3 px-3">Waktu Aktual</th>
                                 <th className="py-3 px-3 text-center">Buka Kunci</th>
-                                <th className="py-3 px-3 text-center">Logout</th>
+                                <th className="py-2 px-2 text-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleProctorBulkLogoutGrade(currentExam?.grade_level, sameGradeStudents)}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 text-[11px] font-bold shadow-2xs transition-all active:scale-95 cursor-pointer"
+                                    title={`Klik untuk Logout Paksa Seluruh Peserta ${getGradeLabel(currentExam?.grade_level)}`}
+                                  >
+                                    <LogOut className="w-3 h-3 text-amber-600" />
+                                    <span>Logout</span>
+                                  </button>
+                                </th>
                                 <th className="py-3 px-3 text-center">Reset Jawaban</th>
                                 <th className="py-3 px-3 text-center">Kehadiran</th>
                                 <th className="py-3 px-3 text-center">Reset Pekerjaan</th>
@@ -5148,11 +5343,20 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                                       {/* 8. Waktu Aktual */}
                                       <td className="py-3 px-3 font-mono text-zinc-700">
                                         {row.attempt ? (
-                                          row.timeSpentSeconds > 0
-                                            ? formatDuration(row.timeSpentSeconds)
-                                            : row.status === 'mengerjakan'
-                                            ? 'Mulai'
-                                            : '-'
+                                          <div>
+                                            <div className="font-semibold text-zinc-800">
+                                              {row.timeSpentSeconds > 0
+                                                ? formatDuration(row.timeSpentSeconds)
+                                                : row.status === 'mengerjakan'
+                                                ? 'Mulai'
+                                                : '-'}
+                                            </div>
+                                            {row.attempt.started_at && (
+                                              <div className="text-[10px] text-zinc-400 font-sans tracking-tight">
+                                                Mulai: {new Date(row.attempt.started_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+                                              </div>
+                                            )}
+                                          </div>
                                         ) : (
                                           <span className="text-zinc-400">-</span>
                                         )}
@@ -5166,8 +5370,8 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                                           disabled={row.status !== 'terkunci'}
                                           title={
                                             row.status === 'terkunci'
-                                              ? 'Buka kunci layar siswa yang terkena pelanggaran'
-                                              : 'Siswa tidak sedang berstatus terkunci'
+                                              ? 'Buka kunci layar peserta yang terkena pelanggaran'
+                                              : 'Peserta tidak sedang berstatus terkunci'
                                           }
                                           className={`inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all shadow-2xs ${
                                             row.status === 'terkunci'
@@ -5199,7 +5403,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                                           type="button"
                                           onClick={() => handleProctorResetAnswer(row.student.id, row.student.nama)}
                                           disabled={row.status === 'belum'}
-                                          title="Reset lembar jawaban siswa agar form dapat dibuka ulang di portal siswa jika respon belum masuk"
+                                          title="Reset lembar jawaban peserta agar form dapat dibuka ulang di portal peserta jika respon belum masuk"
                                           className={`inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold transition-all shadow-2xs ${
                                             row.status !== 'belum'
                                               ? 'border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 cursor-pointer'
@@ -5234,8 +5438,8 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                                                 <button
                                                   key={opt.code}
                                                   type="button"
-                                                  onClick={() => handleSetAttendanceQuick(row.student.id, opt.code, row.student.nama)}
-                                                  title={`Set Presensi: ${opt.title}`}
+                                                  onClick={() => handleSetAttendanceQuick(row.student.id, opt.code, row.student.nama, isSelected)}
+                                                  title={`Set Presensi: ${opt.title} (klik lagi untuk mengosongkan)`}
                                                   className={`w-6 h-6 rounded text-[11px] font-semibold transition-all flex items-center justify-center cursor-pointer ${
                                                     isSelected
                                                       ? `${opt.activeClass} shadow-2xs ring-1 ring-black/10`
@@ -5358,12 +5562,12 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                     {/* Ringkasan status perangkat mapel */}
                     <div className="p-3 bg-zinc-50 border border-zinc-200/70 rounded-xl space-y-1">
                       <div className="text-[11px] font-semibold text-zinc-600 flex items-center justify-between">
-                        <span>Perangkat Siswa Terkunci:</span>
-                        <span className="font-mono font-bold text-zinc-900">{resetExamStats.deviceLocked} Siswa</span>
+                        <span>Perangkat Peserta Terkunci:</span>
+                        <span className="font-mono font-bold text-zinc-900">{resetExamStats.deviceLocked} Peserta</span>
                       </div>
                       <div className="text-[11px] font-semibold text-zinc-600 flex items-center justify-between">
-                        <span>Total Siswa Mapel Ini:</span>
-                        <span className="font-mono font-bold text-blue-600">{resetExamStats.total} Siswa</span>
+                        <span>Total Peserta Mapel Ini:</span>
+                        <span className="font-mono font-bold text-blue-600">{resetExamStats.total} Peserta</span>
                       </div>
                     </div>
                   </div>
@@ -5372,7 +5576,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                   <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 pt-2 border-t border-zinc-100">
                     <div className="p-2.5 bg-zinc-50 border border-zinc-200/60 rounded-xl flex items-center justify-between">
                       <div>
-                        <div className="text-[10px] font-medium text-zinc-500">Total Siswa</div>
+                        <div className="text-[10px] font-medium text-zinc-500">Total Peserta</div>
                         <div className="text-base font-bold text-zinc-900 font-mono">{resetExamStats.total}</div>
                       </div>
                       <Users className="w-4 h-4 text-zinc-400" />
@@ -5414,12 +5618,12 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                     <div>
                       <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-200 flex items-center gap-1.5">
                         <Sliders className="w-3.5 h-3.5 text-blue-400" />
-                        <span>Aksi Reset Massal ({hasSelection ? `${selectedStudentIdsForReset.length} Siswa Dipilih` : 'Seluruh Siswa Mapel Ini'})</span>
+                        <span>Aksi Reset Massal ({hasSelection ? `${selectedStudentIdsForReset.length} Peserta Dipilih` : 'Seluruh Peserta Mapel Ini'})</span>
                       </h4>
                       <p className="text-[11px] text-zinc-400 mt-0.5">
                         {hasSelection
-                          ? 'Tindakan berikut akan diterapkan hanya kepada siswa yang Anda centang di tabel.'
-                          : `Tindakan berikut akan diterapkan kepada seluruh ${resetExamStudents.length} siswa pada mapel ini.`}
+                          ? 'Tindakan berikut akan diterapkan hanya kepada peserta yang Anda centang di tabel.'
+                          : `Tindakan berikut akan diterapkan kepada seluruh ${resetExamStudents.length} peserta pada mapel ini.`}
                       </p>
                     </div>
 
@@ -5440,7 +5644,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                       type="button"
                       onClick={handleBulkResetLogin}
                       className="inline-flex items-center justify-center gap-2 px-3 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-amber-300 border border-zinc-700 rounded-xl text-xs font-semibold transition-all active:scale-[0.98] cursor-pointer shadow-xs"
-                      title="Hapus kunci perangkat active_device_id agar siswa dapat login dari HP/laptop lain"
+                      title="Hapus kunci perangkat active_device_id agar peserta dapat login dari HP/laptop lain"
                     >
                       <Smartphone className="w-4 h-4 text-amber-400 shrink-0" />
                       <span>Reset Login Perangkat ({targetCount})</span>
@@ -5451,7 +5655,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                       type="button"
                       onClick={handleBulkSetNotStarted}
                       className="inline-flex items-center justify-center gap-2 px-3 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 rounded-xl text-xs font-semibold transition-all active:scale-[0.98] cursor-pointer shadow-xs"
-                      title="Hapus attempt pengerjaan mapel ini sehingga siswa kembali ke status awal belum mengerjakan"
+                      title="Hapus attempt pengerjaan mapel ini sehingga peserta kembali ke status awal belum mengerjakan"
                     >
                       <Clock className="w-4 h-4 text-zinc-400 shrink-0" />
                       <span>Set "Belum Masuk" ({targetCount})</span>
@@ -5462,7 +5666,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                       type="button"
                       onClick={handleBulkSetCompleted}
                       className="inline-flex items-center justify-center gap-2 px-3 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-emerald-300 border border-zinc-700 rounded-xl text-xs font-semibold transition-all active:scale-[0.98] cursor-pointer shadow-xs"
-                      title="Tandai seluruh siswa selesai mengerjakan dan catat presensi Hadir"
+                      title="Tandai seluruh peserta selesai mengerjakan dan catat presensi Hadir"
                     >
                       <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
                       <span>Set "Selesai" ({targetCount})</span>
@@ -5473,7 +5677,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                       type="button"
                       onClick={handleBulkResetWork}
                       className="inline-flex items-center justify-center gap-2 px-3 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-rose-300 border border-zinc-700 rounded-xl text-xs font-semibold transition-all active:scale-[0.98] cursor-pointer shadow-xs"
-                      title="Reset waktu pengerjaan dan pelanggaran ke 0 agar siswa dapat mengulang ujian dari awal"
+                      title="Reset waktu pengerjaan dan pelanggaran ke 0 agar peserta dapat mengulang ujian dari awal"
                     >
                       <RotateCcw className="w-4 h-4 text-rose-400 shrink-0" />
                       <span>Reset Pekerjaan ({targetCount})</span>
@@ -5481,9 +5685,9 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                   </div>
                 </div>
 
-                {/* 5. Tabel Siswa & Aksi Per-Siswa */}
+                {/* 5. Tabel Peserta & Aksi Per-Peserta */}
                 <div className="bg-white border border-zinc-200/80 rounded-xl overflow-hidden shadow-2xs space-y-0">
-                  {/* Toolbar Filter Tabel Siswa */}
+                  {/* Toolbar Filter Tabel Peserta */}
                   <div className="p-3 border-b border-zinc-200/80 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-zinc-50/50">
                     <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 text-xs">
                       <span className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider mr-1">Status:</span>
@@ -5527,7 +5731,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                     </div>
                   </div>
 
-                  {/* Tabel Data Siswa */}
+                  {/* Tabel Data Peserta */}
                   <div className="overflow-x-auto">
                     <table className="w-full text-left text-xs">
                       <thead>
@@ -5547,7 +5751,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                               )}
                             </button>
                           </th>
-                          <th className="py-3 px-3">Nama Siswa & NISN</th>
+                          <th className="py-3 px-3">Nama Peserta & NISN</th>
                           <th className="py-3 px-3">Kelas & Ruang</th>
                           <th className="py-3 px-3">Status Pengerjaan</th>
                           <th className="py-3 px-3">Kunci Login (Perangkat)</th>
@@ -5558,7 +5762,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                         {filteredResetExamStudents.length === 0 ? (
                           <tr>
                             <td colSpan="6" className="py-12 text-center text-zinc-400 text-xs">
-                              Tidak ada siswa yang sesuai dengan filter atau sesi ujian terpilih.
+                              Tidak ada peserta yang sesuai dengan filter atau sesi ujian terpilih.
                             </td>
                           </tr>
                         ) : (
@@ -5667,7 +5871,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                                       type="button"
                                       onClick={() => handleResetLoginSingle(row.studentId, row.nama)}
                                       disabled={!row.isDeviceLocked}
-                                      title={row.isDeviceLocked ? 'Reset kunci login perangkat agar siswa bisa login di tempat lain' : 'Siswa belum terikat perangkat'}
+                                      title={row.isDeviceLocked ? 'Reset kunci login perangkat agar peserta bisa login di tempat lain' : 'Peserta belum terikat perangkat'}
                                       className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-all ${
                                         row.isDeviceLocked
                                           ? 'bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-200 cursor-pointer shadow-2xs'
@@ -5683,7 +5887,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                                       type="button"
                                       onClick={() => handleSetNotStartedSingle(row.studentId, row.nama)}
                                       disabled={row.status === 'NOT_STARTED'}
-                                      title={row.status === 'NOT_STARTED' ? 'Siswa sudah berstatus Belum Masuk' : 'Hapus rekaman attempt mapel ini dan kembalikan ke Belum Masuk'}
+                                      title={row.status === 'NOT_STARTED' ? 'Peserta sudah berstatus Belum Masuk' : 'Hapus rekaman attempt mapel ini dan kembalikan ke Belum Masuk'}
                                       className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-all ${
                                         row.status !== 'NOT_STARTED'
                                           ? 'bg-white hover:bg-zinc-100 text-zinc-700 border-zinc-300 cursor-pointer shadow-2xs'
@@ -5699,7 +5903,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                                       type="button"
                                       onClick={() => handleSetCompletedSingle(row.studentId, row.nama)}
                                       disabled={row.status === 'COMPLETED'}
-                                      title={row.status === 'COMPLETED' ? 'Siswa sudah berstatus Selesai' : 'Tandai status ujian ini menjadi Selesai (COMPLETED)'}
+                                      title={row.status === 'COMPLETED' ? 'Peserta sudah berstatus Selesai' : 'Tandai status ujian ini menjadi Selesai (COMPLETED)'}
                                       className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-all ${
                                         row.status !== 'COMPLETED'
                                           ? 'bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200 cursor-pointer shadow-2xs font-semibold'
@@ -5714,7 +5918,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                                     <button
                                       type="button"
                                       onClick={() => handleResetWorkSingle(row.studentId, row.nama)}
-                                      title="Reset pengerjaan ujian mapel ini agar siswa dapat mengulang dari awal"
+                                      title="Reset pengerjaan ujian mapel ini agar peserta dapat mengulang dari awal"
                                       className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 transition-all shadow-2xs cursor-pointer"
                                     >
                                       <RotateCcw className="w-3 h-3 text-rose-600" />
@@ -5726,7 +5930,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                                       <button
                                         type="button"
                                         onClick={() => handleProctorUnlock(row.attemptId || row.studentId, row.nama)}
-                                        title="Buka kunci layar ujian siswa yang terkena pelanggaran"
+                                        title="Buka kunci layar ujian peserta yang terkena pelanggaran"
                                         className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-rose-600 hover:bg-rose-700 text-white border border-rose-700 shadow-xs animate-pulse cursor-pointer"
                                       >
                                         <Unlock className="w-3 h-3" />
@@ -5854,7 +6058,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
 
                     <div>
                       <label className="block text-[11px] font-medium text-slate-300 mb-1.5">
-                        Status Siswa:
+                        Status Peserta:
                       </label>
                       <select
                         value={selectedAttendanceStatus}
@@ -5874,7 +6078,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
 
                     <div>
                       <label className="block text-[11px] font-medium text-slate-300 mb-1.5">
-                        Cari Siswa:
+                        Cari Peserta:
                       </label>
                       <div className="relative">
                         <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
@@ -5930,15 +6134,15 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                   </div>
                 </div>
 
-                {/* TABEL PRESENSI SISWA */}
+                {/* TABEL PRESENSI PESERTA */}
                 <div className="bg-white border border-zinc-200/80 rounded-2xl shadow-2xs overflow-hidden">
                   <div className="px-6 py-4 border-b border-zinc-100 flex items-center justify-between">
                     <div>
                       <h4 className="text-sm font-semibold text-zinc-900">
-                        Daftar Kehadiran Siswa
+                        Daftar Kehadiran Peserta
                       </h4>
                       <p className="text-xs text-zinc-500">
-                        Menampilkan {filteredAttendanceStudents.length} dari {totalEligible} siswa.
+                        Menampilkan {filteredAttendanceStudents.length} dari {totalEligible} peserta.
                       </p>
                     </div>
                   </div>
@@ -5949,7 +6153,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                         <tr className="bg-zinc-50/80 border-b border-zinc-200/80 text-zinc-600 font-semibold">
                           <th className="py-3 px-3 text-center w-12">No</th>
                           <th className="py-3 px-3 w-32">No. Ujian</th>
-                          <th className="py-3 px-4">Nama Siswa & NISN</th>
+                          <th className="py-3 px-4">Nama Peserta & NISN</th>
                           <th className="py-3 px-3">Kelas & Ruang</th>
                           <th className="py-3 px-3 text-center">Status Ujian</th>
                           <th className="py-3 px-4">Status Kehadiran</th>
@@ -5961,7 +6165,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                         {filteredAttendanceStudents.length === 0 ? (
                           <tr>
                             <td colSpan="8" className="py-10 text-center text-zinc-400">
-                              Tidak ada data siswa yang cocok dengan filter.
+                              Tidak ada data peserta yang cocok dengan filter.
                             </td>
                           </tr>
                         ) : (
@@ -7046,7 +7250,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                               <div className="text-xs font-bold text-zinc-800 flex items-center justify-between">
                                 <span className="flex items-center gap-1.5">
                                   <Users className="w-3.5 h-3.5 text-blue-600" />
-                                  <span>Statistik Siswa Mapel Ini ({getGradeLabel(detailExamData.grade_level)}):</span>
+                                  <span>Statistik Peserta Mapel Ini ({getGradeLabel(detailExamData.grade_level)}):</span>
                                 </span>
                                 <span className="font-mono text-zinc-900 font-bold">{examStudents.length} Terdaftar</span>
                               </div>
@@ -7287,7 +7491,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                                 <div className="inline-flex flex-col items-center">
                                   <div
                                     className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-zinc-100 border border-zinc-300 text-zinc-700 select-none shadow-2xs"
-                                    title="SSO Google Off: Siswa belum pernah login menggunakan Google SSO. Icon centang akan otomatis aktif (hijau) setelah siswa login lewat SSO dengan email terdaftar."
+                                    title="SSO Google Off: Peserta belum pernah login menggunakan Google SSO. Icon centang akan otomatis aktif (hijau) setelah peserta login lewat SSO dengan email terdaftar."
                                   >
                                     <div className="w-3.5 h-3.5 rounded-full border-2 border-zinc-500 flex items-center justify-center shrink-0">
                                       <span className="w-1.5 h-0.5 bg-zinc-600 rounded-full"></span>
@@ -7312,7 +7516,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                                   onClick={() => {
                                     if (!stu.is_verified) {
                                       showNotification(
-                                        'Siswa belum terverifikasi! Harap verifikasi siswa terlebih dahulu sebelum mengaktifkan akun.',
+                                        'Peserta belum terverifikasi! Harap verifikasi peserta terlebih dahulu sebelum mengaktifkan akun.',
                                         'error'
                                       );
                                       return;
@@ -7329,7 +7533,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                                   }}
                                   title={
                                     !stu.is_verified
-                                      ? 'Akun Terkunci: Wajib verifikasi siswa terlebih dahulu sebelum akun dapat diaktifkan'
+                                      ? 'Akun Terkunci: Wajib verifikasi peserta terlebih dahulu sebelum akun dapat diaktifkan'
                                       : stu.is_active
                                         ? 'Status Akun: Aktif (Klik untuk menonaktifkan)'
                                         : 'Status Akun: Non-Aktif (Klik untuk mengaktifkan)'
@@ -7359,7 +7563,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                                     refreshData();
                                     if (updated.is_verified) {
                                       showNotification(
-                                        `Siswa ${stu.nama} berhasil diverifikasi. Akun sekarang dapat diaktifkan.`
+                                        `Peserta ${stu.nama} berhasil diverifikasi. Akun sekarang dapat diaktifkan.`
                                       );
                                     } else {
                                       showNotification(
@@ -7371,7 +7575,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                                   title={
                                     stu.is_verified
                                       ? 'Terverifikasi (Klik untuk mencabut status verifikasi)'
-                                      : 'Belum Terverifikasi (Klik untuk memverifikasi siswa)'
+                                      : 'Belum Terverifikasi (Klik untuk memverifikasi peserta)'
                                   }
                                   className={`inline-flex items-center justify-center w-8 h-8 rounded-full border transition-all cursor-pointer shadow-2xs ${stu.is_verified
                                       ? 'bg-blue-50 text-blue-600 border-blue-200/90 hover:bg-blue-100 hover:scale-105'
@@ -7565,7 +7769,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                         </div>
                         <div>
                           <h4 className="text-sm font-semibold text-zinc-900">Akun Proktor Ujian</h4>
-                          <p className="text-[11px] text-zinc-500">Akses Operasional Ujian & Siswa</p>
+                          <p className="text-[11px] text-zinc-500">Akses Operasional Ujian & Peserta</p>
                         </div>
                       </div>
                       <span className="text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-0.5 rounded-full">
@@ -8435,7 +8639,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                 </div>
                 <h3 className="text-base font-semibold text-zinc-900">Akses Dibatasi Khusus Super Admin</h3>
                 <p className="text-xs text-zinc-500 max-w-md mx-auto leading-relaxed">
-                  Menu Akun Administrator hanya dapat diakses dan dikelola oleh Super Admin. Akun Proktor hanya diperkenankan mengawasi pengerjaan ujian dan manajemen data siswa.
+                  Menu Akun Administrator hanya dapat diakses dan dikelola oleh Super Admin. Akun Proktor hanya diperkenankan mengawasi pengerjaan ujian dan manajemen data peserta.
                 </p>
                 <button
                   type="button"
@@ -8460,7 +8664,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                       <div>
                         <h3 className="text-sm font-semibold text-zinc-900">Logo Resmi Instansi / Sekolah</h3>
                         <p className="text-xs text-zinc-500">
-                          Logo akan ditampilkan di header aplikasi, portal login siswa, dan di tengah QR Code ujian.
+                          Logo akan ditampilkan di header aplikasi, portal login peserta, dan di tengah QR Code ujian.
                         </p>
                       </div>
                     </div>
@@ -8603,32 +8807,64 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                     </div>
                   </div>
 
-                  {/* Idle Timeout */}
-                  <div className="max-w-xs">
-                    <label className="block text-xs font-medium text-zinc-700 mb-1.5">
-                      Batas Waktu Tidak Aktif (Idle Timeout)
-                    </label>
-                    <div className="relative">
-                      <input
-                        type="number"
-                        min="5"
-                        max="180"
-                        value={institution.idle_timeout_minutes}
-                        onChange={(e) =>
-                          setInstitution({
-                            ...institution,
-                            idle_timeout_minutes: parseInt(e.target.value, 10) || 30,
-                          })
-                        }
-                        className="w-full px-3.5 py-2.5 border border-zinc-300 rounded-xl text-sm focus:ring-2 focus:ring-zinc-900 focus:outline-none pr-16"
-                      />
-                      <span className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-xs text-zinc-400 pointer-events-none">
-                        menit
-                      </span>
+                  {/* Pengaturan Durasi Sesi & Token */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    {/* Idle Timeout */}
+                    <div>
+                      <label className="block text-xs font-medium text-zinc-700 mb-1.5">
+                        Batas Waktu Tidak Aktif (Idle Timeout)
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="number"
+                          min="5"
+                          max="180"
+                          value={institution.idle_timeout_minutes}
+                          onChange={(e) =>
+                            setInstitution({
+                              ...institution,
+                              idle_timeout_minutes: parseInt(e.target.value, 10) || 30,
+                            })
+                          }
+                          className="w-full px-3.5 py-2.5 border border-zinc-300 rounded-xl text-sm focus:ring-2 focus:ring-zinc-900 focus:outline-none pr-16"
+                        />
+                        <span className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-xs text-zinc-400 pointer-events-none">
+                          menit
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-zinc-400 mt-1">
+                        Peserta otomatis logout jika tidak ada interaksi selama batas waktu ini.
+                      </p>
                     </div>
-                    <p className="text-[11px] text-zinc-400 mt-1">
-                      Siswa otomatis logout jika tidak ada interaksi selama batas waktu ini.
-                    </p>
+
+                    {/* Waktu Muncul Token Selesai Sebelum Waktu Habis */}
+                    <div>
+                      <label className="block text-xs font-medium text-zinc-700 mb-1.5">
+                        Waktu Muncul Token Selesai Sebelum Waktu Habis
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="number"
+                          min="1"
+                          max="60"
+                          value={institution.finish_token_lead_minutes ?? 10}
+                          onChange={(e) =>
+                            setInstitution({
+                              ...institution,
+                              finish_token_lead_minutes: parseInt(e.target.value, 10) || 0,
+                            })
+                          }
+                          className="w-full px-3.5 py-2.5 border border-zinc-300 rounded-xl text-sm focus:ring-2 focus:ring-zinc-900 focus:outline-none pr-16"
+                          placeholder="Contoh: 5"
+                        />
+                        <span className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-xs text-zinc-400 pointer-events-none">
+                          menit
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-zinc-400 mt-1">
+                        Token selesai dan peringatan waktu otomatis muncul pada peserta sejumlah menit ini sebelum waktu pengerjaan berakhir.
+                      </p>
+                    </div>
                   </div>
                 </div>
 
@@ -8642,7 +8878,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                           Geofencing GPS Lokasi Sekolah (Haversine Formula)
                         </h3>
                         <p className="text-xs text-zinc-500">
-                          Atur apakah siswa wajib berada di area fisik sekolah saat mengikuti ujian.
+                          Atur apakah peserta wajib berada di area fisik sekolah saat mengikuti ujian.
                         </p>
                       </div>
                     </div>
@@ -8701,14 +8937,14 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                     <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800 flex items-start gap-2.5">
                       <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                       <div>
-                        <strong>Pemeriksaan Lokasi Dinonaktifkan:</strong> Siswa diizinkan login dan mengerjakan ujian dari mana saja tanpa validasi jarak radius GPS.
+                        <strong>Pemeriksaan Lokasi Dinonaktifkan:</strong> Peserta diizinkan login dan mengerjakan ujian dari mana saja tanpa validasi jarak radius GPS.
                       </div>
                     </div>
                   ) : (
                     <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 flex items-start gap-2.5">
                       <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
                       <div>
-                        <strong>Pemeriksaan Lokasi Aktif:</strong> Siswa hanya dapat membuka beranda ujian jika berada di dalam radius toleransi dari koordinat sekolah.
+                        <strong>Pemeriksaan Lokasi Aktif:</strong> Peserta hanya dapat membuka beranda ujian jika berada di dalam radius toleransi dari koordinat sekolah.
                       </div>
                     </div>
                   )}
@@ -9000,14 +9236,14 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                       <div className="mt-4 p-3.5 rounded-xl bg-zinc-50 border border-zinc-200 text-xs text-zinc-600 flex items-start gap-2.5">
                         <AlertCircle className="w-4 h-4 text-zinc-400 shrink-0 mt-0.5" />
                         <div>
-                          <strong>Integrasi Google OAuth Nonaktif (OFF):</strong> Masukkan Client ID & Client Secret dari Google Cloud Console, lalu klik <strong>"Test Koneksi & Aktifkan"</strong>. Jika kosong atau di-reset, status otomatis <strong>OFF</strong> dan siswa masuk menggunakan NISN & Password NIS.
+                          <strong>Integrasi Google OAuth Nonaktif (OFF):</strong> Masukkan Client ID & Client Secret dari Google Cloud Console, lalu klik <strong>"Test Koneksi & Aktifkan"</strong>. Jika kosong atau di-reset, status otomatis <strong>OFF</strong> dan peserta masuk menggunakan NISN & Password NIS.
                         </div>
                       </div>
                     ) : (
                       <div className="mt-4 p-3.5 rounded-xl bg-blue-50/70 border border-blue-200/80 text-xs text-blue-900 flex items-start gap-2.5">
                         <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
                         <div>
-                          <strong>Integrasi Google OAuth Terverifikasi (ON):</strong> Layanan Google Identity Services aktif. Siswa dapat login 1-klik menggunakan akun Google resmi sekolah tanpa simulasi/bypass.
+                          <strong>Integrasi Google OAuth Terverifikasi (ON):</strong> Layanan Google Identity Services aktif. Peserta dapat login 1-klik menggunakan akun Google resmi sekolah tanpa simulasi/bypass.
                         </div>
                       </div>
                     )}
@@ -9015,7 +9251,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mt-4">
                       <div>
                         <label className="block text-xs font-medium text-zinc-700 mb-1.5">
-                          Metode Login Siswa yang Diizinkan
+                          Metode Login Peserta yang Diizinkan
                         </label>
                         <select
                           value={institution.auth_method}
@@ -9204,7 +9440,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                         <div>
                           <strong>Google reCAPTCHA {institution.recaptcha_version?.toUpperCase() || 'V2'} Terverifikasi (ON):</strong>{' '}
                           {institution.recaptcha_version === 'v3'
-                            ? 'Verifikasi risiko bot berjalan mulus di latar belakang (invisible) tanpa mengganggu konsentrasi siswa.'
+                            ? 'Verifikasi risiko bot berjalan mulus di latar belakang (invisible) tanpa mengganggu konsentrasi peserta.'
                             : 'Setiap peserta ujian dan administrator wajib menyelesaikan checklist "Saya bukan robot" sebelum masuk.'}
                         </div>
                       </div>
@@ -9367,10 +9603,10 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                       </div>
                       <div>
                         <h3 className="text-sm font-semibold text-zinc-900">
-                          Pengaturan Ceklis Izin Browser Siswa (Pre-Flight Checks)
+                          Pengaturan Ceklis Izin Browser Peserta (Pre-Flight Checks)
                         </h3>
                         <p className="text-xs text-zinc-500">
-                          Tentukan izin apa saja yang wajib diperiksa & dipenuhi siswa saat login dan sebelum soal ujian dibuka.
+                          Tentukan izin apa saja yang wajib diperiksa & dipenuhi peserta saat login dan sebelum soal ujian dibuka.
                         </p>
                       </div>
                     </div>
@@ -9387,7 +9623,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                   </div>
 
                   <p className="text-xs text-zinc-600 leading-relaxed">
-                    Ceklis di bawah ini secara dinamis menentukan pemeriksaan pada halaman <strong>Pre-Flight Siswa</strong>. Izin yang dicentang (ON) akan menjadi syarat wajib sebelum siswa dapat masuk ke beranda atau membuka soal.
+                    Ceklis di bawah ini secara dinamis menentukan pemeriksaan pada halaman <strong>Pre-Flight Peserta</strong>. Izin yang dicentang (ON) akan menjadi syarat wajib sebelum peserta dapat masuk ke beranda atau membuka soal.
                   </p>
 
                   {/* List Ceklis Izin */}
@@ -9563,7 +9799,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                             </span>
                           </div>
                           <p className="text-[11px] text-zinc-500 mt-1 leading-relaxed">
-                            Memastikan siswa wajib masuk dengan akun Google resmi sekolah sebelum diizinkan mengakses soal.
+                            Memastikan peserta wajib masuk dengan akun Google resmi sekolah sebelum diizinkan mengakses soal.
                           </p>
                         </div>
                       </div>
@@ -9599,7 +9835,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                             </span>
                           </div>
                           <p className="text-[11px] text-zinc-500 mt-1 leading-relaxed">
-                            Meminta izin sensor kamera depan dan audio peramban untuk pengawasan kejujuran ujian siswa.
+                            Meminta izin sensor kamera depan dan audio peramban untuk pengawasan kejujuran ujian peserta.
                           </p>
                         </div>
                       </div>
@@ -9834,7 +10070,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                       </div>
 
                       <p className="text-xs text-zinc-600 leading-relaxed">
-                        Berkas cadangan mencakup identitas instansi, NPSN, seluruh sesi ujian Google Form, daftar siswa & NISN/NIS, riwayat pengerjaan, serta setelan integrasi Google & koordinat GPS.
+                        Berkas cadangan mencakup identitas instansi, NPSN, seluruh sesi ujian Google Form, daftar peserta & NISN/NIS, riwayat pengerjaan, serta setelan integrasi Google & koordinat GPS.
                       </p>
 
                       {/* Security Alert: Data Penting Terenkripsi */}
@@ -9844,7 +10080,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                           <span>Enkripsi Kredensial Otomatis:</span>
                         </div>
                         <p className="text-[11px] text-blue-800 leading-relaxed">
-                          Kata sandi administrator, password seluruh siswa, <strong>Google Client Secret</strong>, dan <strong>reCAPTCHA Secret Key</strong> dienkripsi secara ketat menggunakan algoritma <strong>AES-256-GCM</strong>. Data tersebut tidak akan terbaca secara polos di dalam file cadangan.
+                          Kata sandi administrator, password seluruh peserta, <strong>Google Client Secret</strong>, dan <strong>reCAPTCHA Secret Key</strong> dienkripsi secara ketat menggunakan algoritma <strong>AES-256-GCM</strong>. Data tersebut tidak akan terbaca secara polos di dalam file cadangan.
                         </p>
                       </div>
 
@@ -10019,7 +10255,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                             <div className="bg-white p-2 rounded-lg border border-zinc-200/60">
                               <span className="text-zinc-500 block">Peserta Terdaftar:</span>
                               <span className="font-semibold text-zinc-800">
-                                {restorePreview.summary?.students_count || 0} Siswa
+                                {restorePreview.summary?.students_count || 0} Peserta
                               </span>
                             </div>
                           </div>
@@ -10164,10 +10400,10 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                     <h3 className="text-sm font-semibold text-zinc-900">Arsitektur & Tujuan Aplikasi</h3>
                   </div>
                   <p className="text-xs text-zinc-600 leading-relaxed">
-                    ExamGuard dirancang khusus untuk memecahkan kelemahan pelaksanaan ujian Google Form standar dengan mengisolasi lingkungan peramban siswa:
+                    ExamGuard dirancang khusus untuk memecahkan kelemahan pelaksanaan ujian Google Form standar dengan mengisolasi lingkungan peramban peserta:
                   </p>
                   <ul className="text-xs text-zinc-600 space-y-2 list-disc list-inside">
-                    <li><strong>Auto-Lock Screen:</strong> Penguncian seketika jika siswa beralih tab browser atau keluar dari mode Fullscreen.</li>
+                    <li><strong>Auto-Lock Screen:</strong> Penguncian seketika jika peserta beralih tab browser atau keluar dari mode Fullscreen.</li>
                     <li><strong>GPS Geofencing:</strong> Pembatasan pengerjaan ujian hanya dalam radius koordinat instansi/sekolah (Haversine formula).</li>
                     <li><strong>Single Sign-On (SSO):</strong> Integrasi Google Workspace resmi sekolah dengan proteksi bot Google reCAPTCHA v2.</li>
                     <li><strong>Role-Based Access Control:</strong> Pemisahan peran Super Admin (kelola instansi & akun) dan Proktor Ujian (monitoring live).</li>
@@ -10430,7 +10666,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                   name="description"
                   rows="2"
                   defaultValue={editingExam?.description || ''}
-                  placeholder="Petunjuk pengerjaan bagi siswa..."
+                  placeholder="Petunjuk pengerjaan bagi peserta..."
                   className="w-full px-3 py-2 border border-zinc-300 rounded-lg focus:ring-2 focus:ring-zinc-900 focus:outline-none"
                 ></textarea>
               </div>
@@ -10665,7 +10901,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                     className="w-4 h-4 rounded text-zinc-900"
                   />
                   <span className="text-xs font-medium text-zinc-800">
-                    Aktifkan Sesi Ini (Tampilkan di Beranda Siswa yang sesuai tingkat kelas)
+                    Aktifkan Sesi Ini (Tampilkan di Beranda Peserta yang sesuai tingkat kelas)
                   </span>
                 </label>
 
@@ -10677,7 +10913,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                     className="w-4 h-4 rounded text-amber-600"
                   />
                   <span className="text-xs font-medium text-zinc-700">
-                    Simpan ke <strong>Bank Soal (Arsip)</strong> &mdash; Soal akan disimpan sebagai bank soal/draf dan disembunyikan dari siswa sampai diaktifkan kembali.
+                    Simpan ke <strong>Bank Soal (Arsip)</strong> &mdash; Soal akan disimpan sebagai bank soal/draf dan disembunyikan dari peserta sampai diaktifkan kembali.
                   </span>
                 </label>
               </div>
@@ -10741,9 +10977,9 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                 <div className="mb-4 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-xs flex items-start gap-2.5">
                   <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
                   <div className="flex-1">
-                    <div className="font-semibold">Import Dibatalkan Demi Menjaga Keunikan Identitas Siswa</div>
+                    <div className="font-semibold">Import Dibatalkan Demi Menjaga Keunikan Identitas Peserta</div>
                     <p className="text-[11px] text-rose-700 mt-0.5 leading-relaxed">
-                      Sistem mendeteksi <strong>{importValidationErrors.length} konflik</strong> pada kolom <strong>No. Ujian</strong>, <strong>NISN</strong>, atau <strong>NIS</strong>. Konflik terjadi baik terhadap data siswa yang sudah ada di sistem maupun antar baris dalam data yang Anda masukkan.
+                      Sistem mendeteksi <strong>{importValidationErrors.length} konflik</strong> pada kolom <strong>No. Ujian</strong>, <strong>NISN</strong>, atau <strong>NIS</strong>. Konflik terjadi baik terhadap data peserta yang sudah ada di sistem maupun antar baris dalam data yang Anda masukkan.
                     </p>
                   </div>
                 </div>
@@ -10755,7 +10991,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                       <thead className="bg-zinc-50 text-zinc-600 text-[11px] font-semibold sticky top-0 border-b border-zinc-200 z-10">
                         <tr>
                           <th className="py-2.5 px-3 whitespace-nowrap">Baris</th>
-                          <th className="py-2.5 px-3">Nama Siswa</th>
+                          <th className="py-2.5 px-3">Nama Peserta</th>
                           <th className="py-2.5 px-3">Kolom Duplikat</th>
                           <th className="py-2.5 px-3">Nilai Duplikat</th>
                           <th className="py-2.5 px-3">Bentrok Dengan</th>
@@ -11413,7 +11649,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                     </div>
                   ) : (
                     <p className="text-[10px] text-zinc-400 mt-0.5">
-                      Identitas unik untuk akun login siswa
+                      Identitas unik untuk akun login peserta
                     </p>
                   )}
                 </div>

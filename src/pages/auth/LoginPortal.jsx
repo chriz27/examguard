@@ -514,7 +514,7 @@ export default function LoginPortal({ institution, onLoginSuccess }) {
 
       {/* Login Card */}
       <main className="w-full max-w-md bg-white border border-zinc-200/80 rounded-2xl p-6 sm:p-8 shadow-xs">
-        {/* Tab Switcher: Siswa / Admin */}
+        {/* Tab Switcher: Peserta / Admin */}
         <div className="grid grid-cols-2 gap-1 p-1 bg-zinc-100/80 rounded-xl mb-6 text-xs font-medium">
           <button
             type="button"
@@ -554,7 +554,7 @@ export default function LoginPortal({ institution, onLoginSuccess }) {
           </div>
         )}
 
-        {/* Mode Khusus SSO_ONLY di Tab Siswa (HANYA jika Google OAuth Aktif & Terhubung) */}
+        {/* Mode Khusus SSO_ONLY di Tab Peserta (HANYA jika Google OAuth Aktif & Terhubung) */}
         {activeTab === 'student' && showSsoOption && institution?.auth_method === 'SSO_ONLY' ? (
           <div className="space-y-4">
             <div className="p-4 rounded-xl bg-zinc-50 border border-zinc-200/60 text-center">
@@ -751,12 +751,12 @@ export default function LoginPortal({ institution, onLoginSuccess }) {
                 {isGoogleOAuthActive ? (
                   <>Lupa kata sandi atau butuh reset SSO? <strong className="text-zinc-700">Wajib lapor ke Admin/Proktor</strong> untuk reset akun.</>
                 ) : (
-                  <>Masuk menggunakan nomor <strong className="text-zinc-700">NISN / No. Ujian</strong> dan kata sandi nomor <strong className="text-zinc-700">NIS Siswa</strong>.</>
+                  <>Masuk menggunakan nomor <strong className="text-zinc-700">NISN / No. Ujian</strong> dan kata sandi nomor <strong className="text-zinc-700">NIS Peserta</strong>.</>
                 )}
               </p>
             )}
 
-            {/* Opsi SSO Siswa (HANYA MUNCUL JIKA GOOGLE OAUTH AKTIF & TERHUBUNG) */}
+            {/* Opsi SSO Peserta (HANYA MUNCUL JIKA GOOGLE OAUTH AKTIF & TERHUBUNG) */}
             {activeTab === 'student' && showSsoOption && (
               <div className="pt-2">
                 <div className="relative my-3">
@@ -799,7 +799,7 @@ export default function LoginPortal({ institution, onLoginSuccess }) {
                           d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.34 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"
                         />
                       </svg>
-                      <span>Masuk dengan Google SSO Siswa</span>
+                      <span>Masuk dengan Google SSO Peserta</span>
                     </>
                   )}
                 </button>
@@ -808,7 +808,7 @@ export default function LoginPortal({ institution, onLoginSuccess }) {
           </form>
         )}
 
-        {/* Informasi ID Perangkat Browser Siswa */}
+        {/* Informasi ID Perangkat Browser Peserta */}
         <div className="mt-6 pt-4 border-t border-zinc-100 flex items-center justify-between text-[11px] text-zinc-400">
           <span className="flex items-center gap-1.5">
             <Smartphone className="w-3.5 h-3.5 text-zinc-400" />

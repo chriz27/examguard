@@ -1,7 +1,7 @@
 /**
  * Utilitas Enkripsi & Dekripsi Cadangan Sistem ExamGuard
  * Menggunakan standar Web Crypto API: AES-256-GCM dengan derivasi kunci PBKDF2 (SHA-256).
- * Memastikan password admin, password siswa, dan Google secret keys selalu terenkripsi di file backup.
+ * Memastikan password admin, password peserta, dan Google secret keys selalu terenkripsi di file backup.
  */
 
 export const DEFAULT_BACKUP_MASTER_KEY = 'ExamGuard-Secure-Master-Key-Institution-2026';

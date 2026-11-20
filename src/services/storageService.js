@@ -415,7 +415,7 @@ export const storageService = {
 
     const dupNisn = (_cache.users || []).find(u => u.nisn === nisn);
     if (dupNisn) {
-      return { success: false, message: `Siswa dengan NISN "${nisn}" sudah terdaftar atas nama "${dupNisn.nama}".`, field: 'nisn' };
+      return { success: false, message: `Peserta dengan NISN "${nisn}" sudah terdaftar atas nama "${dupNisn.nama}".`, field: 'nisn' };
     }
 
     const noUjian = cleanNomorUjian(data.nomor_ujian, nisn);
@@ -895,6 +895,7 @@ export const storageService = {
       status: 'RESET_BY_PROCTOR',
       violation_count: 0,
       time_spent_seconds: 0,
+      started_at: null,
       last_violation_reason: '',
       reset_at: new Date().toISOString(),
       completed_at: null,
@@ -921,6 +922,7 @@ export const storageService = {
       status: 'RESET_BY_PROCTOR',
       violation_count: 0,
       time_spent_seconds: 0,
+      started_at: null,
       last_violation_reason: '',
       reset_at: new Date().toISOString(),
       completed_at: null,
@@ -1067,7 +1069,7 @@ export const storageService = {
     const current = this.getAppModeConfig();
     const isCallerAdmin = caller?.role === 'admin' || this.getCurrentUser()?.role === 'admin';
 
-    // Siswa tidak boleh mengubah ke simulasi
+    // Peserta tidak boleh mengubah ke simulasi
     if (config.app_mode === 'simulation' && !isCallerAdmin) {
       return { success: false, message: 'Hanya administrator yang diizinkan mengaktifkan Mode Simulasi.' };
     }
