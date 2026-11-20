@@ -163,11 +163,8 @@ export function generateRandomToken6() {
 }
 
 export function formatExamToken(raw) {
-  if (!raw) return generateRandomToken6();
-  const cleaned = String(raw).toUpperCase().replace(/[^A-Z]/g, '').slice(0, 6);
-  if (cleaned.length === 6) return cleaned;
-  const padding = generateRandomToken6();
-  return (cleaned + padding).slice(0, 6);
+  if (!raw) return '';
+  return String(raw).toUpperCase().replace(/[^A-Z]/g, '').slice(0, 6);
 }
 
 

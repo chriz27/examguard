@@ -1915,8 +1915,8 @@ export default function AdminDashboard({ currentUser, onLogout }) {
   const handleOpenAddExamModal = () => {
     const def = getDefaultExamTimes(90);
     setEditingExam(null);
-    setExamTokenValue(generateRandomToken6());
-    setFinishTokenValue(generateRandomToken6());
+    setExamTokenValue('');
+    setFinishTokenValue('');
     setExamDuration(90);
     setExamStartTime(def.startTime);
     setExamEndTime(def.endTime);
@@ -1926,8 +1926,8 @@ export default function AdminDashboard({ currentUser, onLogout }) {
   // Helper Buka Modal Edit Soal (Normalisasi Token Mulai & Selesai 6 Digit & Pertahankan/Sinkron Jam)
   const handleOpenEditExamModal = (exam) => {
     setEditingExam(exam);
-    setExamTokenValue(formatExamToken(exam.exam_token));
-    setFinishTokenValue(formatExamToken(exam.finish_token || generateRandomToken6()));
+    setExamTokenValue(exam.exam_token ? formatExamToken(exam.exam_token) : '');
+    setFinishTokenValue(exam.finish_token ? formatExamToken(exam.finish_token) : '');
     const dur = parseInt(exam.duration_minutes, 10) || 90;
     setExamDuration(dur);
     const def = getDefaultExamTimes(dur);
@@ -1943,24 +1943,27 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     e.preventDefault();
     const form = e.target;
     const isArchived = Boolean(form.is_archived?.checked);
-    const token = formatExamToken(examTokenValue || form.exam_token?.value);
-    const finishToken = formatExamToken(finishTokenValue || form.finish_token?.value);
+    const rawToken = (examTokenValue || form.exam_token?.value || '').trim();
+    const rawFinish = (finishTokenValue || form.finish_token?.value || '').trim();
+    const token = rawToken ? formatExamToken(rawToken) : '';
+    const finishToken = rawFinish ? formatExamToken(rawFinish) : '';
 
     const finalDuration = parseInt(examDuration || form.duration_minutes?.value, 10) || 90;
     const finalStartTime = examStartTime || form.start_time?.value || getDefaultExamTimes(finalDuration).startTime;
     const finalEndTime = examEndTime || form.end_time?.value || calculateEndTime(finalStartTime, finalDuration);
+    const finalTitle = form.title?.value?.trim() || form.subject?.value?.trim() || 'Sesi Ujian';
 
     const examData = {
       id: editingExam?.id || generateUUID(),
-      title: form.title.value.trim(),
+      title: finalTitle,
       subject: (form.subject?.value || '').trim() || 'Mata Pelajaran Umum',
       session_group: (form.session_group?.value || '').trim() || 'Asesmen Tengah Semester (ATS)',
-      description: form.description.value.trim(),
+      description: form.description?.value?.trim() || '',
       grade_level: parseInt(form.grade_level.value, 10),
       is_active: isArchived ? false : (form.is_active ? form.is_active.checked : true),
       is_archived: isArchived,
       gform_base_url: convertGoogleFormUrl(form.gform_base_url.value.trim()),
-      respon_base_url: form.respon_base_url.value.trim(),
+      respon_base_url: form.respon_base_url?.value?.trim() || '',
       exam_token: token,
       finish_token: finishToken,
       start_time: finalStartTime,
@@ -1975,7 +1978,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     showNotification(
       isArchived
         ? 'Soal berhasil disimpan ke Bank Soal (Arsip).'
-        : `Sesi ujian GForm berhasil disimpan dengan Token Mulai: ${token} & Token Selesai: ${finishToken}`
+        : `Sesi ujian GForm berhasil disimpan${token ? ` (Token Mulai: ${token}` : ''}${finishToken ? `, Token Selesai: ${finishToken})` : token ? ')' : ''}`
     );
   };
 
@@ -4432,7 +4435,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                                     <td className="py-3 px-3">
                                       <div className="font-medium text-zinc-800">{exam.title}</div>
                                       <div className="text-[10px] text-zinc-400 font-mono mt-0.5">
-                                        Mulai: <span className="font-bold text-zinc-700">{exam.exam_token}</span> &bull; Selesai: <span className="font-bold text-amber-600">{exam.finish_token || '-'}</span> &bull; {exam.duration_minutes} Menit
+                                        Mulai: <span className="font-bold text-zinc-700">{exam.exam_token || '-'}</span> &bull; Selesai: <span className="font-bold text-amber-600">{exam.finish_token || '-'}</span> &bull; {exam.duration_minutes} Menit
                                       </div>
                                     </td>
 
@@ -5066,7 +5069,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                       >
                         {exams.map((ex) => (
                           <option key={ex.id} value={ex.id}>
-                            {ex.title} &bull; {getGradeLabel(ex.grade_level)} ({ex.subject || 'Mapel'}) &bull; Token: {ex.exam_token}
+                            {ex.title} &bull; {getGradeLabel(ex.grade_level)} ({ex.subject || 'Mapel'}) &bull; Token: {ex.exam_token || '-'}
                           </option>
                         ))}
                       </select>
@@ -5077,7 +5080,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                           <span>Kelompok: {currentResetExam.session_group || 'Semua'}</span>
                           <span>&bull;</span>
                           <span className="font-mono bg-zinc-100 px-1.5 py-0.5 rounded text-zinc-700">
-                            Token: {currentResetExam.exam_token}
+                            Token: {currentResetExam.exam_token || '-'}
                           </span>
                         </div>
                       )}
@@ -10147,7 +10150,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                     name="subject"
                     list="popularSubjectsList"
                     required
-                    defaultValue={editingExam?.subject || 'Matematika Wajib'}
+                    defaultValue={editingExam?.subject || ''}
                     placeholder="Pilih atau ketik mapel..."
                     className="w-full px-3 py-2 border border-zinc-300 rounded-lg focus:ring-2 focus:ring-zinc-900 focus:outline-none"
                   />
@@ -10173,14 +10176,13 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
 
               <div>
                 <label className="block font-medium text-zinc-700 mb-1">
-                  Judul Sesi Ujian <span className="text-rose-500">*</span>
+                  Judul Sesi Ujian <span className="text-zinc-400 font-normal text-[11px]">(Opsional - otomatis gunakan Mapel jika kosong)</span>
                 </label>
                 <input
                   type="text"
                   name="title"
-                  required
                   defaultValue={editingExam?.title || ''}
-                  placeholder="Contoh: Penilaian Akhir Semester - Matematika Wajib"
+                  placeholder="Contoh: Penilaian Akhir Semester (opsional)"
                   className="w-full px-3 py-2 border border-zinc-300 rounded-lg focus:ring-2 focus:ring-zinc-900 focus:outline-none"
                 />
               </div>
@@ -10199,10 +10201,11 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-medium text-zinc-700 mb-1">
-                    Tingkat Kelas Sasaran ({institution.education_level})
+                    Tingkat Kelas Sasaran ({institution.education_level}) <span className="text-rose-500">*</span>
                   </label>
                   <select
                     name="grade_level"
+                    required
                     defaultValue={editingExam?.grade_level || institution.allowed_grades?.[0] || 0}
                     className="w-full px-3 py-2 border border-zinc-300 rounded-lg bg-white focus:ring-2 focus:ring-zinc-900 focus:outline-none"
                   >
@@ -10220,7 +10223,9 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
 
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <label className="block font-medium text-zinc-700">Durasi Pengerjaan</label>
+                    <label className="block font-medium text-zinc-700">
+                      Durasi Pengerjaan <span className="text-rose-500">*</span>
+                    </label>
                     <span className="text-[10px] text-zinc-400">Menit</span>
                   </div>
                   <input
@@ -10244,17 +10249,14 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
 
               <div>
                 <label className="block font-medium text-zinc-700 mb-1">
-                  URL Pengisian Google Form (Wajib berakhiran /viewform?embedded=true)
+                  URL Pengisian Google Form <span className="text-rose-500">*</span>
                 </label>
                 <div className="space-y-1">
                   <input
                     type="url"
                     name="gform_base_url"
                     required
-                    defaultValue={
-                      editingExam?.gform_base_url ||
-                      'https://docs.google.com/forms/d/e/1FAIpQLSc6Z-sample-math-exam/viewform?embedded=true'
-                    }
+                    defaultValue={editingExam?.gform_base_url || ''}
                     onBlur={(e) => {
                       const converted = convertGoogleFormUrl(e.target.value);
                       if (converted !== e.target.value) {
@@ -10262,11 +10264,11 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                         showNotification('Link Google Form otomatis dikonversi ke format embed standar!', 'info');
                       }
                     }}
-                    placeholder="https://docs.google.com/forms/d/.../viewform?embedded=true"
+                    placeholder="https://docs.google.com/forms/d/e/.../viewform"
                     className="w-full px-3 py-2 border border-zinc-300 rounded-lg font-mono text-[11px] focus:ring-2 focus:ring-zinc-900 focus:outline-none"
                   />
                   <p className="text-[10px] text-zinc-500">
-                    Sistem otomatis mengonversi link edit Google Forms menjadi link embed standar ujian.
+                    Tempel link Google Forms di sini (sistem otomatis mengonversi ke format embed standar ujian).
                   </p>
                 </div>
               </div>
@@ -10291,7 +10293,8 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                   <div className="flex items-center justify-between mb-1">
                     <label className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
                       <KeyRound className="w-3.5 h-3.5 text-blue-600" />
-                      <span>Token Mulai (Masuk)</span> <span className="text-rose-500">*</span>
+                      <span>Token Mulai (Masuk)</span>
+                      <span className="text-[10px] text-zinc-400 font-normal">(Opsional)</span>
                     </label>
                     <button
                       type="button"
@@ -10306,7 +10309,6 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                   <input
                     type="text"
                     name="exam_token"
-                    required
                     maxLength={6}
                     value={examTokenValue}
                     onChange={(e) =>
@@ -10314,10 +10316,10 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                         e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 6)
                       )
                     }
-                    placeholder="MULAIX"
-                    className="w-full px-3 py-2 bg-white border border-zinc-300 rounded-lg font-mono font-bold tracking-widest uppercase focus:ring-2 focus:ring-blue-600 focus:outline-none text-zinc-900 text-sm"
+                    placeholder="Klik 'Acak' atau kosongkan"
+                    className="w-full px-3 py-2 bg-white border border-zinc-300 rounded-lg font-mono font-bold tracking-widest uppercase focus:ring-2 focus:ring-blue-600 focus:outline-none text-zinc-900 text-sm placeholder:text-zinc-400 placeholder:font-normal placeholder:tracking-normal placeholder:text-xs"
                   />
-                  <p className="text-[10px] text-zinc-500 mt-1">Standar 6 huruf besar (A-Z) tanpa angka</p>
+                  <p className="text-[10px] text-zinc-500 mt-1">Kosongkan jika tanpa token, atau klik Acak (A-Z)</p>
                 </div>
 
                 {/* 2. Token Selesai (Submit) */}
@@ -10325,7 +10327,8 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                   <div className="flex items-center justify-between mb-1">
                     <label className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
                       <KeyRound className="w-3.5 h-3.5 text-amber-600" />
-                      <span>Token Selesai (Submit)</span> <span className="text-rose-500">*</span>
+                      <span>Token Selesai (Submit)</span>
+                      <span className="text-[10px] text-zinc-400 font-normal">(Opsional)</span>
                     </label>
                     <button
                       type="button"
@@ -10340,7 +10343,6 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                   <input
                     type="text"
                     name="finish_token"
-                    required
                     maxLength={6}
                     value={finishTokenValue}
                     onChange={(e) =>
@@ -10348,10 +10350,10 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                         e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 6)
                       )
                     }
-                    placeholder="SELESA"
-                    className="w-full px-3 py-2 bg-white border border-zinc-300 rounded-lg font-mono font-bold tracking-widest uppercase focus:ring-2 focus:ring-amber-500 focus:outline-none text-zinc-900 text-sm"
+                    placeholder="Klik 'Acak' atau kosongkan"
+                    className="w-full px-3 py-2 bg-white border border-zinc-300 rounded-lg font-mono font-bold tracking-widest uppercase focus:ring-2 focus:ring-amber-500 focus:outline-none text-zinc-900 text-sm placeholder:text-zinc-400 placeholder:font-normal placeholder:tracking-normal placeholder:text-xs"
                   />
-                  <p className="text-[10px] text-zinc-500 mt-1">Standar 6 huruf besar (A-Z) tanpa angka</p>
+                  <p className="text-[10px] text-zinc-500 mt-1">Kosongkan jika tanpa token, atau klik Acak (A-Z)</p>
                 </div>
               </div>
 
@@ -10359,7 +10361,9 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <label className="block font-medium text-zinc-700">Mulai Sesi</label>
+                    <label className="block font-medium text-zinc-700">
+                      Mulai Sesi <span className="text-rose-500">*</span>
+                    </label>
                     <button
                       type="button"
                       onClick={() => {
@@ -10389,12 +10393,14 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                     }}
                     className="w-full px-3 py-2 border border-zinc-300 rounded-lg text-[11px] font-mono focus:ring-2 focus:ring-zinc-900 focus:outline-none"
                   />
-                  <p className="text-[10px] text-zinc-400 mt-1">Hari saat dibuat jam 07:30</p>
+                  <p className="text-[10px] text-zinc-400 mt-1">Default hari ini jam 07:30</p>
                 </div>
 
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <label className="block font-medium text-zinc-700">Selesai Sesi</label>
+                    <label className="block font-medium text-zinc-700">
+                      Selesai Sesi <span className="text-rose-500">*</span>
+                    </label>
                     {examDuration > 0 && (
                       <span className="text-[10px] text-blue-600 font-mono font-medium">
                         (+{examDuration} mnt)
@@ -10409,7 +10415,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                     onChange={(e) => setExamEndTime(e.target.value)}
                     className="w-full px-3 py-2 border border-zinc-300 rounded-lg text-[11px] font-mono focus:ring-2 focus:ring-zinc-900 focus:outline-none"
                   />
-                  <p className="text-[10px] text-zinc-400 mt-1">Hari itu juga sesuai durasi</p>
+                  <p className="text-[10px] text-zinc-400 mt-1">Hari itu juga sesuai durasi ({examDuration} menit)</p>
                 </div>
               </div>
 

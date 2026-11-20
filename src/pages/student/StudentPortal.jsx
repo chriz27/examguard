@@ -2951,7 +2951,7 @@ const renderVerificationPopup = () => {
                                                                                     Token (6 Digit)
                                                                                   </span>
                                                                                   <span className="font-mono font-bold text-xs tracking-widest text-emerald-800 mt-0.5">
-                                                                                    {exam.exam_token}
+                                                                                    {exam.exam_token || 'Tanpa Token'}
                                                                                   </span>
                                                                                 </div>
                                                                               </div>
@@ -3009,34 +3009,36 @@ const renderVerificationPopup = () => {
                                                                       </p>
 
                                                                       {/* Box Standar Token 6 Digit */}
-                                                                      <div className="p-3 bg-zinc-900 text-white rounded-xl flex items-center justify-between shadow-xs">
-                                                                        <div>
-                                                                          <div className="text-[10px] text-zinc-400 font-semibold uppercase tracking-wider flex items-center gap-1.5">
-                                                                            <KeyRound className="w-3.5 h-3.5 text-emerald-400" />
-                                                                            <span>Token Ujian (6 Digit)</span>
+                                                                      {Boolean(selectedExam.exam_token) && (
+                                                                        <div className="p-3 bg-zinc-900 text-white rounded-xl flex items-center justify-between shadow-xs">
+                                                                          <div>
+                                                                            <div className="text-[10px] text-zinc-400 font-semibold uppercase tracking-wider flex items-center gap-1.5">
+                                                                              <KeyRound className="w-3.5 h-3.5 text-emerald-400" />
+                                                                              <span>Token Ujian (6 Digit)</span>
+                                                                            </div>
+                                                                            <div className="font-mono font-bold text-lg tracking-widest text-emerald-400 mt-0.5">
+                                                                              {selectedExam.exam_token}
+                                                                            </div>
                                                                           </div>
-                                                                          <div className="font-mono font-bold text-lg tracking-widest text-emerald-400 mt-0.5">
-                                                                            {selectedExam.exam_token}
-                                                                          </div>
+                                                                          <button
+                                                                            type="button"
+                                                                            onClick={() => copyToken(selectedExam.exam_token)}
+                                                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-medium rounded-lg border border-zinc-700 transition-colors cursor-pointer"
+                                                                          >
+                                                                            {copiedToken ? (
+                                                                              <>
+                                                                                <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                                                                <span className="text-emerald-400">Tersalin</span>
+                                                                              </>
+                                                                            ) : (
+                                                                              <>
+                                                                                <Copy className="w-3.5 h-3.5" />
+                                                                                <span>Salin Token</span>
+                                                                              </>
+                                                                            )}
+                                                                          </button>
                                                                         </div>
-                                                                        <button
-                                                                          type="button"
-                                                                          onClick={() => copyToken(selectedExam.exam_token)}
-                                                                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-medium rounded-lg border border-zinc-700 transition-colors cursor-pointer"
-                                                                        >
-                                                                          {copiedToken ? (
-                                                                            <>
-                                                                              <Check className="w-3.5 h-3.5 text-emerald-400" />
-                                                                              <span className="text-emerald-400">Tersalin</span>
-                                                                            </>
-                                                                          ) : (
-                                                                            <>
-                                                                              <Copy className="w-3.5 h-3.5" />
-                                                                              <span>Salin Token</span>
-                                                                            </>
-                                                                          )}
-                                                                        </button>
-                                                                      </div>
+                                                                      )}
 
                                                                       <div className="p-3.5 bg-zinc-50 border border-zinc-200 rounded-xl space-y-2">
                                                                         <div className="font-semibold text-zinc-900 text-xs">
@@ -3046,9 +3048,11 @@ const renderVerificationPopup = () => {
                                                                           <li>
                                                                             Isi kolom <strong>Nama Lengkap</strong> dan <strong>NISN</strong> di dalam formulir persis sama dengan identitas Anda ({currentUser.nama} / {currentUser.nisn}).
                                                                           </li>
-                                                                          <li>
-                                                                            Masukkan Token Soal 6 digit di atas ({selectedExam.exam_token}) ke dalam kolom Token yang ada di formulir.
-                                                                          </li>
+                                                                          {Boolean(selectedExam.exam_token) && (
+                                                                            <li>
+                                                                              Masukkan Token Soal 6 digit di atas ({selectedExam.exam_token}) ke dalam kolom Token yang ada di formulir.
+                                                                            </li>
+                                                                          )}
                                                                           <li>
                                                                             Dilarang keluar dari mode Layar Penuh (Fullscreen), membuka tab baru, atau meminimalkan peramban. Pelanggaran akan menyebabkan layar <strong>TERKUNCI SECARA OTOMATIS</strong>.
                                                                           </li>

@@ -652,7 +652,7 @@ export const storageService = {
 
   saveExamSession(data) {
     const id = data.id || generateUUID();
-    const token = formatExamToken(data.exam_token);
+    const token = data.exam_token ? formatExamToken(data.exam_token) : '';
     const existingIdx = (_cache.examSessions || []).findIndex(e => e.id === id);
 
     const examData = {
@@ -667,7 +667,7 @@ export const storageService = {
       gform_base_url: convertGoogleFormUrl(data.gform_base_url || ''),
       respon_base_url: data.respon_base_url || '',
       exam_token: token,
-      finish_token: data.finish_token || null,
+      finish_token: data.finish_token ? formatExamToken(data.finish_token) : '',
       start_time: data.start_time || '',
       end_time: data.end_time || '',
       duration_minutes: parseInt(data.duration_minutes, 10) || 60,
