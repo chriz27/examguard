@@ -420,6 +420,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
   const [users, setUsers] = useState(storageService.getUsers());
   const [exams, setExams] = useState(storageService.getExamSessions());
   const [attempts, setAttempts] = useState(storageService.getAttempts());
+  const [attendance, setAttendance] = useState(() => storageService.getAttendance());
   const [isRefreshingProctor, setIsRefreshingProctor] = useState(false);
   const [gmapsInput, setGmapsInput] = useState(
     () => institution?.gmaps_url || (institution?.center_lat ? `https://maps.google.com/?q=${institution.center_lat},${institution.center_lng}` : '')
@@ -1095,6 +1096,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     setUsers(storageService.getUsers());
     setExams(storageService.getExamSessions());
     setAttempts(storageService.getAttempts());
+    setAttendance(storageService.getAttendance());
     setBeritaAcaraConfig(storageService.getBeritaAcaraConfig());
     setAppModeConfig(storageService.getAppModeConfig());
     setSystemErrorLogs(storageService.getSystemErrorLogs());
