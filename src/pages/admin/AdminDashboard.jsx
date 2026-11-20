@@ -493,6 +493,70 @@ export default function AdminDashboard({ currentUser, onLogout }) {
   // Modals
   const [showExamModal, setShowExamModal] = useState(false);
   const [editingExam, setEditingExam] = useState(null);
+  const [examDuration, setExamDuration] = useState(90);
+  const [examStartTime, setExamStartTime] = useState('');
+  const [examEndTime, setExamEndTime] = useState('');
+
+  // Helper Menghitung Waktu Default Sesi Ujian (Mulai: Hari Ini now() Jam 07:30, Selesai: Hari Ini Jam 07:30 + Durasi)
+  const getDefaultExamTimes = (durationMinutes = 90) => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    const todayDateStr = `${y}-${m}-${d}`;
+    const startTime = `${todayDateStr}T07:30`;
+
+    const startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 7, 30, 0, 0);
+    const durMs = (parseInt(durationMinutes, 10) || 90) * 60 * 1000;
+    const endDate = new Date(startDate.getTime() + durMs);
+
+    const endY = endDate.getFullYear();
+    const endM = String(endDate.getMonth() + 1).padStart(2, '0');
+    const endD = String(endDate.getDate()).padStart(2, '0');
+    const endH = String(endDate.getHours()).padStart(2, '0');
+    const endMin = String(endDate.getMinutes()).padStart(2, '0');
+    const endTime = `${endY}-${endM}-${endD}T${endH}:${endMin}`;
+
+    return { startTime, endTime };
+  };
+
+  // Helper Menghitung Waktu Selesai Berdasarkan Waktu Mulai dan Durasi
+  const calculateEndTime = (startTimeStr, durationMinutes) => {
+    if (!startTimeStr) return '';
+    const dur = parseInt(durationMinutes, 10) || 90;
+
+    let startDate;
+    if (startTimeStr.includes('T')) {
+      const [dPart, tPart] = startTimeStr.split('T');
+      const [y, m, d] = (dPart || '').split('-').map(Number);
+      const [h, min] = (tPart || '07:30').split(':').map(Number);
+      if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
+        startDate = new Date(y, m - 1, d, h || 0, min || 0, 0, 0);
+      }
+    }
+    if (!startDate || isNaN(startDate.getTime())) {
+      startDate = new Date(startTimeStr);
+    }
+    if (isNaN(startDate.getTime())) return '';
+
+    const endDate = new Date(startDate.getTime() + dur * 60 * 1000);
+    const endY = endDate.getFullYear();
+    const endM = String(endDate.getMonth() + 1).padStart(2, '0');
+    const endD = String(endDate.getDate()).padStart(2, '0');
+    const endH = String(endDate.getHours()).padStart(2, '0');
+    const endMin = String(endDate.getMinutes()).padStart(2, '0');
+    return `${endY}-${endM}-${endD}T${endH}:${endMin}`;
+  };
+
+  // Helper Ekstraksi Format Tampilan Jam (HH:mm) dari String Waktu ISO/Datetime
+  const formatExamTimeDisplay = (timeStr, fallback = '07:30') => {
+    if (!timeStr) return fallback;
+    if (timeStr.includes('T')) {
+      const parts = timeStr.split('T');
+      return parts[1] ? parts[1].slice(0, 5) : fallback;
+    }
+    return timeStr.slice(0, 5);
+  };
   const [showImportModal, setShowImportModal] = useState(false);
   const [importCsvText, setImportCsvText] = useState('');
   const [copiedText, setCopiedText] = useState(false);
@@ -1806,17 +1870,28 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     showNotification('File QR Code PNG berhasil diunduh.');
   };
 
-  // Helper Buka Modal Tambah Soal (Token Standar 6 Digit Otomatis)
+  // Helper Buka Modal Tambah Soal (Token Standar 6 Digit Otomatis & Default Mulai Hari Ini 07:30 Selesai Sesuai Durasi)
   const handleOpenAddExamModal = () => {
+    const def = getDefaultExamTimes(90);
     setEditingExam(null);
     setExamTokenValue(generateRandomToken6());
+    setExamDuration(90);
+    setExamStartTime(def.startTime);
+    setExamEndTime(def.endTime);
     setShowExamModal(true);
   };
 
-  // Helper Buka Modal Edit Soal (Normalisasi Token 6 Digit)
+  // Helper Buka Modal Edit Soal (Normalisasi Token 6 Digit & Pertahankan/Sinkron Jam)
   const handleOpenEditExamModal = (exam) => {
     setEditingExam(exam);
     setExamTokenValue(formatExamToken(exam.exam_token));
+    const dur = parseInt(exam.duration_minutes, 10) || 90;
+    setExamDuration(dur);
+    const def = getDefaultExamTimes(dur);
+    const start = exam.start_time || def.startTime;
+    const end = exam.end_time || calculateEndTime(start, dur) || def.endTime;
+    setExamStartTime(start);
+    setExamEndTime(end);
     setShowExamModal(true);
   };
 
@@ -1826,6 +1901,10 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     const form = e.target;
     const isArchived = Boolean(form.is_archived?.checked);
     const token = formatExamToken(examTokenValue || form.exam_token?.value);
+
+    const finalDuration = parseInt(examDuration || form.duration_minutes?.value, 10) || 90;
+    const finalStartTime = examStartTime || form.start_time?.value || getDefaultExamTimes(finalDuration).startTime;
+    const finalEndTime = examEndTime || form.end_time?.value || calculateEndTime(finalStartTime, finalDuration);
 
     const examData = {
       id: editingExam?.id || generateUUID(),
@@ -1839,9 +1918,9 @@ export default function AdminDashboard({ currentUser, onLogout }) {
       gform_base_url: convertGoogleFormUrl(form.gform_base_url.value.trim()),
       respon_base_url: form.respon_base_url.value.trim(),
       exam_token: token,
-      start_time: form.start_time.value,
-      end_time: form.end_time.value,
-      duration_minutes: parseInt(form.duration_minutes.value, 10) || 60,
+      start_time: finalStartTime,
+      end_time: finalEndTime,
+      duration_minutes: finalDuration,
     };
 
     storageService.saveExamSession(examData);
@@ -3996,12 +4075,8 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
             });
 
             const dateInfo = formatIndonesianDateText(new Date());
-            const examStartTimeFormatted = currentAttendanceExam?.start_time
-              ? currentAttendanceExam.start_time.slice(0, 5).replace(':', '.')
-              : '07.30';
-            const examEndTimeFormatted = currentAttendanceExam?.end_time
-              ? currentAttendanceExam.end_time.slice(0, 5).replace(':', '.')
-              : '16.00';
+            const examStartTimeFormatted = formatExamTimeDisplay(currentAttendanceExam?.start_time, '07:30').replace(':', '.');
+            const examEndTimeFormatted = formatExamTimeDisplay(currentAttendanceExam?.end_time, '16:00').replace(':', '.');
 
 
 
@@ -4255,8 +4330,8 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                               </tr>
                             ) : (
                               filteredActiveExamsList.map((exam, idx) => {
-                                const startTime = exam.start_time ? exam.start_time.slice(0, 5) : '07:30';
-                                const endTime = exam.end_time ? exam.end_time.slice(0, 5) : '16:00';
+                                const startTime = formatExamTimeDisplay(exam.start_time, '07:30');
+                                const endTime = formatExamTimeDisplay(exam.end_time, '16:00');
                                 const gradeLabel = getGradeLabel(exam.grade_level);
 
                                 return (
@@ -6465,7 +6540,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                           <div className="p-3 bg-zinc-50 border border-zinc-200/80 rounded-xl">
                             <div className="text-[11px] text-zinc-500 font-medium">Waktu Ujian</div>
                             <div className="text-xs font-bold font-mono text-zinc-900 mt-0.5">
-                              {detailExamData.start_time ? detailExamData.start_time.slice(0, 5) : '07:30'} - {detailExamData.end_time ? detailExamData.end_time.slice(0, 5) : '16:00'} WIB
+                              {formatExamTimeDisplay(detailExamData.start_time, '07:30')} - {formatExamTimeDisplay(detailExamData.end_time, '16:00')} WIB
                             </div>
                           </div>
                           <div className="p-3 bg-zinc-50 border border-zinc-200/80 rounded-xl">
@@ -10072,14 +10147,24 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                 </div>
 
                 <div>
-                  <label className="block font-medium text-zinc-700 mb-1">Durasi Pengerjaan (Menit)</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block font-medium text-zinc-700">Durasi Pengerjaan</label>
+                    <span className="text-[10px] text-zinc-400">Menit</span>
+                  </div>
                   <input
                     type="number"
                     name="duration_minutes"
                     min="5"
                     max="300"
                     required
-                    defaultValue={editingExam?.duration_minutes || 90}
+                    value={examDuration}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value, 10) || 0;
+                      setExamDuration(val);
+                      if (examStartTime && val > 0) {
+                        setExamEndTime(calculateEndTime(examStartTime, val));
+                      }
+                    }}
                     className="w-full px-3 py-2 border border-zinc-300 rounded-lg font-mono focus:ring-2 focus:ring-zinc-900 focus:outline-none"
                   />
                 </div>
@@ -10161,23 +10246,58 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                 </div>
 
                 <div>
-                  <label className="block font-medium text-zinc-700 mb-1">Mulai Sesi</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block font-medium text-zinc-700">Mulai Sesi</label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const def = getDefaultExamTimes(examDuration);
+                        setExamStartTime(def.startTime);
+                        setExamEndTime(def.endTime);
+                        showNotification('Waktu mulai diset ke hari ini jam 07:30', 'info');
+                      }}
+                      className="text-[10px] text-blue-600 hover:text-blue-800 font-medium hover:underline inline-flex items-center gap-0.5 cursor-pointer"
+                      title="Set Waktu Mulai ke Hari Ini now() Jam 07:30"
+                    >
+                      <Clock className="w-2.5 h-2.5" />
+                      <span>Hari Ini 07:30</span>
+                    </button>
+                  </div>
                   <input
                     type="datetime-local"
                     name="start_time"
-                    defaultValue={editingExam?.start_time || '2026-11-11T07:30'}
-                    className="w-full px-3 py-2 border border-zinc-300 rounded-lg text-[11px] focus:ring-2 focus:ring-zinc-900 focus:outline-none"
+                    required
+                    value={examStartTime}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setExamStartTime(val);
+                      if (val && examDuration > 0) {
+                        setExamEndTime(calculateEndTime(val, examDuration));
+                      }
+                    }}
+                    className="w-full px-3 py-2 border border-zinc-300 rounded-lg text-[11px] font-mono focus:ring-2 focus:ring-zinc-900 focus:outline-none"
                   />
+                  <p className="text-[10px] text-zinc-400 mt-1">Hari saat dibuat jam 07:30</p>
                 </div>
 
                 <div>
-                  <label className="block font-medium text-zinc-700 mb-1">Selesai Sesi</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block font-medium text-zinc-700">Selesai Sesi</label>
+                    {examDuration > 0 && (
+                      <span className="text-[10px] text-blue-600 font-mono font-medium">
+                        (+{examDuration} mnt)
+                      </span>
+                    )}
+                  </div>
                   <input
                     type="datetime-local"
                     name="end_time"
-                    defaultValue={editingExam?.end_time || '2026-11-11T16:00'}
-                    className="w-full px-3 py-2 border border-zinc-300 rounded-lg text-[11px] focus:ring-2 focus:ring-zinc-900 focus:outline-none"
+                    required
+                    value={examEndTime}
+                    onChange={(e) => setExamEndTime(e.target.value)}
+                    className="w-full px-3 py-2 border border-zinc-300 rounded-lg text-[11px] font-mono focus:ring-2 focus:ring-zinc-900 focus:outline-none"
                   />
+                  <p className="text-[10px] text-zinc-400 mt-1">Hari itu juga sesuai durasi</p>
                 </div>
               </div>
 
