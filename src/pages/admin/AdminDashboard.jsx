@@ -371,11 +371,51 @@ function executePrintDocument(elementId, title, marginSetting = 'narrow', custom
 
 export default function AdminDashboard({ currentUser, onLogout }) {
   const isSuperAdmin = currentUser?.role === 'admin';
-  const [activeTab, setActiveTab] = useState('overview');
+  // Persistent Tab Navigation: Mendukung URL Hash (#institution, #exams, dll) & LocalStorage agar tidak reset saat refresh
+  const [activeTab, setActiveTab] = useState(() => {
+    try {
+      const hash = window.location.hash.replace('#', '').trim();
+      const validTabs = ['overview', 'proctor', 'exams', 'users', 'institution', 'account', 'backup'];
+      const target = (hash && validTabs.includes(hash)) ? hash : localStorage.getItem('examguard_admin_active_tab');
+      if (target && validTabs.includes(target)) {
+        if (!isSuperAdmin && ['account', 'institution', 'backup'].includes(target)) {
+          return 'overview';
+        }
+        return target;
+      }
+    } catch {}
+    return 'overview';
+  });
+
   const activeTabRef = useRef(activeTab);
   useEffect(() => {
     activeTabRef.current = activeTab;
+    try {
+      localStorage.setItem('examguard_admin_active_tab', activeTab);
+      if (window.location.hash !== `#${activeTab}`) {
+        window.history.replaceState(null, '', `#${activeTab}`);
+      }
+    } catch {}
   }, [activeTab]);
+
+  // Dukungan Navigasi Tombol Back/Forward Browser
+  useEffect(() => {
+    const handleHashChange = () => {
+      try {
+        const hash = window.location.hash.replace('#', '').trim();
+        const validTabs = ['overview', 'proctor', 'exams', 'users', 'institution', 'account', 'backup'];
+        if (hash && validTabs.includes(hash)) {
+          if (!isSuperAdmin && ['account', 'institution', 'backup'].includes(hash)) {
+            setActiveTab('overview');
+          } else {
+            setActiveTab(hash);
+          }
+        }
+      } catch {}
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, [isSuperAdmin]);
   const [institution, setInstitution] = useState(storageService.getInstitution());
   const [users, setUsers] = useState(storageService.getUsers());
   const [exams, setExams] = useState(storageService.getExamSessions());
