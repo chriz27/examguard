@@ -73,6 +73,8 @@ import {
   PlayCircle,
   Play,
   FlaskConical,
+  Loader2,
+  Crosshair,
 } from 'lucide-react';
 import { storageService, cleanNomorUjian, convertGoogleFormUrl, subscribeSync } from '../../services/storageService';
 import {
@@ -382,6 +384,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
   const [gmapsInput, setGmapsInput] = useState(
     () => institution?.gmaps_url || (institution?.center_lat ? `https://maps.google.com/?q=${institution.center_lat},${institution.center_lng}` : '')
   );
+  const [isDetectingLocation, setIsDetectingLocation] = useState(false);
 
   // Proteksi Akses Peran: Jika login sebagai Proktor, larang akses tab 'account', 'institution', dan 'backup'
   useEffect(() => {
@@ -1525,34 +1528,90 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     }
   };
 
-  // Ambil Lokasi GPS Saat Ini
-  const handleDetectCurrentLocation = () => {
+  // Ambil Lokasi GPS/Jaringan Saat Ini secara Live (Multi-Tier: Satelit -> Jaringan -> IP Fallback)
+  const handleDetectCurrentLocation = async () => {
+    if (isDetectingLocation) return;
+    setIsDetectingLocation(true);
+    showNotification('Sedang mendeteksi sinyal GPS & koordinat live posisi Anda saat ini...', 'info');
+
+    const applyLocation = (lat, lng, source, accuracy = null) => {
+      const fixedLat = parseFloat(Number(lat).toFixed(6));
+      const fixedLng = parseFloat(Number(lng).toFixed(6));
+      const gmaps = `https://maps.google.com/?q=${fixedLat},${fixedLng}`;
+
+      setInstitution((prev) => {
+        const updated = {
+          ...prev,
+          center_lat: fixedLat,
+          center_lng: fixedLng,
+          gmaps_url: gmaps,
+        };
+        storageService.updateInstitution(updated);
+        return updated;
+      });
+      setGmapsInput(gmaps);
+      setIsDetectingLocation(false);
+
+      const accInfo = accuracy ? ` (Akurasi: ±${Math.round(accuracy)}m)` : '';
+      showNotification(`Koordinat live berhasil didapatkan via ${source}: ${fixedLat}, ${fixedLng}${accInfo}`, 'success');
+    };
+
+    // Fallback Geolocation via IP Publik Jaringan (Solusi utama jika diakses via HTTP LAN di mana browser memblokir navigator.geolocation)
+    const tryIpFallback = async (reason) => {
+      try {
+        const res = await fetch('https://ipwho.is/');
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.success && data.latitude && data.longitude) {
+            applyLocation(data.latitude, data.longitude, `Jaringan Internet (${data.city || 'IP'})`);
+            return;
+          }
+        }
+      } catch (e1) {
+        try {
+          const res2 = await fetch('https://freeipapi.com/api/json');
+          if (res2.ok) {
+            const data2 = await res2.json();
+            if (data2 && data2.latitude && data2.longitude) {
+              applyLocation(data2.latitude, data2.longitude, `Jaringan Internet (${data2.cityName || 'IP'})`);
+              return;
+            }
+          }
+        } catch (e2) {}
+      }
+
+      setIsDetectingLocation(false);
+      showNotification(`Gagal mendeteksi koordinat live: ${reason}. Silakan tentukan lokasi pada peta secara manual.`, 'error');
+    };
+
+    // 1. Cek ketersediaan navigator.geolocation di peramban
     if (!navigator.geolocation) {
-      showNotification('Peramban Anda tidak mendukung Geolocation GPS.', 'error');
+      await tryIpFallback('Peramban tidak mendukung Geolocation API');
       return;
     }
+
+    // 2. Tier 1: Coba GPS Satelit Akurasi Tinggi (maximumAge: 0 memastikan sinyal baru, bukan data cache lama)
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        const lat = parseFloat(pos.coords.latitude.toFixed(6));
-        const lng = parseFloat(pos.coords.longitude.toFixed(6));
-        const gmaps = `https://maps.google.com/?q=${lat},${lng}`;
-        setInstitution((prev) => {
-          const updated = {
-            ...prev,
-            center_lat: lat,
-            center_lng: lng,
-            gmaps_url: gmaps,
-          };
-          storageService.updateInstitution(updated);
-          return updated;
-        });
-        setGmapsInput(gmaps);
-        showNotification('Koordinat GPS berhasil disesuaikan dengan posisi Anda saat ini.');
+        applyLocation(pos.coords.latitude, pos.coords.longitude, 'Sensor GPS Satelit', pos.coords.accuracy);
       },
-      (err) => {
-        showNotification(`Gagal membaca GPS: ${err.message}`, 'error');
+      (err1) => {
+        console.warn('[ExamGuard GPS] Tier 1 High Accuracy gagal:', err1.message);
+
+        // 3. Tier 2: Coba Akurasi Standar (Triangulasi Wi-Fi/Jaringan Seluler)
+        navigator.geolocation.getCurrentPosition(
+          (pos2) => {
+            applyLocation(pos2.coords.latitude, pos2.coords.longitude, 'Jaringan Seluler/Wi-Fi', pos2.coords.accuracy);
+          },
+          async (err2) => {
+            console.warn('[ExamGuard GPS] Tier 2 Standard Accuracy gagal:', err2.message);
+            // 4. Tier 3: Fallback ke IP Geolocation jika GPS diblokir karena HTTP LAN atau ketiadaan izin
+            await tryIpFallback(err2.message || err1.message);
+          },
+          { enableHighAccuracy: false, timeout: 6000, maximumAge: 0 }
+        );
       },
-      { enableHighAccuracy: true }
+      { enableHighAccuracy: true, timeout: 7000, maximumAge: 0 }
     );
   };
 
@@ -8340,10 +8399,16 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                         <button
                           type="button"
                           onClick={handleDetectCurrentLocation}
-                          className="text-[11px] text-blue-600 hover:underline flex items-center gap-1 font-medium"
+                          disabled={isDetectingLocation}
+                          className="text-[11px] text-blue-600 hover:underline flex items-center gap-1 font-medium disabled:opacity-50"
+                          title="Deteksi posisi GPS satelit atau jaringan live saat ini"
                         >
-                          <MapPin className="w-3 h-3" />
-                          <span>Posisi Saya</span>
+                          {isDetectingLocation ? (
+                            <Loader2 className="w-3 h-3 animate-spin text-blue-600" />
+                          ) : (
+                            <MapPin className="w-3 h-3" />
+                          )}
+                          <span>{isDetectingLocation ? 'Mendeteksi...' : 'Posisi Saya'}</span>
                         </button>
                       </div>
                       <div className="relative">
@@ -8373,6 +8438,24 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                     </div>
                   </div>
 
+                  {/* Banner Notifikasi jika Titik Masih Koordinat Default Bawaan Sistem */}
+                  {institution.center_lat === -6.2088 && institution.center_lng === 106.8456 && (
+                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-start sm:items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                        <span>Titik sekolah saat ini masih menggunakan koordinat <em>default</em> bawaan sistem (Monas, Jakarta). Klik <strong>Ambil Posisi Live</strong> untuk menyelaraskan dengan lokasi sekolah tempat Anda berada.</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleDetectCurrentLocation}
+                        disabled={isDetectingLocation}
+                        className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white font-medium rounded-lg text-[11px] shrink-0 transition-colors shadow-2xs"
+                      >
+                        {isDetectingLocation ? 'Mendeteksi...' : 'Ambil Posisi Live'}
+                      </button>
+                    </div>
+                  )}
+
                   {/* Preview Peta Geofence Interaktif (OpenStreetMap & Leaflet) */}
                   <div className="pt-2 border-t border-zinc-100">
                     <GeofenceMapPreview
@@ -8380,6 +8463,8 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                       lng={institution.center_lng}
                       radius={institution.max_radius_meters}
                       institutionName={institution.name}
+                      onDetectLiveLocation={handleDetectCurrentLocation}
+                      isDetectingLocation={isDetectingLocation}
                       onLocationChange={(newLat, newLng) => {
                         const gmaps = `https://maps.google.com/?q=${newLat},${newLng}`;
                         setInstitution((prev) => {

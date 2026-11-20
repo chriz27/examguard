@@ -24,6 +24,8 @@ export default function GeofenceMapPreview({
   institutionName = 'Lokasi Sekolah',
   onLocationChange,
   onRadiusChange,
+  onDetectLiveLocation,
+  isDetectingLocation = false,
 }) {
   const mapContainerRef = useRef(null);
   const mapInstanceRef = useRef(null);
@@ -360,10 +362,14 @@ export default function GeofenceMapPreview({
 
     circle.setTooltipContent(`Radius Ujian: ${validRadius} meter`);
 
-    // Sesuaikan kamera agar seluruh radius terlihat
+    // Sesuaikan kamera agar seluruh radius terlihat dengan animasi mulus
     try {
-      map.fitBounds(circle.getBounds(), { padding: [35, 35], maxZoom: 17 });
-    } catch { }
+      map.flyTo(newLatLng, 16, { duration: 0.8 });
+    } catch {
+      try {
+        map.fitBounds(circle.getBounds(), { padding: [35, 35], maxZoom: 17 });
+      } catch { }
+    }
   }, [lat, lng, radius, institutionName]);
 
   // Tombol untuk memusatkan kembali peta ke koordinat sekolah
@@ -397,8 +403,24 @@ export default function GeofenceMapPreview({
           </div>
         </div>
 
-        {/* Preset Cepat Radius & Tombol Recenter */}
+        {/* Preset Cepat Radius & Tombol Recenter & Tombol Posisi Saya */}
         <div className="flex items-center gap-1.5 flex-wrap">
+          {onDetectLiveLocation && (
+            <button
+              type="button"
+              onClick={onDetectLiveLocation}
+              disabled={isDetectingLocation}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-[11px] font-semibold shadow-2xs transition-all cursor-pointer disabled:opacity-60 mr-1"
+              title="Deteksi posisi GPS satelit atau jaringan live saya saat ini"
+            >
+              {isDetectingLocation ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Crosshair className="w-3.5 h-3.5" />
+              )}
+              <span>{isDetectingLocation ? 'Mencari Lokasi...' : 'Posisi Saya (Live)'}</span>
+            </button>
+          )}
           <span className="text-[11px] text-zinc-400 font-medium mr-1">Preset:</span>
           {radiusPresets.map((r) => (
             <button
@@ -416,10 +438,10 @@ export default function GeofenceMapPreview({
           <button
             type="button"
             onClick={handleRecenter}
-            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-white border border-zinc-200 text-zinc-700 hover:bg-zinc-100 hover:text-zinc-900 text-[11px] font-medium shadow-2xs transition-all cursor-pointer ml-1"
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-white border border-zinc-200 text-zinc-700 hover:bg-zinc-100 hover:text-zinc-900 text-[11px] font-medium shadow-2xs transition-all cursor-pointer"
             title="Pusatkan kembali peta ke lokasi sekolah"
           >
-            <Crosshair className="w-3 h-3 text-zinc-500" />
+            <Navigation className="w-3 h-3 text-zinc-500" />
             <span>Pusatkan</span>
           </button>
         </div>
