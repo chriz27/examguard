@@ -10271,13 +10271,13 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                     value={examTokenValue}
                     onChange={(e) =>
                       setExamTokenValue(
-                        e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6)
+                        e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 6)
                       )
                     }
-                    placeholder="MULAI1"
+                    placeholder="MULAIX"
                     className="w-full px-3 py-2 bg-white border border-zinc-300 rounded-lg font-mono font-bold tracking-widest uppercase focus:ring-2 focus:ring-blue-600 focus:outline-none text-zinc-900 text-sm"
                   />
-                  <p className="text-[10px] text-zinc-500 mt-1">Token untuk membuka & memulai pengerjaan</p>
+                  <p className="text-[10px] text-zinc-500 mt-1">Standar 6 huruf besar (A-Z) tanpa angka</p>
                 </div>
 
                 {/* 2. Token Selesai (Submit) */}
@@ -10305,13 +10305,13 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                     value={finishTokenValue}
                     onChange={(e) =>
                       setFinishTokenValue(
-                        e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6)
+                        e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 6)
                       )
                     }
-                    placeholder="SLSAI1"
+                    placeholder="SELESA"
                     className="w-full px-3 py-2 bg-white border border-zinc-300 rounded-lg font-mono font-bold tracking-widest uppercase focus:ring-2 focus:ring-amber-500 focus:outline-none text-zinc-900 text-sm"
                   />
-                  <p className="text-[10px] text-zinc-500 mt-1">Token konfirmasi submit / pengiriman jawaban</p>
+                  <p className="text-[10px] text-zinc-500 mt-1">Standar 6 huruf besar (A-Z) tanpa angka</p>
                 </div>
               </div>
 

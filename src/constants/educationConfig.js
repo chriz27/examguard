@@ -151,10 +151,10 @@ export function getGradeLabel(gradeNumber) {
 }
 
 /**
- * Standar Token Ujian ExamGuard: Tepat 6 digit huruf besar / alphanumeric kapital
+ * Standar Token Ujian ExamGuard: Tepat 6 karakter huruf besar (A-Z) tanpa angka
  */
 export function generateRandomToken6() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
   let token = '';
   for (let i = 0; i < 6; i++) {
     token += chars.charAt(Math.floor(Math.random() * chars.length));
@@ -164,7 +164,7 @@ export function generateRandomToken6() {
 
 export function formatExamToken(raw) {
   if (!raw) return generateRandomToken6();
-  const cleaned = String(raw).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+  const cleaned = String(raw).toUpperCase().replace(/[^A-Z]/g, '').slice(0, 6);
   if (cleaned.length === 6) return cleaned;
   const padding = generateRandomToken6();
   return (cleaned + padding).slice(0, 6);
