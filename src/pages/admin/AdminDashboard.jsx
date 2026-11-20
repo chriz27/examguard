@@ -964,7 +964,12 @@ export default function AdminDashboard({ currentUser, onLogout }) {
 
   // Sesi ujian yang sedang aktif dan tidak diarsipkan
   const activeExamsList = React.useMemo(() => {
-    return (exams || []).filter((e) => e.is_active && !e.is_archived);
+    return (exams || []).filter((e) => {
+      const isArchived = e.is_archived === true || e.is_archived === 1 || e.is_archived === '1' || e.is_archived === 'true';
+      if (isArchived) return false;
+      const isActive = e.is_active === undefined || e.is_active === null ? true : (e.is_active === true || e.is_active === 1 || e.is_active === '1' || e.is_active === 'true');
+      return isActive;
+    });
   }, [exams]);
 
   // Filter pencarian & kategori pada tabel Daftar Mapel Aktif
@@ -1250,6 +1255,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
       refreshMonitoringData();
     };
     window.addEventListener('examguard_storage_updated', handleStorageChange);
+    window.addEventListener('examguard_db_updated', handleStorageChange);
 
     // 3. Storage event native browser (hanya monitoring data)
     window.addEventListener('storage', handleStorageChange);
@@ -1267,9 +1273,15 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     window.addEventListener('visibilitychange', handleFocus);
     window.addEventListener('focus', handleFocus);
 
+    // 6. Muat snapshot data terbaru dari backend SQLite saat awal mount
+    storageService.syncWithServer().then(() => {
+      refreshMonitoringData();
+    }).catch(() => {});
+
     return () => {
       unsubscribe();
       window.removeEventListener('examguard_storage_updated', handleStorageChange);
+      window.removeEventListener('examguard_db_updated', handleStorageChange);
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('visibilitychange', handleFocus);
       window.removeEventListener('focus', handleFocus);
@@ -1287,6 +1299,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
       }
     } else if (activeTab === 'proctor') {
       refreshMonitoringData();
+      storageService.syncWithServer().then(() => refreshMonitoringData()).catch(() => {});
     }
   }, [activeTab]);
 
@@ -2103,20 +2116,25 @@ export default function AdminDashboard({ currentUser, onLogout }) {
   };
 
   // Handler Tombol Refresh Manual Tabel Pengawas
-  const handleManualRefreshProctor = () => {
+  const handleManualRefreshProctor = async () => {
     setIsRefreshingProctor(true);
-    refreshMonitoringData();
+    try {
+      await storageService.syncWithServer();
+    } catch {}
     const currentAttempts = storageService.getAttempts();
     const currentUsers = storageService.getUsers();
     const currentExams = storageService.getExamSessions();
-    setAttempts(currentAttempts);
-    setUsers(currentUsers);
-    setExams(currentExams);
-    setTimeout(() => {
-      setIsRefreshingProctor(false);
-      const studentCount = currentUsers.filter((u) => u.role === 'student').length;
-      showNotification(`Tabel pengawas berhasil disegarkan (${currentAttempts.length} aktivitas pengerjaan, ${studentCount} peserta terpantau).`);
-    }, 400);
+    setAttempts([...currentAttempts]);
+    setUsers([...currentUsers]);
+    setExams([...currentExams]);
+    setIsRefreshingProctor(false);
+    const activeCount = currentExams.filter((e) => {
+      const isArchived = e.is_archived === true || e.is_archived === 1 || e.is_archived === '1';
+      if (isArchived) return false;
+      return e.is_active === undefined || e.is_active === null ? true : (e.is_active === true || e.is_active === 1 || e.is_active === '1');
+    }).length;
+    const studentCount = currentUsers.filter((u) => u.role === 'student').length;
+    showNotification(`Tabel pengawas berhasil disegarkan (${activeCount} mapel aktif, ${studentCount} peserta terpantau).`);
   };
 
   // Aksi Pengawas 3: Reset Jawaban (Konfirmasi Modern)
@@ -9353,8 +9371,6 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="text-xs font-semibold text-zinc-900">
                               7. Sensor Kamera & Mikrofon
-                            </span>
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di HP via Kamera Depan">
                               <Smartphone className="w-2.5 h-2.5" /> HP
                             </span>
                             <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di Laptop via Webcam">

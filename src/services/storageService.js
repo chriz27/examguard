@@ -153,6 +153,7 @@ if (typeof window !== 'undefined') {
     .then(data => {
       if (data) {
         _applySnapshot(data);
+        window.dispatchEvent(new CustomEvent('examguard_storage_updated', { detail: { event: 'snapshot', data } }));
         window.dispatchEvent(new CustomEvent('examguard_db_updated', { detail: { event: 'snapshot', data } }));
       }
     })
@@ -265,10 +266,27 @@ if (typeof window !== 'undefined') {
 // ─── Main Storage Service Object ──────────────────────────────────────────────
 export const storageService = {
 
-  // ── Init ──────────────────────────────────────────────────────────────────
+  // ── Init & Server Sync ──────────────────────────────────────────────────
   init() {
     _loadInitialCache();
     dbService.init();
+  },
+
+  async syncWithServer() {
+    if (typeof window === 'undefined') return null;
+    try {
+      const res = await fetch('/api/db/snapshot');
+      if (res.ok) {
+        const data = await res.json();
+        _applySnapshot(data);
+        window.dispatchEvent(new CustomEvent('examguard_storage_updated', { detail: { event: 'snapshot', data } }));
+        window.dispatchEvent(new CustomEvent('examguard_db_updated', { detail: { event: 'snapshot', data } }));
+        return data;
+      }
+    } catch (e) {
+      console.warn('[ExamGuard Storage] syncWithServer error:', e);
+    }
+    return null;
   },
 
   // ── Institution ───────────────────────────────────────────────────────────
@@ -320,7 +338,7 @@ export const storageService = {
 
   // ── Users ─────────────────────────────────────────────────────────────────
   getUsers() {
-    return _cache.users || [];
+    return _cache.users ? [..._cache.users] : [];
   },
 
   getUserById(id) {
@@ -643,7 +661,7 @@ export const storageService = {
 
   // ── Exam Sessions ─────────────────────────────────────────────────────────
   getExamSessions() {
-    return _cache.examSessions || [];
+    return _cache.examSessions ? [..._cache.examSessions] : [];
   },
 
   getExamSessionById(id) {
@@ -682,6 +700,12 @@ export const storageService = {
     }
     try { localStorage.setItem('examguard_exam_sessions', JSON.stringify(_cache.examSessions)); } catch {}
 
+    if (typeof window !== 'undefined') {
+      try {
+        window.dispatchEvent(new CustomEvent('examguard_storage_updated', { detail: { event: 'sessions_updated', exam: examData } }));
+      } catch {}
+    }
+
     dbService.saveExamSession(examData).catch(err => console.error('[ExamGuard Storage] Sync error saveExamSession:', err));
     return examData;
   },
@@ -695,6 +719,12 @@ export const storageService = {
       localStorage.setItem('examguard_attempts', JSON.stringify(_cache.attempts));
       localStorage.setItem('examguard_attendance', JSON.stringify(_cache.attendance));
     } catch {}
+
+    if (typeof window !== 'undefined') {
+      try {
+        window.dispatchEvent(new CustomEvent('examguard_storage_updated', { detail: { event: 'session_deleted', deletedId: id } }));
+      } catch {}
+    }
 
     dbService.deleteExamSession(id).catch(err => console.error('[ExamGuard Storage] Sync error deleteExamSession:', err));
     return true;
@@ -728,11 +758,11 @@ export const storageService = {
 
   // ── Student Attempts ──────────────────────────────────────────────────────
   getAttempts() {
-    return _cache.attempts || [];
+    return _cache.attempts ? [..._cache.attempts] : [];
   },
 
   getStudentAttempts() {
-    return _cache.attempts || [];
+    return _cache.attempts ? [..._cache.attempts] : [];
   },
 
   getAttempt(studentIdOrNisn, examSessionId) {
@@ -914,7 +944,7 @@ export const storageService = {
     if (examSessionId) {
       return (_cache.attendance || []).filter(a => a.exam_session_id === examSessionId);
     }
-    return _cache.attendance || [];
+    return _cache.attendance ? [..._cache.attendance] : [];
   },
 
   getAttendance(examSessionId = null) {
