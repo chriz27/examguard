@@ -448,7 +448,7 @@ export const storageService = {
       agama: data.agama || 'Islam',
       kelas: data.kelas || '',
       tingkat: data.tingkat || 10,
-      ruang: data.ruang || '',
+      ruang: String(data.ruang || '').replace(/[^a-zA-Z0-9 ]/g, '').slice(0, 10),
       is_active: data.is_active !== undefined ? Boolean(data.is_active) : true,
       is_verified: data.is_verified !== undefined ? Boolean(data.is_verified) : true,
       google_linked: Boolean(data.google_linked || false),
@@ -476,6 +476,7 @@ export const storageService = {
     const updated = {
       ...current,
       ...data,
+      ruang: data.ruang !== undefined ? String(data.ruang || '').replace(/[^a-zA-Z0-9 ]/g, '').slice(0, 10) : current.ruang,
       nomor_ujian: data.nomor_ujian !== undefined ? cleanNomorUjian(data.nomor_ujian, current.nisn) : current.nomor_ujian,
       updated_at: new Date().toISOString(),
     };
@@ -851,8 +852,11 @@ export const storageService = {
     return attempt;
   },
 
-  proctorUnlockAttempt(studentId, examSessionId) {
-    const attempt = this.getAttempt(studentId, examSessionId);
+  proctorUnlockAttempt(studentIdOrAttemptId, examSessionId = null) {
+    let attempt = examSessionId ? this.getAttempt(studentIdOrAttemptId, examSessionId) : null;
+    if (!attempt) {
+      attempt = (_cache.attempts || []).find(a => a.id === studentIdOrAttemptId || a.student_id === studentIdOrAttemptId);
+    }
     if (!attempt) return null;
     return this.saveAttempt({
       ...attempt,
@@ -865,8 +869,11 @@ export const storageService = {
     });
   },
 
-  proctorResetViolations(studentId, examSessionId) {
-    const attempt = this.getAttempt(studentId, examSessionId);
+  proctorResetViolations(studentIdOrAttemptId, examSessionId = null) {
+    let attempt = examSessionId ? this.getAttempt(studentIdOrAttemptId, examSessionId) : null;
+    if (!attempt) {
+      attempt = (_cache.attempts || []).find(a => a.id === studentIdOrAttemptId || a.student_id === studentIdOrAttemptId);
+    }
     if (!attempt) return null;
     const updates = { ...attempt, violation_count: 0, last_violation_reason: '', is_reset_violations: true };
     if (attempt.status === 'LOCKED') {
@@ -875,6 +882,29 @@ export const storageService = {
       updates.is_proctor_action = true;
     }
     return this.saveAttempt(updates);
+  },
+
+  proctorResetAnswerAttempt(studentIdOrAttemptId, examSessionId = null) {
+    let attempt = examSessionId ? this.getAttempt(studentIdOrAttemptId, examSessionId) : null;
+    if (!attempt) {
+      attempt = (_cache.attempts || []).find(a => a.id === studentIdOrAttemptId || a.student_id === studentIdOrAttemptId);
+    }
+    if (!attempt) return null;
+    return this.saveAttempt({
+      ...attempt,
+      status: 'RESET_BY_PROCTOR',
+      violation_count: 0,
+      time_spent_seconds: 0,
+      last_violation_reason: '',
+      reset_at: new Date().toISOString(),
+      completed_at: null,
+      is_proctor_action: true,
+      is_reset_violations: true,
+    });
+  },
+
+  proctorResetStudentDevice(studentId) {
+    return this.resetUserDevice(studentId);
   },
 
   proctorResetStudentWork(studentId, examSessionId, examTitle = '') {

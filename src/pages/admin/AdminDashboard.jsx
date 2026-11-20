@@ -685,6 +685,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     nis: '',
     kelas: '',
     tingkat: 10,
+    ruang: '',
     email: '',
     is_verified: true,
   });
@@ -958,6 +959,11 @@ export default function AdminDashboard({ currentUser, onLogout }) {
   const [proctorActiveExamGroupFilter, setProctorActiveExamGroupFilter] = useState('ALL');
   const [proctorActiveExamGradeFilter, setProctorActiveExamGradeFilter] = useState('ALL');
 
+  // Filter & Pencarian Khusus Card Pantau Live (Card 2)
+  const [monitorSearch, setMonitorSearch] = useState('');
+  const [monitorStatusFilter, setMonitorStatusFilter] = useState('ALL');
+  const [monitorRuangFilter, setMonitorRuangFilter] = useState('ALL');
+
   // Modal Detail Sesi Ujian Terpilih
   const [showExamDetailModal, setShowExamDetailModal] = useState(false);
   const [detailExamData, setDetailExamData] = useState(null);
@@ -1099,6 +1105,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     setUsers(storageService.getUsers());
     setExams(storageService.getExamSessions());
     setAttempts(storageService.getAttempts());
+    setAttendance(storageService.getAttendance());
   };
 
   // Handler Unduh Backup
@@ -2088,7 +2095,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
       variant: 'success',
       icon: Unlock,
       onConfirm: () => {
-        storageService.proctorUnlockAttempt(attemptId);
+        storageService.proctorUnlockAttempt(attemptId, currentProctorExam?.id);
         refreshMonitoringData();
         showNotification(`Status ujian ${studentName} berhasil dibuka (UNLOCKED). Peserta dapat lanjut mengerjakan.`);
       },
@@ -2108,7 +2115,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
       variant: 'warning',
       icon: ShieldAlert,
       onConfirm: () => {
-        storageService.proctorResetViolations(attemptId);
+        storageService.proctorResetViolations(attemptId, currentProctorExam?.id);
         refreshMonitoringData();
         showNotification(`Riwayat pelanggaran ${studentName} berhasil direset menjadi 0 kali.`);
       },
@@ -2124,9 +2131,11 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     const currentAttempts = storageService.getAttempts();
     const currentUsers = storageService.getUsers();
     const currentExams = storageService.getExamSessions();
+    const currentAttendance = storageService.getAttendance();
     setAttempts([...currentAttempts]);
     setUsers([...currentUsers]);
     setExams([...currentExams]);
+    setAttendance([...currentAttendance]);
     setIsRefreshingProctor(false);
     const activeCount = currentExams.filter((e) => {
       const isArchived = e.is_archived === true || e.is_archived === 1 || e.is_archived === '1';
@@ -2138,7 +2147,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
   };
 
   // Aksi Pengawas 3: Reset Jawaban (Konfirmasi Modern)
-  const handleProctorResetAnswer = (attemptId, studentName) => {
+  const handleProctorResetAnswer = (attemptIdOrStudentId, studentName) => {
     openConfirm({
       title: 'Reset Lembar Jawaban Peserta?',
       message: (
@@ -2150,11 +2159,57 @@ export default function AdminDashboard({ currentUser, onLogout }) {
       variant: 'danger',
       icon: RotateCcw,
       onConfirm: () => {
-        storageService.proctorResetAnswerAttempt(attemptId);
-        refreshData();
+        storageService.proctorResetAnswerAttempt(attemptIdOrStudentId, currentProctorExam?.id);
+        refreshMonitoringData();
         showNotification(`Jawaban ${studentName} direset. Soal kembali aktif di portal peserta.`);
       },
     });
+  };
+
+  // Aksi Pengawas 4: Reset Pekerjaan (Agar bisa login soal lagi)
+  const handleProctorResetWork = (studentId, studentName) => {
+    if (!currentProctorExam) return;
+    openConfirm({
+      title: 'Reset Pekerjaan Ujian Peserta?',
+      message: (
+        <span>
+          Apakah Anda yakin ingin mereset seluruh pekerjaan ujian <strong>{studentName}</strong> pada mapel <strong>{currentProctorExam.title}</strong>?
+          <br /><br />
+          Catatan pengerjaan dan pelanggaran untuk mapel ini akan dihapus bersih, dan kunci perangkat akan dilepas sehingga peserta dapat login dan mengerjakan soal dari awal lagi.
+        </span>
+      ),
+      confirmText: 'Ya, Reset Pekerjaan',
+      variant: 'danger',
+      icon: Trash2,
+      onConfirm: () => {
+        storageService.proctorSetAttemptNotStarted(studentId, currentProctorExam.id);
+        storageService.resetUserDevice(studentId);
+        refreshMonitoringData();
+        showNotification(`Pekerjaan ujian ${studentName} berhasil direset. Peserta dapat login soal kembali dari awal.`);
+      },
+    });
+  };
+
+  // Aksi Pengawas 5: Ubah Presensi Cepat Mapel Ini
+  const handleSetAttendanceQuick = (studentId, status, studentName) => {
+    if (!currentProctorExam) return;
+    storageService.saveExamAttendance(currentProctorExam.id, studentId, {
+      status,
+      updated_by: currentUser?.nama || 'Proktor',
+    });
+    setAttendance([...storageService.getAttendance()]);
+    showNotification(`Status kehadiran ${studentName} diubah menjadi ${status}.`, 'success');
+  };
+
+  // Helper Salin Token
+  const handleCopyProctorToken = (text, label = 'Token') => {
+    if (!text || text === '-') return;
+    try {
+      navigator.clipboard.writeText(text);
+      showNotification(`${label} "${text}" berhasil disalin ke clipboard!`, 'success');
+    } catch {
+      showNotification(`Gagal menyalin ${label}.`, 'error');
+    }
   };
 
   // ========================================================
@@ -2593,6 +2648,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
       nis: '',
       kelas: '',
       tingkat: institution?.allowed_grades?.[0] || 10,
+      ruang: '',
       email: '',
       is_verified: true,
     });
@@ -2745,6 +2801,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
       nomor_ujian: student.nomor_ujian || cleanNomorUjian(student.nomor_ujian, student.nisn),
       jenis_kelamin: student.jenis_kelamin || 'L',
       agama: student.agama || 'Islam',
+      ruang: student.ruang || '',
       original_email: student.email || '',
     });
     setShowEditStudentModal(true);
@@ -4535,493 +4592,685 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                 )}
 
                 {/* ======================================================== */}
-                {/* SUB-VIEW 2: PANTAU LIVE PESERTA UJIAN (PROCTOR LIVE HUB) */}
                 {/* ======================================================== */}
-                {proctorSubView === 'monitor' && (
-                  <div className="space-y-4">
-                    {renderProctorSubNav('monitor')}
-              <div className="space-y-4">
-                {/* Header Kontrol Pengawas */}
-                <div className="p-4 bg-white border border-zinc-200/80 rounded-xl shadow-2xs flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                      <h3 className="text-sm font-semibold text-zinc-900">
-                        Papan Kontrol & Pemantauan Peserta Ujian (Live)
-                      </h3>
-                    </div>
-                    <p className="text-xs text-zinc-500 mt-0.5">
-                      Memantau peserta ujian, peserta yang sedang online/login, dan kendali buka kunci (Unlock) / reset pelanggaran secara real-time.
-                    </p>
-                  </div>
+                {/* SUB-VIEW 2: PANTAU LIVE PESERTA UJIAN (REDESAIN 2 CARD)   */}
+                {/* ======================================================== */}
+                {proctorSubView === 'monitor' && (() => {
+                  const currentExam = currentProctorExam;
+                  const targetGrade = Number(currentExam?.grade_level || 0);
 
-                  <div className="flex flex-wrap items-center gap-2.5">
-                    {/* Tombol Pintas ke Reset Status Per Mapel */}
-                    <button
-                      type="button"
-                      onClick={() => setProctorSubView('reset')}
-                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 rounded-xl text-xs font-semibold transition-all shadow-2xs hover:border-blue-300 active:scale-[0.98] cursor-pointer"
-                      title="Buka menu kontrol untuk mereset login perangkat atau status pengerjaan per mapel"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5 text-blue-600" />
-                      <span>Reset Status Mapel</span>
-                    </button>
+                  // 1. Peserta yang satu tingkat dengan sesi ujian yang sedang dipantau
+                  const sameGradeStudents = (users || [])
+                    .filter((u) => u.role === 'student' && Number(u.tingkat) === targetGrade)
+                    .sort((a, b) => {
+                      const rombelA = String(a.kelas || '').toLowerCase();
+                      const rombelB = String(b.kelas || '').toLowerCase();
+                      if (rombelA !== rombelB) return rombelA.localeCompare(rombelB);
+                      return String(a.nama || '').localeCompare(String(b.nama || ''));
+                    });
 
-                    {/* Tombol Refresh / Segarkan Tabel Pengawas Manual */}
-                    <button
-                      type="button"
-                      onClick={handleManualRefreshProctor}
-                      disabled={isRefreshingProctor}
-                      title="Segarkan data tabel pengawas seketika dari penyimpanan lokal & server"
-                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-white hover:bg-zinc-50 border border-zinc-300 text-zinc-800 rounded-xl text-xs font-semibold transition-all shadow-2xs hover:border-zinc-400 active:scale-[0.98] cursor-pointer disabled:opacity-60"
-                    >
-                      <RefreshCw className={`w-3.5 h-3.5 text-zinc-600 ${isRefreshingProctor ? 'animate-spin text-zinc-900' : ''}`} />
-                      <span>{isRefreshingProctor ? 'Menyinkronkan...' : 'Segarkan Data'}</span>
-                    </button>
+                  // 2. Ruang unik pada tingkat ini
+                  const distinctRooms = Array.from(
+                    new Set(sameGradeStudents.map((s) => (s.ruang || '').trim()).filter(Boolean))
+                  ).sort();
 
-                    <div className="relative max-w-xs w-full sm:w-auto">
-                      <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
-                      <input
-                        type="text"
-                        value={proctorSearch}
-                        onChange={(e) => setProctorSearch(e.target.value)}
-                        placeholder="Filter nama, NISN, kelas..."
-                        className="w-full sm:w-60 pl-9 pr-3 py-1.5 text-xs border border-zinc-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-zinc-900"
-                      />
-                    </div>
-                  </div>
-                </div>
+                  // 3. Gabungkan data peserta dengan attempt & attendance untuk sesi ujian aktif ini
+                  const monitorRows = sameGradeStudents.map((stu) => {
+                    const attempt = currentExam
+                      ? (attempts || []).find(
+                          (a) =>
+                            (a.student_id === stu.id || (stu.nisn && a.student_nisn === stu.nisn)) &&
+                            String(a.exam_session_id) === String(currentExam.id)
+                        )
+                      : null;
 
-                {/* Banner Peringatan Peserta Terkunci di Luar Tingkat Terpilih */}
-                {lockedOutsideGrade.length > 0 && (
-                  <div className="p-3.5 bg-rose-50 border-2 border-rose-300 rounded-xl shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-rose-900 animate-in fade-in">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-lg bg-rose-100 border border-rose-200 flex items-center justify-center shrink-0">
-                        <ShieldAlert className="w-4 h-4 text-rose-600 animate-pulse" />
-                      </div>
-                      <div>
-                        <div className="text-xs font-bold flex items-center gap-1.5">
-                          <span>Ada {lockedOutsideGrade.length} Peserta Terkunci di Tingkat Lain!</span>
-                          <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-rose-600 text-white font-mono">
-                            Perlu Tindakan Pengawas
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-rose-700 mt-0.5">
-                          Peserta:{' '}
-                          <strong>
-                            {lockedOutsideGrade.map((s) => `${s.studentName} (Kelas ${s.studentTingkat})`).join(', ')}
-                          </strong>{' '}
-                          mengalami batas pelanggaran dan layarnya terkunci. Klik tombol untuk langsung meninjau dan membuka kunci.
-                        </p>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedProctorGrade('ALL');
-                        setProctorStatusFilter('LOCKED');
-                      }}
-                      className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer shrink-0 inline-flex items-center gap-1.5"
-                    >
-                      <Unlock className="w-3.5 h-3.5" />
-                      <span>Tinjau & Buka Kunci ({lockedOutsideGrade.length})</span>
-                    </button>
-                  </div>
-                )}
+                    const attRecord = currentExam
+                      ? (attendance || []).find(
+                          (att) =>
+                            String(att.student_id) === String(stu.id) &&
+                            String(att.exam_session_id) === String(currentExam.id)
+                        )
+                      : null;
 
-                {/* TAB PENGELOMPOKAN BERDASARKAN TINGKAT DI ATAS TABEL PESERTA UJIAN */}
-                <div className="bg-white border border-zinc-200/80 rounded-xl p-3 shadow-2xs space-y-3">
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <div className="flex items-center gap-1.5 overflow-x-auto pb-1 max-w-full">
-                      {/* Tab: Semua Tingkat */}
-                      <button
-                        type="button"
-                        onClick={() => setSelectedProctorGrade('ALL')}
-                        className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all shrink-0 cursor-pointer ${
-                          selectedProctorGrade === 'ALL'
-                            ? 'bg-zinc-900 text-white shadow-xs'
-                            : 'bg-zinc-50 hover:bg-zinc-100 text-zinc-600 border border-zinc-200/80'
-                        }`}
-                      >
-                        <span>Semua Tingkat</span>
-                        <span
-                          className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono font-bold ${
-                            selectedProctorGrade === 'ALL'
-                              ? 'bg-zinc-800 text-zinc-200'
-                              : 'bg-zinc-200 text-zinc-700'
-                          }`}
-                        >
-                          {proctorStudentRows.length}
-                        </span>
-                        {totalLockedAll > 0 && (
-                          <span
-                            className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-rose-500 text-white animate-pulse"
-                            title={`${totalLockedAll} peserta terkunci`}
-                          >
-                            {totalLockedAll} Terkunci
-                          </span>
-                        )}
-                      </button>
+                    let status = 'belum'; // belum | mengerjakan | selesai | terkunci
+                    if (attempt) {
+                      if (attempt.status === 'COMPLETED') {
+                        status = 'selesai';
+                      } else if (attempt.status === 'LOCKED') {
+                        status = 'terkunci';
+                      } else if (attempt.status === 'IN_PROGRESS') {
+                        status = 'mengerjakan';
+                      } else if (attempt.status === 'RESET_BY_PROCTOR') {
+                        status = 'belum';
+                      }
+                    }
 
-                      {/* Tab Per-Tingkat Kelas (misal Tingkat 10, Tingkat 11, Tingkat 12) */}
-                      {proctorGradeList.map((grade) => {
-                        const countForGrade = proctorStudentRows.filter(
-                          (r) => Number(r.studentTingkat) === Number(grade)
-                        ).length;
-                        const lockedForGrade = proctorStudentRows.filter(
-                          (r) => Number(r.studentTingkat) === Number(grade) && r.status === 'LOCKED'
-                        ).length;
-                        const isSelected = String(selectedProctorGrade) === String(grade);
+                    const violationCount = attempt?.violation_count || 0;
+                    const timeSpentSeconds = attempt?.time_spent_seconds || 0;
+                    const noUjian = cleanNomorUjian(stu.nomor_ujian, stu.nisn);
+                    const isOnline = Boolean(stu.active_device_id);
 
-                        return (
-                          <button
-                            key={grade}
-                            type="button"
-                            onClick={() => setSelectedProctorGrade(String(grade))}
-                            className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all shrink-0 cursor-pointer ${
-                              isSelected
-                                ? 'bg-zinc-900 text-white shadow-xs'
-                                : 'bg-zinc-50 hover:bg-zinc-100 text-zinc-600 border border-zinc-200/80'
-                            }`}
-                          >
-                            <span>{getGradeLabel(grade)}</span>
-                            <span
-                              className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono font-bold ${
-                                isSelected
-                                  ? 'bg-zinc-800 text-zinc-200'
-                                  : 'bg-zinc-200 text-zinc-700'
-                              }`}
-                            >
-                              {countForGrade}
-                            </span>
-                            {lockedForGrade > 0 && (
-                              <span
-                                className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-rose-500 text-white animate-pulse"
-                                title={`${lockedForGrade} peserta terkunci pada tingkat ini`}
-                              >
-                                {lockedForGrade} Terkunci
-                              </span>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
+                    return {
+                      student: stu,
+                      attempt,
+                      attRecord,
+                      status,
+                      violationCount,
+                      timeSpentSeconds,
+                      noUjian,
+                      isOnline,
+                    };
+                  });
 
-                    {/* Filter Status Pill Pengawas */}
-                    <div className="flex items-center gap-1 shrink-0 overflow-x-auto text-[11px]">
-                      <span className="text-zinc-400 font-medium mr-1 text-[10px] uppercase tracking-wider">Status:</span>
-                      {[
-                        { id: 'ALL', label: 'Semua Status' },
-                        { id: 'LOCKED', label: 'Terkunci', count: proctorStats.locked },
-                        { id: 'IN_PROGRESS', label: 'Sedang Ujian', count: proctorStats.inProgress },
-                        { id: 'ONLINE', label: 'Online / Aktif', count: proctorStats.online },
-                        { id: 'COMPLETED', label: 'Selesai', count: proctorStats.completed },
-                      ].map((st) => (
-                        <button
-                          key={st.id}
-                          type="button"
-                          onClick={() => setProctorStatusFilter(st.id)}
-                          className={`px-2.5 py-1 rounded-lg font-medium transition-colors cursor-pointer ${
-                            proctorStatusFilter === st.id
-                              ? 'bg-zinc-900 text-white shadow-2xs font-semibold'
-                              : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-600'
-                          }`}
-                        >
-                          <span>{st.label}</span>
-                          {st.count !== undefined && st.count > 0 && (
-                            <span className={`ml-1 text-[10px] font-mono font-bold ${
-                              st.id === 'LOCKED' ? 'text-rose-400' : ''
-                            }`}>
-                              ({st.count})
-                            </span>
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                  // 4. Hitung statistik ringkas (Jumlah Peserta Mengerjakan dan Belum)
+                  const totalCount = monitorRows.length;
+                  const mengerjakanCount = monitorRows.filter((r) => r.status === 'mengerjakan').length;
+                  const belumCount = monitorRows.filter((r) => r.status === 'belum').length;
+                  const selesaiCount = monitorRows.filter((r) => r.status === 'selesai').length;
+                  const terkunciCount = monitorRows.filter((r) => r.status === 'terkunci').length;
 
-                  {/* Status Bar Ringkas Pengawas untuk Tingkat Terpilih */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1 border-t border-zinc-100">
-                    <div className="p-2.5 bg-zinc-50 border border-zinc-200/60 rounded-xl flex items-center justify-between">
-                      <div>
-                        <div className="text-[10px] font-medium text-zinc-500">Total Peserta</div>
-                        <div className="text-base font-bold text-zinc-900 font-mono">{proctorStats.total}</div>
-                      </div>
-                      <Users className="w-4 h-4 text-zinc-400" />
-                    </div>
-                    <div className="p-2.5 bg-emerald-50/70 border border-emerald-200/70 rounded-xl flex items-center justify-between">
-                      <div>
-                        <div className="text-[10px] font-medium text-emerald-700">Sedang Mengerjakan</div>
-                        <div className="text-base font-bold text-emerald-600 font-mono">
-                          {proctorStats.inProgress}
-                        </div>
-                      </div>
-                      <Activity className="w-4 h-4 text-emerald-500" />
-                    </div>
-                    <div className="p-2.5 bg-rose-50/70 border border-rose-200/70 rounded-xl flex items-center justify-between">
-                      <div>
-                        <div className="text-[10px] font-medium text-rose-700">Terkunci (Pelanggaran)</div>
-                        <div className="text-base font-bold text-rose-600 font-mono flex items-center gap-1.5 flex-wrap">
-                          <span>{proctorStats.locked}</span>
-                          {selectedProctorGrade !== 'ALL' && lockedOutsideGrade.length > 0 && (
+                  // 5. Filter baris peserta berdasarkan pencarian, status, dan ruang
+                  const filteredRows = monitorRows.filter((row) => {
+                    if (monitorStatusFilter !== 'ALL') {
+                      if (monitorStatusFilter === 'mengerjakan' && row.status !== 'mengerjakan') return false;
+                      if (monitorStatusFilter === 'belum' && row.status !== 'belum') return false;
+                      if (monitorStatusFilter === 'selesai' && row.status !== 'selesai') return false;
+                      if (monitorStatusFilter === 'terkunci' && row.status !== 'terkunci') return false;
+                    }
+                    if (monitorRuangFilter !== 'ALL') {
+                      if (String(row.student.ruang || '').trim() !== monitorRuangFilter) return false;
+                    }
+                    if (monitorSearch.trim()) {
+                      const q = monitorSearch.toLowerCase().trim();
+                      const matchName = String(row.student.nama || '').toLowerCase().includes(q);
+                      const matchNisn = String(row.student.nisn || '').toLowerCase().includes(q);
+                      const matchNoUjian = String(row.noUjian || '').toLowerCase().includes(q);
+                      const matchKelas = String(row.student.kelas || '').toLowerCase().includes(q);
+                      const matchRuang = String(row.student.ruang || '').toLowerCase().includes(q);
+                      if (!matchName && !matchNisn && !matchNoUjian && !matchKelas && !matchRuang) return false;
+                    }
+                    return true;
+                  });
+
+                  return (
+                    <div className="space-y-4 animate-in fade-in duration-200">
+                      {/* ======================================================== */}
+                      {/* CARD 1: IDENTITAS MAPEL UJIAN, TINGKAT, TOKEN, WAKTU & DETAIL */}
+                      {/* ======================================================== */}
+                      <div className="bg-white border border-zinc-200/80 rounded-2xl shadow-2xs p-5 space-y-4">
+                        {/* Baris Atas: Tombol Kembali + Live Indicator + Tombol Aksi */}
+                        <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-zinc-100">
+                          <div className="flex items-center gap-3">
                             <button
                               type="button"
-                              onClick={() => {
-                                setSelectedProctorGrade('ALL');
-                                setProctorStatusFilter('LOCKED');
-                              }}
-                              className="text-[10px] font-semibold text-rose-700 bg-rose-100 hover:bg-rose-200 px-1.5 py-0.5 rounded cursor-pointer transition-colors border border-rose-300"
-                              title="Ada siswa terkunci di tingkat lain, klik untuk buka"
+                              onClick={() => setProctorSubView('list')}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 rounded-xl text-xs font-semibold transition-all shadow-2xs active:scale-95 cursor-pointer"
+                              title="Kembali ke Daftar Mapel Aktif"
                             >
-                              +{lockedOutsideGrade.length} di tingkat lain
+                              <ArrowLeft className="w-3.5 h-3.5" />
+                              <span>Kembali ke Daftar Mapel</span>
                             </button>
-                          )}
-                        </div>
-                      </div>
-                      <ShieldAlert className="w-4 h-4 text-rose-500" />
-                    </div>
-                    <div className="p-2.5 bg-blue-50/70 border border-blue-200/70 rounded-xl flex items-center justify-between">
-                      <div>
-                        <div className="text-[10px] font-medium text-blue-700">Online / Selesai</div>
-                        <div className="text-base font-bold text-blue-600 font-mono">
-                          {proctorStats.online}
-                        </div>
-                      </div>
-                      <CheckCircle2 className="w-4 h-4 text-blue-500" />
-                    </div>
-                  </div>
-                </div>
+                            <div className="h-4 w-px bg-zinc-200 hidden sm:block"></div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                              <span className="text-xs font-semibold text-emerald-800">
+                                Pemantauan Langsung (Live)
+                              </span>
+                            </div>
+                          </div>
 
-                {/* Tabel Peserta Ujian Pengawas */}
-                <div className="bg-white border border-zinc-200/80 rounded-xl overflow-hidden shadow-2xs">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs">
-                      <thead>
-                        <tr className="bg-zinc-50/70 border-b border-zinc-200/80 text-zinc-500 font-medium">
-                          <th className="py-3 px-4">Nama Siswa & NISN</th>
-                          <th className="py-3 px-4">Ujian & Tingkat</th>
-                          <th className="py-3 px-4">Status Pengerjaan</th>
-                          <th className="py-3 px-4">Waktu Aktual</th>
-                          <th className="py-3 px-4">Pelanggaran</th>
-                          <th className="py-3 px-4 text-center">Aksi Pengawas Ujian</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-zinc-100">
-                        {filteredProctorRows.length === 0 ? (
-                          <tr>
-                            <td colSpan="6" className="text-center py-12 text-zinc-400 text-xs">
-                              <div className="flex flex-col items-center justify-center gap-2">
-                                <ShieldAlert className="w-8 h-8 text-zinc-300" />
-                                <p>Tidak ada peserta ujian yang cocok dengan filter atau tingkat yang dipilih.</p>
-                                <button
-                                  type="button"
-                                  onClick={handleManualRefreshProctor}
-                                  className="mt-1 inline-flex items-center gap-1.5 px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 rounded-lg text-xs font-medium cursor-pointer transition-colors"
-                                >
-                                  <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingProctor ? 'animate-spin' : ''}`} />
-                                  <span>Segarkan Tabel Pengawas</span>
-                                </button>
+                          <div className="flex items-center gap-2">
+                            {/* Tombol Segarkan Data */}
+                            <button
+                              type="button"
+                              onClick={handleManualRefreshProctor}
+                              disabled={isRefreshingProctor}
+                              title="Segarkan data pengawas seketika dari penyimpanan & server"
+                              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-white hover:bg-zinc-50 border border-zinc-300 text-zinc-800 rounded-xl text-xs font-semibold transition-all shadow-2xs hover:border-zinc-400 active:scale-95 cursor-pointer disabled:opacity-60"
+                            >
+                              <RefreshCw className={`w-3.5 h-3.5 text-zinc-600 ${isRefreshingProctor ? 'animate-spin text-zinc-900' : ''}`} />
+                              <span>{isRefreshingProctor ? 'Menyinkronkan...' : 'Segarkan Data'}</span>
+                            </button>
+
+                            {/* Tombol Detail Sesi Ujian */}
+                            {currentExam && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setDetailExamData(currentExam);
+                                  setShowExamDetailModal(true);
+                                }}
+                                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl text-xs font-semibold transition-all shadow-2xs active:scale-95 cursor-pointer"
+                                title="Lihat detail lengkap konfigurasi sesi ujian ini"
+                              >
+                                <Info className="w-3.5 h-3.5" />
+                                <span>Detail Sesi Ujian</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Grid Identitas Ujian: Mapel, Tingkat, Token, Waktu */}
+                        {currentExam ? (
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3.5">
+                            {/* 1. Mata Pelajaran & Judul Ujian */}
+                            <div className="p-3.5 bg-zinc-50/70 border border-zinc-200/70 rounded-xl space-y-1">
+                              <div className="flex items-center gap-1.5 text-zinc-500 text-[11px] font-medium uppercase tracking-wider">
+                                <BookOpen className="w-3.5 h-3.5 text-blue-600" />
+                                <span>Mata Pelajaran & Sesi</span>
                               </div>
-                            </td>
-                          </tr>
-                        ) : (
-                          filteredProctorRows.map((row) => {
-                            const isLocked = row.status === 'LOCKED';
-                            const conf = ATTEMPT_STATUS[row.status] || {
-                              label: row.status === 'ONLINE' ? 'Online di Beranda' : 'Offline',
-                              badgeClass: row.status === 'ONLINE' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-zinc-50 text-zinc-400 border-zinc-200',
-                              dotClass: row.status === 'ONLINE' ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-300',
-                            };
+                              <div className="font-bold text-zinc-900 text-sm truncate" title={currentExam.subject}>
+                                {currentExam.subject || 'Mapel Umum'}
+                              </div>
+                              <div className="text-xs text-zinc-600 truncate" title={currentExam.title}>
+                                {currentExam.title}
+                              </div>
+                              <div className="pt-1">
+                                <span className="inline-block px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-100 text-blue-800 border border-blue-200">
+                                  {currentExam.session_group || 'Asesmen'}
+                                </span>
+                              </div>
+                            </div>
 
-                            return (
-                              <tr
-                                key={row.rowKey}
-                                className={`transition-colors ${
-                                  isLocked ? 'bg-rose-50/40 hover:bg-rose-50/70' : 'hover:bg-zinc-50/80'
+                            {/* 2. Tingkat Peserta */}
+                            <div className="p-3.5 bg-zinc-50/70 border border-zinc-200/70 rounded-xl space-y-1">
+                              <div className="flex items-center gap-1.5 text-zinc-500 text-[11px] font-medium uppercase tracking-wider">
+                                <Layers className="w-3.5 h-3.5 text-purple-600" />
+                                <span>Tingkat Peserta</span>
+                              </div>
+                              <div className="font-bold text-zinc-900 text-base">
+                                {getGradeLabel(currentExam.grade_level)}
+                              </div>
+                              <div className="text-xs text-zinc-500">
+                                Khusus seluruh peserta tingkat {currentExam.grade_level}
+                              </div>
+                              <div className="pt-1 text-[11px] font-mono text-zinc-500">
+                                Total di Basis Data: <strong className="text-zinc-800">{sameGradeStudents.length} Siswa</strong>
+                              </div>
+                            </div>
+
+                            {/* 3. Token Masuk & Selesai */}
+                            <div className="p-3.5 bg-zinc-50/70 border border-zinc-200/70 rounded-xl space-y-1.5">
+                              <div className="flex items-center gap-1.5 text-zinc-500 text-[11px] font-medium uppercase tracking-wider">
+                                <KeyRound className="w-3.5 h-3.5 text-amber-600" />
+                                <span>Token Masuk & Selesai</span>
+                              </div>
+                              <div className="flex items-center justify-between gap-2 pt-0.5">
+                                <div className="text-[11px] text-zinc-600">Token Mulai:</div>
+                                <div className="flex items-center gap-1">
+                                  <span className="font-mono font-bold text-xs px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 tracking-wider">
+                                    {currentExam.exam_token || '-'}
+                                  </span>
+                                  {currentExam.exam_token && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleCopyProctorToken(currentExam.exam_token, 'Token Masuk')}
+                                      className="p-1 text-zinc-400 hover:text-zinc-700 rounded hover:bg-zinc-200/70 transition-colors cursor-pointer"
+                                      title="Salin Token Masuk"
+                                    >
+                                      <Copy className="w-3 h-3" />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="text-[11px] text-zinc-600">Token Selesai:</div>
+                                <div className="flex items-center gap-1">
+                                  <span className="font-mono font-bold text-xs px-2 py-0.5 rounded bg-purple-50 text-purple-800 border border-purple-200 tracking-wider">
+                                    {currentExam.finish_token || '-'}
+                                  </span>
+                                  {currentExam.finish_token && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleCopyProctorToken(currentExam.finish_token, 'Token Selesai')}
+                                      className="p-1 text-zinc-400 hover:text-zinc-700 rounded hover:bg-zinc-200/70 transition-colors cursor-pointer"
+                                      title="Salin Token Selesai"
+                                    >
+                                      <Copy className="w-3 h-3" />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* 4. Tanggal & Waktu */}
+                            <div className="p-3.5 bg-zinc-50/70 border border-zinc-200/70 rounded-xl space-y-1">
+                              <div className="flex items-center gap-1.5 text-zinc-500 text-[11px] font-medium uppercase tracking-wider">
+                                <Clock className="w-3.5 h-3.5 text-emerald-600" />
+                                <span>Waktu & Durasi Ujian</span>
+                              </div>
+                              <div className="font-bold text-zinc-900 text-sm">
+                                {currentExam.start_time
+                                  ? new Date(currentExam.start_time).toLocaleDateString('id-ID', {
+                                      weekday: 'short',
+                                      day: 'numeric',
+                                      month: 'short',
+                                      year: 'numeric',
+                                    })
+                                  : '-'}
+                              </div>
+                              <div className="text-xs text-zinc-600 font-mono">
+                                {currentExam.start_time
+                                  ? new Date(currentExam.start_time).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+                                  : '-'}{' '}
+                                &ndash;{' '}
+                                {currentExam.end_time
+                                  ? new Date(currentExam.end_time).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+                                  : '-'}
+                              </div>
+                              <div className="pt-0.5 text-[11px] text-zinc-500 font-medium">
+                                Durasi Pengerjaan: <strong className="text-zinc-800">{currentExam.duration_minutes || 90} Menit</strong>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="p-6 text-center text-zinc-500 text-xs">
+                            Tidak ada sesi ujian yang dipilih. Silakan kembali ke Daftar Mapel Aktif.
+                          </div>
+                        )}
+                      </div>
+
+                      {/* ======================================================== */}
+                      {/* CARD 2: DAFTAR NAMA PESERTA UJIAN (YANG SAMA TINGKAT)    */}
+                      {/* ======================================================== */}
+                      <div className="bg-white border border-zinc-200/80 rounded-2xl shadow-2xs overflow-hidden">
+                        {/* Header Card 2: Ringkasan Mengerjakan & Belum + Pencarian & Filter Ruang */}
+                        <div className="p-4 bg-zinc-50/70 border-b border-zinc-200/80 space-y-3">
+                          <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <Users className="w-4 h-4 text-zinc-800" />
+                                <h3 className="text-sm font-bold text-zinc-900">
+                                  Daftar Peserta Ujian {currentExam ? `• ${getGradeLabel(currentExam.grade_level)}` : ''}
+                                </h3>
+                              </div>
+                              <p className="text-xs text-zinc-500 mt-0.5">
+                                Menampilkan seluruh peserta ujian yang sama tingkat beserta kendali pengawasan langsung.
+                              </p>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2">
+                              {/* Filter Dropdown Ruang */}
+                              {distinctRooms.length > 0 && (
+                                <select
+                                  value={monitorRuangFilter}
+                                  onChange={(e) => setMonitorRuangFilter(e.target.value)}
+                                  className="px-2.5 py-1.5 text-xs bg-white border border-zinc-300 rounded-xl text-zinc-700 focus:outline-none focus:ring-2 focus:ring-zinc-900 cursor-pointer"
+                                >
+                                  <option value="ALL">Semua Ruang ({sameGradeStudents.length})</option>
+                                  {distinctRooms.map((r) => (
+                                    <option key={r} value={r}>
+                                      {r}
+                                    </option>
+                                  ))}
+                                </select>
+                              )}
+
+                              {/* Search Input */}
+                              <div className="relative min-w-[200px] sm:min-w-[240px]">
+                                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+                                <input
+                                  type="text"
+                                  value={monitorSearch}
+                                  onChange={(e) => setMonitorSearch(e.target.value)}
+                                  placeholder="Cari nama, NISN, no ujian, ruang, rombel..."
+                                  className="w-full pl-8 pr-3 py-1.5 text-xs bg-white border border-zinc-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-zinc-900"
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Baris Ringkasan: Jumlah Peserta Mengerjakan dan Belum */}
+                          <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-zinc-200/60 text-xs">
+                            <span className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider mr-1">
+                              Ringkasan:
+                            </span>
+
+                            {/* Total Peserta */}
+                            <button
+                              type="button"
+                              onClick={() => setMonitorStatusFilter('ALL')}
+                              className={`px-3 py-1 rounded-lg font-medium transition-all cursor-pointer flex items-center gap-1.5 ${
+                                monitorStatusFilter === 'ALL'
+                                  ? 'bg-zinc-900 text-white shadow-2xs font-bold'
+                                  : 'bg-white hover:bg-zinc-100 text-zinc-700 border border-zinc-200'
+                              }`}
+                            >
+                              <span>Total:</span>
+                              <span className="font-mono font-bold">{totalCount}</span>
+                            </button>
+
+                            {/* Sedang Mengerjakan */}
+                            <button
+                              type="button"
+                              onClick={() => setMonitorStatusFilter('mengerjakan')}
+                              className={`px-3 py-1 rounded-lg font-medium transition-all cursor-pointer flex items-center gap-1.5 ${
+                                monitorStatusFilter === 'mengerjakan'
+                                  ? 'bg-emerald-600 text-white shadow-2xs font-bold'
+                                  : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200'
+                              }`}
+                            >
+                              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                              <span>Sedang Mengerjakan:</span>
+                              <span className="font-mono font-bold">{mengerjakanCount}</span>
+                            </button>
+
+                            {/* Belum Mengerjakan */}
+                            <button
+                              type="button"
+                              onClick={() => setMonitorStatusFilter('belum')}
+                              className={`px-3 py-1 rounded-lg font-medium transition-all cursor-pointer flex items-center gap-1.5 ${
+                                monitorStatusFilter === 'belum'
+                                  ? 'bg-amber-600 text-white shadow-2xs font-bold'
+                                  : 'bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200'
+                              }`}
+                            >
+                              <span>Belum Mengerjakan:</span>
+                              <span className="font-mono font-bold">{belumCount}</span>
+                            </button>
+
+                            {/* Selesai */}
+                            <button
+                              type="button"
+                              onClick={() => setMonitorStatusFilter('selesai')}
+                              className={`px-3 py-1 rounded-lg font-medium transition-all cursor-pointer flex items-center gap-1.5 ${
+                                monitorStatusFilter === 'selesai'
+                                  ? 'bg-blue-600 text-white shadow-2xs font-bold'
+                                  : 'bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200'
+                              }`}
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5 text-blue-600" />
+                              <span>Selesai:</span>
+                              <span className="font-mono font-bold">{selesaiCount}</span>
+                            </button>
+
+                            {/* Terkunci */}
+                            {terkunciCount > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => setMonitorStatusFilter('terkunci')}
+                                className={`px-3 py-1 rounded-lg font-medium transition-all cursor-pointer flex items-center gap-1.5 ${
+                                  monitorStatusFilter === 'terkunci'
+                                    ? 'bg-rose-600 text-white shadow-2xs font-bold animate-pulse'
+                                    : 'bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-300 animate-pulse'
                                 }`}
                               >
-                                {/* Kolom 1: Nama Siswa & NISN & Indikator Online */}
-                                <td className="py-3 px-4">
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="font-semibold text-zinc-900">{row.studentName}</span>
-                                    {row.isOnline && (
-                                      <span
-                                        className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                        title="Siswa sedang online di peramban"
-                                      >
-                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                                        <span>Online</span>
-                                      </span>
-                                    )}
-                                  </div>
-                                  <div className="text-[11px] text-zinc-400 font-mono">
-                                    NISN: {row.studentNisn}
-                                  </div>
-                                </td>
+                                <ShieldAlert className="w-3.5 h-3.5 text-rose-600" />
+                                <span>Terkunci:</span>
+                                <span className="font-mono font-bold">{terkunciCount}</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
 
-                                {/* Kolom 2: Ujian & Kelas / Tingkat */}
-                                <td className="py-3 px-4">
-                                  <div className="font-medium text-zinc-800">{row.examTitle}</div>
-                                  <div className="text-[11px] text-zinc-500 flex items-center gap-1.5 mt-0.5">
-                                    <span>{row.studentKelas}</span>
-                                    <span className="text-zinc-300">•</span>
-                                    <span className="font-semibold text-zinc-700">
-                                      {getGradeLabel(row.studentTingkat)}
-                                    </span>
-                                  </div>
-                                </td>
-
-                                {/* Kolom 3: Status Pengerjaan */}
-                                <td className="py-3 px-4">
-                                  <span
-                                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-medium ${conf.badgeClass}`}
-                                  >
-                                    <span className={`w-2 h-2 rounded-full ${conf.dotClass}`}></span>
-                                    {conf.label}
-                                  </span>
-                                </td>
-
-                                {/* Kolom 4: Waktu Aktual */}
-                                <td className="py-3 px-4 font-mono font-medium text-zinc-700">
-                                  {row.timeSpentSeconds > 0
-                                    ? formatDuration(row.timeSpentSeconds)
-                                    : row.isOnline
-                                    ? <span className="text-emerald-600 text-[11px]">Siap Ujian</span>
-                                    : <span className="text-zinc-400 text-[11px]">-</span>}
-                                </td>
-
-                                {/* Kolom 5: Pelanggaran */}
-                                <td className="py-3 px-4">
-                                  <div className="flex items-center gap-2">
-                                    <span
-                                      className={`font-mono font-bold ${
-                                        row.violationCount > 0 ? 'text-rose-600' : 'text-zinc-500'
-                                      }`}
-                                    >
-                                      {row.violationCount || 0}x
-                                    </span>
-                                    {row.violationCount > 0 && (
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          handleProctorResetViolationCount(
-                                            row.attemptId || row.studentId,
-                                            row.studentName
-                                          )
-                                        }
-                                        title="Reset counter pelanggaran kembali ke 0"
-                                        className="px-1.5 py-0.5 text-[10px] font-semibold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded transition-colors cursor-pointer"
-                                      >
-                                        Reset 0x
-                                      </button>
-                                    )}
-                                  </div>
-                                  {row.lastViolationReason && (
-                                    <div
-                                      className="text-[10px] text-rose-500 max-w-[140px] truncate mt-0.5"
-                                      title={row.lastViolationReason}
-                                    >
-                                      {row.lastViolationReason}
-                                    </div>
-                                  )}
-                                </td>
-
-                                {/* Kolom 6: Aksi Pengawas */}
-                                <td className="py-3 px-4 text-center">
-                                  <div className="flex items-center justify-center gap-1.5">
-                                    {/* Tombol Buka Kunci (Unlock) - Sangat Jelas & Menonjol */}
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        handleProctorUnlock(
-                                          row.attemptId || row.studentId,
-                                          row.studentName
-                                        )
-                                      }
-                                      disabled={!isLocked}
-                                      title={
-                                        isLocked
-                                          ? 'Buka kunci siswa yang terkena pelanggaran'
-                                          : 'Siswa sedang tidak berstatus terkunci'
-                                      }
-                                      className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border text-[11px] font-bold transition-all shadow-2xs cursor-pointer ${
-                                        isLocked
-                                          ? 'bg-rose-600 hover:bg-rose-700 text-white border-rose-700 ring-2 ring-rose-400/40 animate-pulse'
-                                          : 'bg-zinc-50 text-zinc-400 border-zinc-200 cursor-not-allowed opacity-60'
-                                      }`}
-                                    >
-                                      <Unlock className="w-3.5 h-3.5" />
-                                      <span>Buka Kunci</span>
-                                    </button>
-
-                                    {/* Tombol Reset Pelanggaran ke 0 */}
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        handleProctorResetViolationCount(
-                                          row.attemptId || row.studentId,
-                                          row.studentName
-                                        )
-                                      }
-                                      title="Reset seluruh catatan pelanggaran siswa ke 0 kali"
-                                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-zinc-200 bg-white hover:bg-zinc-50 text-[11px] font-medium text-zinc-700 transition-all shadow-2xs cursor-pointer"
-                                    >
-                                      <ShieldAlert className="w-3 h-3 text-amber-500" />
-                                      <span>Reset Pelanggaran</span>
-                                    </button>
-
-                                    {/* Tombol Reset Login (Perangkat) */}
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        handleProctorResetLogin(
-                                          row.studentId,
-                                          row.studentName
-                                        )
-                                      }
-                                      title="Aksi: Hapus kunci active_device_id siswa agar bisa login di perangkat lain"
-                                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-zinc-200 bg-white hover:bg-zinc-50 text-[11px] font-medium text-zinc-700 transition-all shadow-2xs cursor-pointer"
-                                    >
-                                      <Smartphone className="w-3 h-3 text-zinc-500" />
-                                      <span>Reset Login</span>
-                                    </button>
-
-                                    {/* Tombol Reset Jawaban */}
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        handleProctorResetAnswer(
-                                          row.attemptId || row.studentId,
-                                          row.studentName
-                                        )
-                                      }
-                                      disabled={row.status !== 'COMPLETED'}
-                                      title="Ubah status COMPLETED jadi RESET_BY_PROCTOR agar soal muncul kembali di beranda siswa jika jawaban belum masuk Sheets"
-                                      className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-[11px] font-medium transition-all shadow-2xs ${
-                                        row.status === 'COMPLETED'
-                                          ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 font-semibold cursor-pointer'
-                                          : 'bg-zinc-50 text-zinc-400 border-zinc-200 cursor-not-allowed opacity-60'
-                                      }`}
-                                    >
-                                      <RotateCcw className="w-3 h-3" />
-                                      <span>Reset Jawaban</span>
-                                    </button>
-                                  </div>
-                                </td>
+                        {/* Tabel 13 Kolom Sesuai Permintaan */}
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left text-xs whitespace-nowrap">
+                            <thead>
+                              <tr className="bg-zinc-100/80 border-b border-zinc-200 text-zinc-700 font-semibold">
+                                <th className="py-3 px-3 text-center w-10">No</th>
+                                <th className="py-3 px-3">Rombel</th>
+                                <th className="py-3 px-4">Nama Peserta</th>
+                                <th className="py-3 px-3">No Ujian</th>
+                                <th className="py-3 px-3">Ruang</th>
+                                <th className="py-3 px-3">Status</th>
+                                <th className="py-3 px-3">Pelanggaran</th>
+                                <th className="py-3 px-3">Waktu Aktual</th>
+                                <th className="py-3 px-3 text-center">Buka Kunci</th>
+                                <th className="py-3 px-3 text-center">Logout</th>
+                                <th className="py-3 px-3 text-center">Reset Jawaban</th>
+                                <th className="py-3 px-3 text-center">Kehadiran</th>
+                                <th className="py-3 px-3 text-center">Reset Pekerjaan</th>
                               </tr>
-                            );
-                          })
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
+                            </thead>
+                            <tbody className="divide-y divide-zinc-100">
+                              {filteredRows.length === 0 ? (
+                                <tr>
+                                  <td colSpan="13" className="text-center py-12 text-zinc-400 text-xs">
+                                    <div className="flex flex-col items-center justify-center gap-2">
+                                      <Users className="w-8 h-8 text-zinc-300" />
+                                      <p>Tidak ada peserta yang sesuai dengan kriteria filter.</p>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ) : (
+                                filteredRows.map((row, idx) => {
+                                  const isLocked = row.status === 'terkunci';
+                                  const isCompleted = row.status === 'selesai';
+                                  const currentAttStatus = row.attRecord?.status || (isCompleted ? 'HADIR' : '');
 
-                  </div>
-                )}
+                                  return (
+                                    <tr
+                                      key={row.student.id}
+                                      className={`transition-colors ${
+                                        isLocked
+                                          ? 'bg-rose-50/40 hover:bg-rose-50/70'
+                                          : 'hover:bg-zinc-50/80'
+                                      }`}
+                                    >
+                                      {/* 1. No */}
+                                      <td className="py-3 px-3 text-center font-mono text-zinc-500 font-medium">
+                                        {idx + 1}
+                                      </td>
 
-                {/* ======================================================== */}
+                                      {/* 2. Rombel */}
+                                      <td className="py-3 px-3 font-semibold text-zinc-800">
+                                        {row.student.kelas || '-'}
+                                      </td>
+
+                                      {/* 3. Nama Peserta */}
+                                      <td className="py-3 px-4">
+                                        <div className="flex items-center gap-1.5">
+                                          <span className="font-semibold text-zinc-900">{row.student.nama}</span>
+                                          {row.isOnline && (
+                                            <span
+                                              className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[9px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                              title="Peserta sedang login di perangkat"
+                                            >
+                                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                              <span>Online</span>
+                                            </span>
+                                          )}
+                                        </div>
+                                        <div className="text-[11px] text-zinc-400 font-mono">
+                                          NISN: {row.student.nisn || '-'}
+                                        </div>
+                                      </td>
+
+                                      {/* 4. No Ujian */}
+                                      <td className="py-3 px-3 font-mono">
+                                        <span className="px-2 py-0.5 rounded bg-zinc-100 border border-zinc-200 text-zinc-800 text-xs">
+                                          {row.noUjian || row.student.nisn || '-'}
+                                        </span>
+                                      </td>
+
+                                      {/* 5. Ruang */}
+                                      <td className="py-3 px-3">
+                                        <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-800 border border-blue-200 text-xs font-medium">
+                                          {row.student.ruang || '-'}
+                                        </span>
+                                      </td>
+
+                                      {/* 6. Status (mengerjakan/belum/selesai) */}
+                                      <td className="py-3 px-3">
+                                        {row.status === 'mengerjakan' && (
+                                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                            <span>Mengerjakan</span>
+                                          </span>
+                                        )}
+                                        {row.status === 'terkunci' && (
+                                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-rose-50 text-rose-700 border border-rose-300 animate-pulse">
+                                            <ShieldAlert className="w-3.5 h-3.5 text-rose-600" />
+                                            <span>Terkunci</span>
+                                          </span>
+                                        )}
+                                        {row.status === 'selesai' && (
+                                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                                            <CheckCircle2 className="w-3.5 h-3.5 text-blue-600" />
+                                            <span>Selesai</span>
+                                          </span>
+                                        )}
+                                        {row.status === 'belum' && (
+                                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-zinc-100 text-zinc-600 border border-zinc-200">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-zinc-400"></span>
+                                            <span>Belum</span>
+                                          </span>
+                                        )}
+                                      </td>
+
+                                      {/* 7. Pelanggaran (jumlah pelanggaran + tombol reset dengan konfirmasi) */}
+                                      <td className="py-3 px-3">
+                                        <div className="flex items-center gap-1.5">
+                                          <span
+                                            className={`font-mono font-bold text-xs ${
+                                              row.violationCount > 0 ? 'text-rose-600' : 'text-zinc-500'
+                                            }`}
+                                          >
+                                            {row.violationCount}x
+                                          </span>
+                                          {row.violationCount > 0 && (
+                                            <button
+                                              type="button"
+                                              onClick={() => handleProctorResetViolationCount(row.student.id, row.student.nama)}
+                                              title="Reset hitungan pelanggaran ke 0"
+                                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition-colors cursor-pointer"
+                                            >
+                                              <RotateCcw className="w-2.5 h-2.5" />
+                                              <span>Reset</span>
+                                            </button>
+                                          )}
+                                        </div>
+                                      </td>
+
+                                      {/* 8. Waktu Aktual */}
+                                      <td className="py-3 px-3 font-mono text-zinc-700">
+                                        {row.attempt ? (
+                                          row.timeSpentSeconds > 0
+                                            ? formatDuration(row.timeSpentSeconds)
+                                            : row.status === 'mengerjakan'
+                                            ? 'Mulai'
+                                            : '-'
+                                        ) : (
+                                          <span className="text-zinc-400">-</span>
+                                        )}
+                                      </td>
+
+                                      {/* 9. Buka Kunci */}
+                                      <td className="py-3 px-3 text-center">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleProctorUnlock(row.student.id, row.student.nama)}
+                                          disabled={row.status !== 'terkunci'}
+                                          title={
+                                            row.status === 'terkunci'
+                                              ? 'Buka kunci layar siswa yang terkena pelanggaran'
+                                              : 'Siswa tidak sedang berstatus terkunci'
+                                          }
+                                          className={`inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all shadow-2xs ${
+                                            row.status === 'terkunci'
+                                              ? 'bg-rose-600 hover:bg-rose-700 text-white cursor-pointer ring-2 ring-rose-400/50 animate-pulse'
+                                              : 'bg-zinc-100 text-zinc-400 border border-zinc-200 cursor-not-allowed opacity-60'
+                                          }`}
+                                        >
+                                          <Unlock className="w-3.5 h-3.5" />
+                                          <span>Buka Kunci</span>
+                                        </button>
+                                      </td>
+
+                                      {/* 10. Logout (paksa untuk logout) */}
+                                      <td className="py-3 px-3 text-center">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleProctorResetLogin(row.student.id, row.student.nama)}
+                                          title="Paksa logout peserta & lepas pengikatan perangkat"
+                                          className="inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-800 text-[11px] font-semibold transition-colors cursor-pointer shadow-2xs"
+                                        >
+                                          <LogOut className="w-3.5 h-3.5 text-amber-600" />
+                                          <span>Logout</span>
+                                        </button>
+                                      </td>
+
+                                      {/* 11. Reset Jawaban */}
+                                      <td className="py-3 px-3 text-center">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleProctorResetAnswer(row.student.id, row.student.nama)}
+                                          disabled={row.status === 'belum'}
+                                          title="Reset lembar jawaban siswa agar form dapat dibuka ulang di portal siswa jika respon belum masuk"
+                                          className={`inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold transition-all shadow-2xs ${
+                                            row.status !== 'belum'
+                                              ? 'border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 cursor-pointer'
+                                              : 'bg-zinc-100 text-zinc-400 border-zinc-200 cursor-not-allowed opacity-60'
+                                          }`}
+                                        >
+                                          <RotateCcw className="w-3.5 h-3.5 text-blue-600" />
+                                          <span>Reset Jawaban</span>
+                                        </button>
+                                      </td>
+
+                                      {/* 12. Kehadiran (jika selesai otomatis H, jika belum login bisa di set S I A oleh admin khusus untuk presensi mapel ini) */}
+                                      <td className="py-3 px-3 text-center">
+                                        {isCompleted ? (
+                                          <span
+                                            className="inline-flex items-center justify-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-2xs"
+                                            title="Hadir (Otomatis karena selesai mengerjakan)"
+                                          >
+                                            <Check className="w-3.5 h-3.5" />
+                                            <span>H (Hadir)</span>
+                                          </span>
+                                        ) : (
+                                          <div className="inline-flex items-center gap-1 bg-zinc-100 p-0.5 rounded-lg border border-zinc-200">
+                                            {[
+                                              { code: 'HADIR', label: 'H', title: 'Hadir', activeClass: 'bg-emerald-600 text-white font-bold' },
+                                              { code: 'SAKIT', label: 'S', title: 'Sakit', activeClass: 'bg-amber-500 text-white font-bold' },
+                                              { code: 'IZIN', label: 'I', title: 'Izin', activeClass: 'bg-blue-600 text-white font-bold' },
+                                              { code: 'ALPHA', label: 'A', title: 'Alpa / Tanpa Keterangan', activeClass: 'bg-rose-600 text-white font-bold' },
+                                            ].map((opt) => {
+                                              const isSelected = currentAttStatus === opt.code;
+                                              return (
+                                                <button
+                                                  key={opt.code}
+                                                  type="button"
+                                                  onClick={() => handleSetAttendanceQuick(row.student.id, opt.code, row.student.nama)}
+                                                  title={`Set Presensi: ${opt.title}`}
+                                                  className={`w-6 h-6 rounded text-[11px] font-semibold transition-all flex items-center justify-center cursor-pointer ${
+                                                    isSelected
+                                                      ? `${opt.activeClass} shadow-2xs ring-1 ring-black/10`
+                                                      : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-200/80'
+                                                  }`}
+                                                >
+                                                  {opt.label}
+                                                </button>
+                                              );
+                                            })}
+                                          </div>
+                                        )}
+                                      </td>
+
+                                      {/* 13. Reset Pekerjaan (agar bisa login soal lagi) */}
+                                      <td className="py-3 px-3 text-center">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleProctorResetWork(row.student.id, row.student.nama)}
+                                          title="Reset seluruh pengerjaan mapel ini & reset perangkat agar peserta bisa login soal lagi"
+                                          className="inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-[11px] font-semibold transition-colors cursor-pointer shadow-2xs"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                                          <span>Reset Pekerjaan</span>
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  );
+                                })
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
                 {/* SUB-VIEW 3: KONTROL & RESET STATUS UJIAN PER MAPEL */}
                 {/* ======================================================== */}
                 {proctorSubView === 'reset' && (
@@ -6975,11 +7224,19 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                               <div className="text-[11px] text-zinc-400">NIS: {stu.nis || '-'}</div>
                             </td>
 
-                            {/* Kolom 4: Kelas & Tingkat */}
+                            {/* Kolom 4: Kelas, Tingkat & Ruang */}
                             <td className="py-3.5 px-4">
                               <div className="font-medium text-zinc-800">{stu.kelas}</div>
-                              <div className="text-[11px] text-zinc-500">
-                                {getGradeLabel(stu.tingkat)}
+                              <div className="text-[11px] text-zinc-500 flex items-center gap-1.5 mt-0.5">
+                                <span>{getGradeLabel(stu.tingkat)}</span>
+                                {stu.ruang && (
+                                  <>
+                                    <span>&bull;</span>
+                                    <span className="font-medium text-blue-700 bg-blue-50 px-1.5 py-0.2 rounded border border-blue-200 text-[10px]">
+                                      {stu.ruang}
+                                    </span>
+                                  </>
+                                )}
                               </div>
                             </td>
 
@@ -10993,6 +11250,27 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                   </select>
                 </div>
 
+                <div>
+                  <label className="block text-xs font-medium text-zinc-700 mb-1">
+                    Ruang Ujian <span className="text-zinc-400 font-normal">(Maks. 10 karakter)</span>
+                  </label>
+                  <input
+                    type="text"
+                    maxLength={10}
+                    value={newStudentForm.ruang || ''}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/[^a-zA-Z0-9 ]/g, '').slice(0, 10);
+                      setNewStudentForm({ ...newStudentForm, ruang: val });
+                      if (addStudentError) setAddStudentError('');
+                    }}
+                    placeholder="Contoh: Ruang 01"
+                    className="w-full px-3 py-2 border border-zinc-300 rounded-xl text-xs focus:ring-2 focus:ring-zinc-900 focus:outline-none"
+                  />
+                  <p className="text-[10px] text-zinc-400 mt-0.5">
+                    Hanya huruf, angka, dan spasi
+                  </p>
+                </div>
+
                 <div className="sm:col-span-2">
                   <label className="block text-xs font-medium text-zinc-700 mb-1">
                     Alamat Email Peserta <span className="text-zinc-400 font-normal">(Untuk Google SSO)</span>
@@ -11322,6 +11600,27 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                       </option>
                     ))}
                   </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-zinc-700 mb-1">
+                    Ruang Ujian <span className="text-zinc-400 font-normal">(Maks. 10 karakter)</span>
+                  </label>
+                  <input
+                    type="text"
+                    maxLength={10}
+                    value={editingStudent.ruang || ''}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/[^a-zA-Z0-9 ]/g, '').slice(0, 10);
+                      setEditingStudent({ ...editingStudent, ruang: val });
+                      if (editStudentError) setEditStudentError('');
+                    }}
+                    placeholder="Contoh: Ruang 01"
+                    className="w-full px-3 py-2 border border-zinc-300 rounded-xl text-xs focus:ring-2 focus:ring-zinc-900 focus:outline-none"
+                  />
+                  <p className="text-[10px] text-zinc-400 mt-0.5">
+                    Hanya huruf, angka, dan spasi
+                  </p>
                 </div>
 
                 <div className="sm:col-span-2">
