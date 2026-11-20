@@ -146,8 +146,8 @@ export function formatDuration(totalSeconds) {
  */
 export function getGradeLabel(gradeNumber) {
   const g = parseInt(gradeNumber, 10);
-  if (g === 0) return 'Tingkat Umum / Pelatihan';
-  return `Kelas ${g} (Tingkat ${g})`;
+  if (g === 0) return 'Tingkat Umum';
+  return `Tingkat ${g}`;
 }
 
 /**

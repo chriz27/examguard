@@ -25,6 +25,7 @@ import {
   ExternalLink,
   MapPin,
   Clock,
+  Calendar,
   Save,
   Search,
   Check,
@@ -210,6 +211,19 @@ function formatIndonesianLiveDateTime(d = new Date()) {
 }
 
 // Helper Format Hitung Mundur Rilis Token Selesai
+// Helper Format Hitung Mundur Rilis Token Selesai (Format Digital Jam:Menit:Detik)
+function formatDigitalCountdown(totalSec) {
+  if (totalSec <= 0) return '00:00';
+  const hours = Math.floor(totalSec / 3600);
+  const minutes = Math.floor((totalSec % 3600) / 60);
+  const seconds = totalSec % 60;
+  const pad = (n) => String(n).padStart(2, '0');
+  if (hours > 0) {
+    return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+  }
+  return `${pad(minutes)}:${pad(seconds)}`;
+}
+
 function formatCountdownSeconds(totalSec) {
   if (totalSec <= 0) return '0s';
   const hours = Math.floor(totalSec / 3600);
@@ -2538,7 +2552,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     });
   };
 
-  // Parser Teks CSV Import Peserta
+  // Parser Teks CSV Import Peserta (Mendukung Penuh 10 Field Data Lengkap Sesuai Form Manual)
   const parseCsvStudents = (rawText) => {
     if (!rawText || !rawText.trim()) return [];
     const lines = rawText.trim().split(/\r?\n/);
@@ -2555,14 +2569,15 @@ export default function AdminDashboard({ currentUser, onLogout }) {
       const headerCols = firstLine.split(/[,;\t]/).map((c) => c.trim().toLowerCase().replace(/^"|"$/g, ''));
       headerMap = {
         nama: headerCols.findIndex((c) => c.includes('nama') || c === 'name'),
-        nomor_ujian: headerCols.findIndex((c) => c.includes('ujian') || c.includes('peserta')),
-        nisn: headerCols.findIndex((c) => c.includes('nisn')),
+        nomor_ujian: headerCols.findIndex((c) => c.includes('ujian') || c.includes('peserta') || c.includes('no_ujian')),
+        nisn: headerCols.findIndex((c) => c.includes('nisn') || c === 'username'),
         nis: headerCols.findIndex((c) => c === 'nis' || (c.includes('nis') && !c.includes('nisn'))),
-        kelas: headerCols.findIndex((c) => c.includes('kelas') || c.includes('rombel')),
-        tingkat: headerCols.findIndex((c) => c.includes('tingkat') || c.includes('grade')),
-        email: headerCols.findIndex((c) => c.includes('email') || c.includes('mail')),
-        jenis_kelamin: headerCols.findIndex((c) => c.includes('jk') || c.includes('gender') || c.includes('kelamin')),
+        jenis_kelamin: headerCols.findIndex((c) => c.includes('jk') || c.includes('gender') || c.includes('kelamin') || c.includes('sex') || c === 'l/p'),
         agama: headerCols.findIndex((c) => c.includes('agama') || c.includes('religion')),
+        kelas: headerCols.findIndex((c) => c.includes('kelas') || c.includes('rombel') || c.includes('class')),
+        tingkat: headerCols.findIndex((c) => c.includes('tingkat') || c.includes('grade') || c.includes('level')),
+        ruang: headerCols.findIndex((c) => c.includes('ruang') || c.includes('room') || c.includes('lokasi')),
+        email: headerCols.findIndex((c) => c.includes('email') || c.includes('mail')),
       };
     }
 
@@ -2580,31 +2595,87 @@ export default function AdminDashboard({ currentUser, onLogout }) {
       if (headerMap && headerMap.nama !== -1 && headerMap.nisn !== -1) {
         const nisnVal = cols[headerMap.nisn] || '';
         const rawNoUjian = headerMap.nomor_ujian !== -1 ? cols[headerMap.nomor_ujian] : '';
+        const rawJk = headerMap.jenis_kelamin !== -1 ? (cols[headerMap.jenis_kelamin] || '').trim().toUpperCase() : 'L';
+        const jk = (rawJk.startsWith('P') || rawJk === 'W' || rawJk === 'FEMALE') ? 'P' : 'L';
+        const rawAgama = headerMap.agama !== -1 ? (cols[headerMap.agama] || '').trim() : 'Islam';
+        const rawRuang = headerMap.ruang !== -1 ? (cols[headerMap.ruang] || '').trim() : '';
+        const rawTingkat = headerMap.tingkat !== -1 ? parseInt(cols[headerMap.tingkat], 10) || 10 : 10;
+
         parsed.push({
           rowNumber,
           nama: cols[headerMap.nama] || '',
           nomor_ujian: cleanNomorUjian(rawNoUjian, nisnVal),
           nisn: nisnVal,
           nis: headerMap.nis !== -1 ? cols[headerMap.nis] || '' : '',
+          jenis_kelamin: jk,
+          agama: rawAgama || 'Islam',
           kelas: headerMap.kelas !== -1 ? cols[headerMap.kelas] || '' : '',
-          tingkat: headerMap.tingkat !== -1 ? parseInt(cols[headerMap.tingkat], 10) || 10 : 10,
+          tingkat: rawTingkat,
+          ruang: rawRuang ? rawRuang.slice(0, 10) : 'Ruang 01',
           email: headerMap.email !== -1 ? cols[headerMap.email] || '' : '',
-          jenis_kelamin: headerMap.jenis_kelamin !== -1 ? cols[headerMap.jenis_kelamin] || 'L' : 'L',
-          agama: headerMap.agama !== -1 ? cols[headerMap.agama] || 'Islam' : 'Islam',
         });
       } else {
-        // Fallback positional:
+        // Fallback positional (Mendukung 10 kolom, 9 kolom, 8 kolom, 7 kolom, dan 6 kolom)
         let nama = cols[0] || '';
         let noUjian = '';
         let nisn = '';
         let nis = '';
+        let jk = 'L';
+        let agama = 'Islam';
         let kelas = '';
         let tingkat = 10;
+        let ruang = 'Ruang 01';
         let email = '';
 
-        if (cols.length >= 7) {
-          // Format 7 kolom: [nama, nomor_ujian, nisn, nis, kelas, tingkat, email]
-          // Atau jika col[1] adalah 10 digit angka, berarti [nama, nisn, nis, kelas, tingkat, email, nomor_ujian]
+        if (cols.length >= 10) {
+          // Format 10 kolom: [nama, nomor_ujian, nisn, nis, jenis_kelamin, agama, kelas, tingkat, ruang, email]
+          // Atau format: [nama, nomor_ujian, nisn, nis, kelas, tingkat, jenis_kelamin, agama, ruang, email]
+          const col4 = (cols[4] || '').toUpperCase();
+          const col6 = (cols[6] || '').toUpperCase();
+          if (col4 === 'L' || col4 === 'P' || col4 === 'LAKI-LAKI' || col4 === 'PEREMPUAN') {
+            noUjian = cols[1];
+            nisn = cols[2];
+            nis = cols[3];
+            jk = col4.startsWith('P') ? 'P' : 'L';
+            agama = cols[5] || 'Islam';
+            kelas = cols[6];
+            tingkat = parseInt(cols[7], 10) || 10;
+            ruang = (cols[8] || '').slice(0, 10) || 'Ruang 01';
+            email = cols[9] || '';
+          } else if (col6 === 'L' || col6 === 'P' || col6 === 'LAKI-LAKI' || col6 === 'PEREMPUAN') {
+            noUjian = cols[1];
+            nisn = cols[2];
+            nis = cols[3];
+            kelas = cols[4];
+            tingkat = parseInt(cols[5], 10) || 10;
+            jk = col6.startsWith('P') ? 'P' : 'L';
+            agama = cols[7] || 'Islam';
+            ruang = (cols[8] || '').slice(0, 10) || 'Ruang 01';
+            email = cols[9] || '';
+          } else {
+            noUjian = cols[1];
+            nisn = cols[2];
+            nis = cols[3];
+            jk = 'L';
+            agama = cols[5] || 'Islam';
+            kelas = cols[6];
+            tingkat = parseInt(cols[7], 10) || 10;
+            ruang = (cols[8] || '').slice(0, 10) || 'Ruang 01';
+            email = cols[9] || '';
+          }
+        } else if (cols.length >= 8) {
+          // Format 8-9 kolom: [nama, nomor_ujian, nisn, nis, jenis_kelamin, agama, kelas, tingkat]
+          noUjian = cols[1];
+          nisn = cols[2];
+          nis = cols[3];
+          const rawJk = (cols[4] || '').toUpperCase();
+          jk = (rawJk.startsWith('P') || rawJk === 'W') ? 'P' : 'L';
+          agama = cols[5] || 'Islam';
+          kelas = cols[6];
+          tingkat = parseInt(cols[7], 10) || 10;
+          if (cols.length >= 9) ruang = (cols[8] || '').slice(0, 10) || 'Ruang 01';
+        } else if (cols.length >= 7) {
+          // Format 7 kolom legacy: [nama, nomor_ujian, nisn, nis, kelas, tingkat, email]
           if (cols[2].length >= 8 && /^\d+$/.test(cols[2])) {
             noUjian = cols[1];
             nisn = cols[2];
@@ -2635,11 +2706,12 @@ export default function AdminDashboard({ currentUser, onLogout }) {
           nomor_ujian: cleanNomorUjian(noUjian, nisn),
           nisn,
           nis,
+          jenis_kelamin: jk,
+          agama: agama || 'Islam',
           kelas,
           tingkat,
+          ruang: ruang || 'Ruang 01',
           email,
-          jenis_kelamin: 'L',
-          agama: 'Islam',
         });
       }
     }
@@ -3384,17 +3456,30 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     }
   };
 
-  // Template CSV Peserta (Mendukung No Ujian, NISN, NIS, Kelas, Tingkat, Email)
-  const sampleCsvContent = `nama,nomor_ujian,nisn,nis,kelas,tingkat,email
-Ahmad Fauzi Ridwan,UJN-12-001,0058291021,22101,XII MIPA 1,12,ahmad.fauzi@student.sch.id
-Siti Rahmawati Putri,UJN-12-002,0058291022,22102,XII MIPA 2,12,siti.rahma@student.sch.id
-Bambang Pamungkas,UJN-11-001,0068291033,23101,XI IPS 1,11,bambang.p@student.sch.id
-Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
+  // Template CSV Peserta (Mendukung Penuh 10 Kolom Data Lengkap Sesuai Form Tambah Peserta Manual)
+  const sampleCsvContent = `nama,nomor_ujian,nisn,nis,jenis_kelamin,agama,kelas,tingkat,ruang,email
+Ahmad Fauzi Ridwan,UJN-12-001,0058291021,22101,L,Islam,XII MIPA 1,12,Ruang 01,ahmad.fauzi@student.sch.id
+Siti Rahmawati Putri,UJN-12-002,0058291022,22102,P,Islam,XII MIPA 2,12,Ruang 01,siti.rahma@student.sch.id
+Bambang Pamungkas,UJN-11-001,0068291033,23101,L,Kristen,XI IPS 1,11,Ruang 02,bambang.p@student.sch.id
+Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@student.sch.id`;
 
   const copySampleCsv = () => {
     navigator.clipboard.writeText(sampleCsvContent);
     setCopiedText(true);
     setTimeout(() => setCopiedText(false), 2000);
+  };
+
+  const handleDownloadCsvTemplate = () => {
+    const blob = new Blob([sampleCsvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'template_import_peserta_examguard_10_kolom.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    showNotification('Template CSV 10 kolom berhasil diunduh.');
   };
 
   // Filter list data
@@ -4029,9 +4114,6 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                           <tr key={exam.id} className="hover:bg-zinc-50/80 transition-colors">
                             <td className="py-3.5 px-4">
                               <div className="flex items-center gap-2 mb-1">
-                                <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                  {exam.subject || 'Mata Pelajaran Umum'}
-                                </span>
                                 <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-zinc-100 text-zinc-600 border border-zinc-200">
                                   {getGradeLabel(exam.grade_level)}
                                 </span>
@@ -4117,22 +4199,62 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
 
                             <td className="py-3.5 px-4">
                               {exam.is_archived ? (
-                                <span className="text-[11px] font-medium px-2.5 py-1 rounded-full border bg-amber-50 text-amber-700 border-amber-200">
-                                  Diarsipkan (Bank Soal)
-                                </span>
+                                <div className="space-y-1.5">
+                                  <span className="inline-block text-[11px] font-medium px-2.5 py-1 rounded-full border bg-amber-50 text-amber-700 border-amber-200">
+                                    Diarsipkan (Bank Soal)
+                                  </span>
+                                  {exam.gform_base_url && (
+                                    <div>
+                                      <a
+                                        href={convertGoogleFormUrl(exam.gform_base_url)}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center gap-1 text-[11px] text-blue-600 hover:text-blue-800 hover:underline font-medium transition-colors cursor-pointer group"
+                                        title="Buka preview soal yang sudah di-convert embed di tab baru"
+                                      >
+                                        <ExternalLink className="w-3 h-3 text-blue-500 group-hover:text-blue-700 shrink-0" />
+                                        <span>Lihat Soal</span>
+                                      </a>
+                                    </div>
+                                  )}
+                                </div>
                               ) : (
-                                <button
-                                  onClick={() => {
-                                    storageService.toggleExamActive(exam.id);
-                                    refreshData();
-                                  }}
-                                  className={`text-[11px] font-medium px-2.5 py-1 rounded-full border transition-all cursor-pointer ${exam.is_active
-                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200/80 hover:bg-emerald-100'
-                                      : 'bg-zinc-100 text-zinc-500 border-zinc-200 hover:bg-zinc-200'
-                                    }`}
-                                >
-                                  {exam.is_active ? 'Aktif (Tayang)' : 'Non-Aktif / Draf'}
-                                </button>
+                                <div className="flex flex-col items-start gap-1.5">
+                                  <button
+                                    onClick={() => {
+                                      const updated = storageService.toggleExamActive(exam.id);
+                                      refreshData();
+                                      showNotification(
+                                        `Status sesi "${exam.title}" diubah menjadi ${updated?.is_active ? 'Publish' : 'Draft'}.`
+                                      );
+                                    }}
+                                    className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all cursor-pointer shadow-2xs ${exam.is_active
+                                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200/80 hover:bg-emerald-100'
+                                        : 'bg-zinc-100 text-zinc-600 border-zinc-200 hover:bg-zinc-200'
+                                      }`}
+                                    title={exam.is_active ? 'Status saat ini: Publish (Klik untuk ubah ke Draft)' : 'Status saat ini: Draft (Klik untuk Publish)'}
+                                  >
+                                    {exam.is_active ? 'Publish' : 'Draft'}
+                                  </button>
+
+                                  {/* Link Icon Preview Soal Convert Embed di Tab Baru */}
+                                  {exam.gform_base_url ? (
+                                    <a
+                                      href={convertGoogleFormUrl(exam.gform_base_url)}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-flex items-center gap-1 text-[11px] text-blue-600 hover:text-blue-800 hover:underline font-medium transition-colors cursor-pointer group pt-0.5"
+                                      title="Buka preview soal yang sudah di-convert embed di tab baru"
+                                    >
+                                      <ExternalLink className="w-3 h-3 text-blue-500 group-hover:text-blue-700 shrink-0" />
+                                      <span>Lihat Soal</span>
+                                    </a>
+                                  ) : (
+                                    <span className="text-[10px] text-zinc-400 italic pt-0.5">
+                                      URL belum diisi
+                                    </span>
+                                  )}
+                                </div>
                               )}
                             </td>
 
@@ -4325,104 +4447,159 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
             const activeGroups = Array.from(new Set(activeExamsList.map((e) => e.session_group || 'Semua'))).filter(Boolean).sort();
             const activeGrades = Array.from(new Set(activeExamsList.map((e) => e.grade_level))).sort((a, b) => a - b);
 
-            // Komponen Navigasi Sub-View (Breadcrumb + Tab Cepat)
-            const renderProctorSubNav = (activeSub) => (
-              <div className="p-3 bg-white border border-zinc-200/80 rounded-xl shadow-2xs flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-2.5">
-                  <button
-                    type="button"
-                    onClick={() => setProctorSubView('list')}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 rounded-lg text-xs font-semibold transition-all cursor-pointer shadow-2xs"
-                    title="Kembali ke Daftar Mapel Aktif"
-                  >
-                    <ArrowLeft className="w-3.5 h-3.5" />
-                    <span>Daftar Mapel Aktif</span>
-                  </button>
-                  <div className="h-4 w-px bg-zinc-200 hidden sm:block"></div>
-                  {currentProctorExam && (
-                    <div className="flex items-center gap-2">
-                      <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                        {currentProctorExam.subject || 'Mapel'}
-                      </span>
-                      <span className="text-xs font-semibold text-zinc-800 truncate max-w-[200px] sm:max-w-xs">
-                        {currentProctorExam.title} &bull; {getGradeLabel(currentProctorExam.grade_level)}
-                      </span>
-                    </div>
-                  )}
-                </div>
+            // Komponen Navigasi Sub-View Baku (Header Template: Kembali, Indikator, Live Date & Time, Pantau, Reset, Presensi, Detail)
+            const renderProctorSubNav = (activeSub, isInsideCard = false) => {
+              let subLabel = 'Pemantauan (Live)';
+              let dotColor = 'bg-emerald-500';
+              let textColor = 'text-emerald-800';
 
-                <div className="flex items-center gap-1 bg-zinc-100 p-1 rounded-xl">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (currentProctorExam) {
-                        setSelectedProctorExamId(currentProctorExam.id);
-                        setSelectedProctorGrade(String(currentProctorExam.grade_level));
-                      }
-                      setProctorSubView('monitor');
-                    }}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
-                      activeSub === 'monitor'
-                        ? 'bg-zinc-900 text-white shadow-2xs'
-                        : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-200/60'
-                    }`}
-                  >
-                    <ShieldAlert className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>Pantau Live</span>
-                  </button>
+              if (activeSub === 'reset') {
+                subLabel = 'Reset';
+                dotColor = 'bg-blue-500';
+                textColor = 'text-blue-800';
+              } else if (activeSub === 'attendance') {
+                subLabel = 'Presensi';
+                dotColor = 'bg-emerald-500';
+                textColor = 'text-emerald-800';
+              }
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (currentProctorExam) {
-                        setSelectedProctorExamId(currentProctorExam.id);
-                        setSelectedResetExamId(currentProctorExam.id);
-                      }
-                      setProctorSubView('reset');
-                    }}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
-                      activeSub === 'reset'
-                        ? 'bg-zinc-900 text-white shadow-2xs'
-                        : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-200/60'
-                    }`}
-                  >
-                    <RotateCcw className="w-3.5 h-3.5 text-blue-400" />
-                    <span>Reset Status</span>
-                  </button>
+              const targetExam =
+                (activeSub === 'reset'
+                  ? (currentResetExam || currentProctorExam)
+                  : activeSub === 'attendance'
+                  ? (currentAttendanceExam || currentProctorExam)
+                  : currentProctorExam) || exams[0];
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (currentProctorExam) {
-                        setSelectedProctorExamId(currentProctorExam.id);
-                        setSelectedAttendanceExamId(currentProctorExam.id);
-                      }
-                      setProctorSubView('attendance');
-                    }}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
-                      activeSub === 'attendance'
-                        ? 'bg-zinc-900 text-white shadow-2xs'
-                        : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-200/60'
-                    }`}
-                  >
-                    <ClipboardCheck className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>Presensi</span>
-                  </button>
-
-                  {currentProctorExam && (
+              const content = (
+                <>
+                  {/* Sisi Kiri: Tombol Kembali + Indikator Live + Tanggal & Jam Real-Time */}
+                  <div className="flex flex-wrap items-center gap-3">
                     <button
                       type="button"
-                      onClick={() => handleOpenProctorDetail(currentProctorExam)}
-                      className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-200/60 cursor-pointer"
-                      title="Lihat Detail Sesi Ujian Lengkap"
+                      onClick={() => setProctorSubView('list')}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 rounded-xl text-xs font-semibold transition-all shadow-2xs active:scale-95 cursor-pointer"
+                      title="Kembali ke Daftar Mapel Aktif"
                     >
-                      <Info className="w-3.5 h-3.5 text-zinc-500" />
-                      <span>Detail</span>
+                      <ArrowLeft className="w-3.5 h-3.5" />
+                      <span>Kembali ke Daftar Mapel</span>
                     </button>
-                  )}
+
+                    <div className="h-4 w-px bg-zinc-200 hidden sm:block"></div>
+
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className={`w-2.5 h-2.5 rounded-full ${dotColor} animate-pulse`}></span>
+                        <span className={`text-xs font-semibold ${textColor}`}>
+                          {subLabel}
+                        </span>
+                      </div>
+
+                      <div className="h-4 w-px bg-zinc-200 hidden sm:block"></div>
+
+                      {/* Keterangan Hari, Tanggal dan Jam Live Real-time */}
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-zinc-100 border border-zinc-200/80 text-zinc-700 text-xs shadow-2xs font-medium">
+                        <Clock className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
+                        <span>{formatIndonesianLiveDateTime(currentLiveTime).dayDate}</span>
+                        <span className="text-zinc-300 font-light">•</span>
+                        <span className="font-mono font-bold text-zinc-900">{formatIndonesianLiveDateTime(currentLiveTime).clock}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Sisi Kanan: Grup Tombol Fitur (Pantau, Reset Status, Presensi, Detail) */}
+                  <div className="flex items-center gap-1 bg-zinc-100 p-1 rounded-xl">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (targetExam) {
+                          setSelectedProctorExamId(targetExam.id);
+                          setSelectedProctorGrade(String(targetExam.grade_level));
+                        }
+                        setProctorSubView('monitor');
+                      }}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+                        activeSub === 'monitor'
+                          ? 'bg-zinc-900 text-white shadow-2xs'
+                          : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-200/60'
+                      }`}
+                      title="Buka Pemantauan Langsung (Live)"
+                    >
+                      <ShieldAlert className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Pantau</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (targetExam) {
+                          setSelectedProctorExamId(targetExam.id);
+                          setSelectedResetExamId(targetExam.id);
+                        }
+                        setProctorSubView('reset');
+                      }}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+                        activeSub === 'reset'
+                          ? 'bg-zinc-900 text-white shadow-2xs'
+                          : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-200/60'
+                      }`}
+                      title="Buka Menu Reset Status & Perangkat"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 text-blue-500" />
+                      <span>Reset Status</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (targetExam) {
+                          setSelectedProctorExamId(targetExam.id);
+                          setSelectedAttendanceExamId(targetExam.id);
+                        }
+                        setProctorSubView('attendance');
+                      }}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+                        activeSub === 'attendance'
+                          ? 'bg-zinc-900 text-white shadow-2xs'
+                          : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-200/60'
+                      }`}
+                      title="Buka Daftar Presensi & Berita Acara"
+                    >
+                      <ClipboardCheck className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Presensi</span>
+                    </button>
+
+                    {targetExam && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDetailExamData(targetExam);
+                          setShowExamDetailModal(true);
+                        }}
+                        className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-200/60 cursor-pointer"
+                        title="Lihat Detail Sesi Ujian"
+                      >
+                        <Info className="w-3.5 h-3.5 text-zinc-500" />
+                        <span>Detail</span>
+                      </button>
+                    )}
+                  </div>
+                </>
+              );
+
+              if (isInsideCard) {
+                return (
+                  <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-zinc-100">
+                    {content}
+                  </div>
+                );
+              }
+
+              return (
+                <div className="bg-white border border-zinc-200/80 rounded-2xl shadow-2xs p-4 flex flex-wrap items-center justify-between gap-3">
+                  {content}
                 </div>
-              </div>
-            );
+              );
+            };
 
             return (
               <div className="space-y-4">
@@ -4583,11 +4760,9 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                                       {idx + 1}
                                     </td>
 
-                                    {/* 2. Kelompok Ujian */}
-                                    <td className="py-3 px-3">
-                                      <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-zinc-100 text-zinc-700 border border-zinc-200">
-                                        {exam.session_group || 'Semua'}
-                                      </span>
+                                    {/* 2. Kelompok Ujian (Teks biasa tanpa badge) */}
+                                    <td className="py-3 px-3 text-zinc-700 font-medium">
+                                      {exam.session_group || '-'}
                                     </td>
 
                                     {/* 3. Mata Pelajaran */}
@@ -4598,18 +4773,28 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                                       </div>
                                     </td>
 
-                                    {/* 4. Judul Sesi */}
+                                    {/* 4. Judul Sesi (dengan tanggal mulai) */}
                                     <td className="py-3 px-3">
-                                      <div className="font-medium text-zinc-800">{exam.title}</div>
-                                      <div className="text-[10px] text-zinc-400 font-mono mt-0.5">
-                                        Mulai: <span className="font-bold text-zinc-700">{exam.exam_token || '-'}</span> &bull; Selesai: <span className="font-bold text-amber-600">{exam.finish_token || '-'}</span> &bull; {exam.duration_minutes} Menit
+                                      <div className="font-semibold text-zinc-900">{exam.title}</div>
+                                      <div className="text-[11px] text-zinc-500 flex items-center gap-1 mt-0.5">
+                                        <Calendar className="w-3 h-3 text-zinc-400 shrink-0" />
+                                        <span>
+                                          {exam.start_time
+                                            ? new Date(exam.start_time).toLocaleDateString('id-ID', {
+                                                weekday: 'short',
+                                                day: 'numeric',
+                                                month: 'short',
+                                                year: 'numeric',
+                                              })
+                                            : '-'}
+                                        </span>
                                       </div>
                                     </td>
 
-                                    {/* 5. Tingkat */}
-                                    <td className="py-3 px-3">
-                                      <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-blue-50 text-blue-700 border border-blue-200">
-                                        {gradeLabel}
+                                    {/* 5. Tingkat (Cukup angka tingkat saja: 7, 8, 9) */}
+                                    <td className="py-3 px-3 text-center">
+                                      <span className="inline-block px-2.5 py-0.5 rounded-lg text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200 font-mono">
+                                        {exam.grade_level || 'Umum'}
                                       </span>
                                     </td>
 
@@ -4790,67 +4975,8 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                       {/* CARD 1: IDENTITAS MAPEL UJIAN, TINGKAT, TOKEN, WAKTU & DETAIL */}
                       {/* ======================================================== */}
                       <div className="bg-white border border-zinc-200/80 rounded-2xl shadow-2xs p-5 space-y-4">
-                        {/* Baris Atas: Tombol Kembali + Live Indicator + Tombol Aksi */}
-                        <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-zinc-100">
-                          <div className="flex items-center gap-3">
-                            <button
-                              type="button"
-                              onClick={() => setProctorSubView('list')}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 rounded-xl text-xs font-semibold transition-all shadow-2xs active:scale-95 cursor-pointer"
-                              title="Kembali ke Daftar Mapel Aktif"
-                            >
-                              <ArrowLeft className="w-3.5 h-3.5" />
-                              <span>Kembali ke Daftar Mapel</span>
-                            </button>
-                            <div className="h-4 w-px bg-zinc-200 hidden sm:block"></div>
-                            <div className="flex items-center gap-2">
-                              <div className="flex items-center gap-1.5">
-                                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                                <span className="text-xs font-semibold text-emerald-800">
-                                  Pemantauan Langsung (Live)
-                                </span>
-                              </div>
-                              <div className="h-4 w-px bg-zinc-200 hidden sm:block"></div>
-                              {/* Keterangan Hari, Tanggal dan Jam Live Real-time */}
-                              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-zinc-100 border border-zinc-200/80 text-zinc-700 text-xs shadow-2xs font-medium">
-                                <Clock className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
-                                <span>{formatIndonesianLiveDateTime(currentLiveTime).dayDate}</span>
-                                <span className="text-zinc-300 font-light">•</span>
-                                <span className="font-mono font-bold text-zinc-900">{formatIndonesianLiveDateTime(currentLiveTime).clock}</span>
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            {/* Tombol Segarkan Data */}
-                            <button
-                              type="button"
-                              onClick={handleManualRefreshProctor}
-                              disabled={isRefreshingProctor}
-                              title="Segarkan data pengawas seketika dari penyimpanan & server"
-                              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-white hover:bg-zinc-50 border border-zinc-300 text-zinc-800 rounded-xl text-xs font-semibold transition-all shadow-2xs hover:border-zinc-400 active:scale-95 cursor-pointer disabled:opacity-60"
-                            >
-                              <RefreshCw className={`w-3.5 h-3.5 text-zinc-600 ${isRefreshingProctor ? 'animate-spin text-zinc-900' : ''}`} />
-                              <span>{isRefreshingProctor ? 'Menyinkronkan...' : 'Segarkan Data'}</span>
-                            </button>
-
-                            {/* Tombol Detail Sesi Ujian */}
-                            {currentExam && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setDetailExamData(currentExam);
-                                  setShowExamDetailModal(true);
-                                }}
-                                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl text-xs font-semibold transition-all shadow-2xs active:scale-95 cursor-pointer"
-                                title="Lihat detail lengkap konfigurasi sesi ujian ini"
-                              >
-                                <Info className="w-3.5 h-3.5" />
-                                <span>Detail Sesi Ujian</span>
-                              </button>
-                            )}
-                          </div>
-                        </div>
+                        {/* Header Baku Pengawas: Navigasi Cepat, Live Time & Indikator */}
+                        {renderProctorSubNav('monitor', true)}
 
                         {/* Grid Identitas Ujian: Mapel, Tingkat, Token, Waktu */}
                         {currentExam ? (
@@ -4897,6 +5023,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                               const leadMinutes = Number(institution?.finish_token_lead_minutes ?? 10);
                               const durationSec = Number(currentExam.duration_minutes || 90) * 60;
                               const leadSeconds = leadMinutes * 60;
+                              const nowMs = currentLiveTime.getTime();
 
                               // Peserta yang sedang aktif mengerjakan sesi ujian ini
                               const activeWorkingAttempts = (attempts || []).filter(
@@ -4909,7 +5036,16 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
 
                               if (hasActiveWorkers) {
                                 const releaseDiffs = activeWorkingAttempts.map((att) => {
-                                  const timeSpent = Number(att.time_spent_seconds || 0);
+                                  let timeSpent = 0;
+                                  if (att.started_at) {
+                                    const sMs = new Date(att.started_at).getTime();
+                                    if (!isNaN(sMs)) {
+                                      timeSpent = Math.max(0, Math.floor((nowMs - sMs) / 1000));
+                                    }
+                                  }
+                                  if (!timeSpent && att.time_spent_seconds) {
+                                    timeSpent = Number(att.time_spent_seconds || 0);
+                                  }
                                   const remainingSec = Math.max(0, durationSec - timeSpent);
                                   const diffToRelease = remainingSec - leadSeconds;
                                   if (diffToRelease <= 0) countUnlocked++;
@@ -4917,7 +5053,25 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                                 });
                                 secToRelease = Math.min(...releaseDiffs);
                               } else {
-                                secToRelease = Math.max(0, durationSec - leadSeconds);
+                                // Jika belum ada peserta mulai, hitung mundur terhadap batas sesi ujian (end_time - leadMinutes)
+                                let sessionEndMs = null;
+                                if (currentExam.end_time) {
+                                  if (String(currentExam.end_time).includes('T')) {
+                                    sessionEndMs = new Date(currentExam.end_time).getTime();
+                                  } else if (String(currentExam.end_time).includes(':')) {
+                                    const [eh, em] = currentExam.end_time.split(':').map(Number);
+                                    const ed = new Date(currentLiveTime);
+                                    ed.setHours(eh, em, 0, 0);
+                                    sessionEndMs = ed.getTime();
+                                  }
+                                }
+
+                                if (sessionEndMs && sessionEndMs > nowMs) {
+                                  const sessionReleaseMs = sessionEndMs - (leadSeconds * 1000);
+                                  secToRelease = Math.max(0, Math.floor((sessionReleaseMs - nowMs) / 1000));
+                                } else {
+                                  secToRelease = Math.max(0, durationSec - leadSeconds);
+                                }
                               }
 
                               const hasFinishToken = Boolean(currentExam.finish_token);
@@ -4929,7 +5083,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                                 : '******';
 
                               return (
-                                <div className="p-3.5 bg-zinc-50/70 border border-zinc-200/70 rounded-xl space-y-2">
+                                <div className="p-3.5 bg-zinc-50/70 border border-zinc-200/70 rounded-xl space-y-2.5">
                                   <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-1.5 text-zinc-500 text-[11px] font-medium uppercase tracking-wider">
                                       <KeyRound className="w-3.5 h-3.5 text-amber-600" />
@@ -4959,63 +5113,77 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                                   </div>
 
                                   {/* Token Selesai (Masked ****** & Klik Tahan untuk Mengintip) */}
-                                  <div className="flex items-center justify-between gap-2">
-                                    <div className="text-[11px] text-zinc-600 font-medium">Token Selesai:</div>
-                                    <div className="flex items-center gap-1.5">
-                                      <span
-                                        onMouseDown={() => hasFinishToken && setIsHoldingFinishToken(true)}
-                                        onMouseUp={() => setIsHoldingFinishToken(false)}
-                                        onMouseLeave={() => setIsHoldingFinishToken(false)}
-                                        onTouchStart={() => hasFinishToken && setIsHoldingFinishToken(true)}
-                                        onTouchEnd={() => setIsHoldingFinishToken(false)}
-                                        className={`font-mono font-bold text-xs px-2.5 py-0.5 rounded-lg border tracking-wider transition-all select-none ${
-                                          isFinishRevealed
-                                            ? 'bg-purple-100 text-purple-900 border-purple-300 ring-2 ring-purple-400/50'
-                                            : 'bg-purple-50 text-purple-800 border-purple-200 cursor-pointer hover:border-purple-300'
-                                        }`}
-                                        title={hasFinishToken ? 'Klik dan tahan mouse untuk mengintip token selesai asli' : 'Token selesai belum diset'}
-                                      >
-                                        {finishTokenDisplay}
-                                      </span>
-                                      {hasFinishToken && (
-                                        <button
-                                          type="button"
-                                          onClick={() => handleCopyProctorToken(currentExam.finish_token, 'Token Selesai')}
-                                          className="p-1 text-zinc-500 hover:text-purple-700 hover:bg-purple-50 rounded-md border border-zinc-200 transition-all cursor-pointer shadow-2xs"
-                                          title="Salin Token Selesai Asli (walau sedang tersembunyi)"
+                                  <div className="space-y-0.5">
+                                    <div className="flex items-center justify-between gap-2">
+                                      <div className="text-[11px] text-zinc-600 font-medium">Token Selesai:</div>
+                                      <div className="flex items-center gap-1.5">
+                                        <span
+                                          onMouseDown={() => hasFinishToken && setIsHoldingFinishToken(true)}
+                                          onMouseUp={() => setIsHoldingFinishToken(false)}
+                                          onMouseLeave={() => setIsHoldingFinishToken(false)}
+                                          onTouchStart={() => hasFinishToken && setIsHoldingFinishToken(true)}
+                                          onTouchEnd={() => setIsHoldingFinishToken(false)}
+                                          className={`font-mono font-bold text-xs px-2.5 py-0.5 rounded-lg border tracking-wider transition-all select-none ${
+                                            isFinishRevealed
+                                              ? 'bg-purple-100 text-purple-900 border-purple-300 ring-2 ring-purple-400/50'
+                                              : hasFinishToken
+                                              ? 'bg-purple-50 text-purple-800 border-purple-200 cursor-pointer hover:border-purple-300'
+                                              : 'bg-zinc-100 text-zinc-400 border-zinc-200'
+                                          }`}
+                                          title={hasFinishToken ? 'Klik dan tahan mouse untuk mengintip token selesai asli' : 'Token selesai belum diset'}
                                         >
-                                          <Copy className="w-3 h-3" />
-                                        </button>
-                                      )}
-                                    </div>
-                                  </div>
-
-                                  {/* Hitung Mundur Waktu Token Selesai Muncul */}
-                                  {hasFinishToken && (
-                                    <div className="pt-1.5 border-t border-zinc-200/70 space-y-0.5">
-                                      <div className="flex items-center justify-between text-[10px]">
-                                        <span className="text-zinc-500 font-medium">Rilis Token Peserta:</span>
-                                        {hasActiveWorkers && countUnlocked > 0 ? (
-                                          <span className="font-mono font-bold text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 flex items-center gap-1 shadow-2xs">
-                                            <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
-                                            <span>Terbuka ({countUnlocked} Peserta)</span>
-                                          </span>
-                                        ) : hasActiveWorkers && secToRelease !== null && secToRelease > 0 ? (
-                                          <span className="font-mono font-bold text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 flex items-center gap-1 shadow-2xs">
-                                            <Clock className="w-2.5 h-2.5 text-amber-600 animate-pulse" />
-                                            <span>Muncul dlm {formatCountdownSeconds(secToRelease)}</span>
-                                          </span>
-                                        ) : (
-                                          <span className="font-mono text-zinc-600 bg-zinc-100 px-1.5 py-0.5 rounded border border-zinc-200">
-                                            {leadMinutes}m sblm waktu habis
-                                          </span>
+                                          {finishTokenDisplay}
+                                        </span>
+                                        {hasFinishToken && (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleCopyProctorToken(currentExam.finish_token, 'Token Selesai')}
+                                            className="p-1 text-zinc-500 hover:text-purple-700 hover:bg-purple-50 rounded-md border border-zinc-200 transition-all cursor-pointer shadow-2xs"
+                                            title="Salin Token Selesai Asli (walau sedang tersembunyi)"
+                                          >
+                                            <Copy className="w-3 h-3" />
+                                          </button>
                                         )}
                                       </div>
-                                      <div className="text-[9px] text-zinc-400 italic text-right select-none">
-                                        *Klik & tahan mouse pada ****** untuk melihat token
-                                      </div>
                                     </div>
-                                  )}
+                                    {hasFinishToken && (
+                                      <div className="text-[9px] text-zinc-400 italic text-right select-none pr-0.5">
+                                        *Tahan klik untuk intip
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {/* Hitung Mundur Waktu Rilis Token Selesai (Selalu Tampil & Live Ticking Countdown) */}
+                                  <div className="pt-2 border-t border-zinc-200/80 space-y-1">
+                                    <div className="flex items-center justify-between text-[11px]">
+                                      <span className="text-zinc-600 font-medium flex items-center gap-1">
+                                        <Clock className="w-3 h-3 text-amber-600 shrink-0" />
+                                        <span>Rilis Token:</span>
+                                      </span>
+                                      {countUnlocked > 0 ? (
+                                        <span className="font-mono font-bold text-xs text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200 flex items-center gap-1 shadow-2xs">
+                                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                          <span>Terbuka ({countUnlocked} Peserta)</span>
+                                        </span>
+                                      ) : secToRelease !== null && secToRelease > 0 ? (
+                                        <span className="font-mono font-bold text-xs text-amber-900 bg-amber-50 px-2.5 py-0.5 rounded-lg border border-amber-300 flex items-center gap-1.5 shadow-2xs">
+                                          <span>{formatDigitalCountdown(secToRelease)}</span>
+                                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                                        </span>
+                                      ) : (
+                                        <span className="font-mono text-xs text-zinc-600 bg-zinc-100 px-2 py-0.5 rounded-lg border border-zinc-200">
+                                          {leadMinutes}m sblm selesai
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    {/* Keterangan Rapi Satu Baris */}
+                                    <div className="text-[10px] text-zinc-400 italic text-left">
+                                      {hasActiveWorkers
+                                        ? `Berdasarkan pengerjaan ${activeWorkingAttempts.length} peserta aktif`
+                                        : `Otomatis rilis ${leadMinutes}m sebelum waktu pengerjaan habis`}
+                                    </div>
+                                  </div>
                                 </div>
                               );
                             })()}
@@ -5077,6 +5245,18 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                             </div>
 
                             <div className="flex flex-wrap items-center gap-2">
+                              {/* Tombol Segarkan Data */}
+                              <button
+                                type="button"
+                                onClick={handleManualRefreshProctor}
+                                disabled={isRefreshingProctor}
+                                title="Segarkan data pengawas seketika dari penyimpanan & server"
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-zinc-50 border border-zinc-300 text-zinc-800 rounded-xl text-xs font-semibold transition-all shadow-2xs hover:border-zinc-400 active:scale-95 cursor-pointer disabled:opacity-60"
+                              >
+                                <RefreshCw className={`w-3.5 h-3.5 text-zinc-600 ${isRefreshingProctor ? 'animate-spin text-zinc-900' : ''}`} />
+                                <span>{isRefreshingProctor ? 'Menyinkronkan...' : 'Segarkan Data'}</span>
+                              </button>
+
                               {/* Filter Dropdown Ruang */}
                               {distinctRooms.length > 0 && (
                                 <select
@@ -5481,136 +5661,125 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                 {/* ======================================================== */}
                 {proctorSubView === 'reset' && (
                   <div className="space-y-4">
-                    {renderProctorSubNav('reset')}
-              <div className="space-y-4">
-                {/* 1. Header & Deskripsi */}
-                <div className="p-4 bg-white border border-zinc-200/80 rounded-xl shadow-2xs flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-lg bg-blue-50 border border-blue-200 flex items-center justify-center shrink-0">
-                        <RotateCcw className="w-4 h-4 text-blue-600" />
-                      </div>
-                      <div>
-                        <h3 className="text-sm font-semibold text-zinc-900">
-                          Kontrol & Reset Status Pengerjaan Ujian Per Mapel
-                        </h3>
-                        <p className="text-xs text-zinc-500 mt-0.5">
-                          Pilih mata pelajaran untuk mereset login perangkat atau mengatur status pengerjaan (Belum Masuk, Selesai, Reset Pekerjaan) secara fleksibel.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
+                    {/* CARD 1: HEADER TEMPLATE & KARTU PEMILIH MAPEL */}
+                    <div className="bg-white border border-zinc-200/80 rounded-2xl shadow-2xs p-5 space-y-4">
+                      {renderProctorSubNav('reset', true)}
 
-                  <div className="flex flex-wrap items-center gap-2.5">
-                    {/* Tombol Pintas ke Pemantauan Live */}
-                    <button
-                      type="button"
-                      onClick={() => setProctorSubView('monitor')}
-                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl text-xs font-semibold transition-all shadow-xs cursor-pointer"
-                    >
-                      <ShieldAlert className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>Buka Pemantauan Live</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={handleManualRefreshProctor}
-                      disabled={isRefreshingProctor}
-                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-white hover:bg-zinc-50 border border-zinc-300 text-zinc-800 rounded-xl text-xs font-semibold transition-all shadow-2xs cursor-pointer disabled:opacity-60"
-                    >
-                      <RefreshCw className={`w-3.5 h-3.5 text-zinc-600 ${isRefreshingProctor ? 'animate-spin' : ''}`} />
-                      <span>{isRefreshingProctor ? 'Menyinkronkan...' : 'Segarkan Data'}</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* 2. Kartu Pemilih Mapel & Ringkasan Metrik Mapel */}
-                <div className="bg-white border border-zinc-200/80 rounded-xl p-4 shadow-2xs space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
-                    <div className="md:col-span-2 space-y-1">
-                      <label className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
-                        <FileSpreadsheet className="w-4 h-4 text-blue-600" />
-                        <span>Pilih Mata Pelajaran / Sesi Ujian:</span>
-                      </label>
-                      <select
-                        value={selectedResetExamId}
-                        onChange={(e) => {
-                          setSelectedResetExamId(e.target.value);
-                          setSelectedStudentIdsForReset([]);
-                        }}
-                        className="w-full px-3.5 py-2 text-xs font-medium border border-zinc-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-2xs cursor-pointer"
-                      >
-                        {exams.map((ex) => (
-                          <option key={ex.id} value={ex.id}>
-                            {ex.title} &bull; {getGradeLabel(ex.grade_level)} ({ex.subject || 'Mapel'}) &bull; Token: {ex.exam_token || '-'}
-                          </option>
-                        ))}
-                      </select>
-                      {currentResetExam && (
-                        <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] text-zinc-500">
-                          <span className="font-semibold text-zinc-700">Durasi: {currentResetExam.duration_minutes} Menit</span>
-                          <span>&bull;</span>
-                          <span>Kelompok: {currentResetExam.session_group || 'Semua'}</span>
-                          <span>&bull;</span>
-                          <span className="font-mono bg-zinc-100 px-1.5 py-0.5 rounded text-zinc-700">
-                            Token: {currentResetExam.exam_token || '-'}
-                          </span>
+                      {/* Baris Identitas Mapel / Sesi Ujian Terpilih (Format Kartu Teks Baku Seragam) */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 items-stretch">
+                        {/* 1. Mata Pelajaran & Judul Ujian */}
+                        <div className="p-3.5 bg-zinc-50/70 border border-zinc-200/70 rounded-xl space-y-1">
+                          <div className="flex items-center justify-between gap-1.5">
+                            <div className="flex items-center gap-1.5 text-zinc-500 text-[11px] font-medium uppercase tracking-wider">
+                              <BookOpen className="w-3.5 h-3.5 text-blue-600" />
+                              <span>Mata Pelajaran & Sesi</span>
+                            </div>
+                            <span className="inline-block px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-100 text-blue-800 border border-blue-200">
+                              {currentResetExam?.session_group || 'Asesmen'}
+                            </span>
+                          </div>
+                          <div className="font-bold text-zinc-900 text-sm truncate" title={currentResetExam?.subject}>
+                            {currentResetExam?.subject || 'Mapel Umum'}
+                          </div>
+                          <div className="text-xs text-zinc-600 truncate" title={currentResetExam?.title}>
+                            {currentResetExam?.title}
+                          </div>
                         </div>
-                      )}
+
+                        {/* 2. Tingkat Peserta */}
+                        <div className="p-3.5 bg-zinc-50/70 border border-zinc-200/70 rounded-xl space-y-1 flex flex-col justify-between">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1.5 text-zinc-500 text-[11px] font-medium uppercase tracking-wider">
+                              <Layers className="w-3.5 h-3.5 text-purple-600" />
+                              <span>Tingkat Peserta</span>
+                            </div>
+                            <div className="font-bold text-zinc-900 text-base">
+                              {currentResetExam ? getGradeLabel(currentResetExam.grade_level) : '-'}
+                            </div>
+                            <div className="text-xs text-zinc-500">
+                              Khusus seluruh peserta tingkat {currentResetExam?.grade_level || '-'}
+                            </div>
+                          </div>
+                          <div className="pt-1 text-[11px] font-mono text-zinc-500 border-t border-zinc-200/60">
+                            Total di Basis Data: <strong className="text-zinc-800">{resetExamStats.total} Peserta</strong>
+                          </div>
+                        </div>
+
+                        {/* 3. Status Perangkat Terkunci */}
+                        <div className="p-3.5 bg-zinc-50/70 border border-zinc-200/70 rounded-xl space-y-1 flex flex-col justify-between">
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between gap-1.5">
+                              <div className="flex items-center gap-1.5 text-zinc-500 text-[11px] font-medium uppercase tracking-wider">
+                                <ShieldAlert className="w-3.5 h-3.5 text-rose-600" />
+                                <span>Status Perangkat</span>
+                              </div>
+                              <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold ${
+                                resetExamStats.deviceLocked > 0
+                                  ? 'bg-rose-100 text-rose-800 border border-rose-200 animate-pulse'
+                                  : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                              }`}>
+                                {resetExamStats.deviceLocked > 0 ? `${resetExamStats.deviceLocked} Terkunci` : 'Aman (0 Terkunci)'}
+                              </span>
+                            </div>
+                            <div className="font-bold text-zinc-900 text-sm">
+                              {resetExamStats.deviceLocked > 0
+                                ? `${resetExamStats.deviceLocked} Perangkat Perlu Tindakan`
+                                : 'Semua Perangkat Normal'}
+                            </div>
+                            <div className="text-xs text-zinc-500">
+                              Total peserta mapel ini: <strong className="text-zinc-800">{resetExamStats.total} Peserta</strong>
+                            </div>
+                          </div>
+                          <div className="pt-1 text-[11px] font-mono text-zinc-500 border-t border-zinc-200/60 flex items-center justify-between">
+                            <span>Durasi: {currentResetExam?.duration_minutes || 90} Menit</span>
+                            <span>Token: {currentResetExam?.exam_token || '-'}</span>
+                          </div>
+                        </div>
+                      </div>
                     </div>
 
-                    {/* Ringkasan status perangkat mapel */}
-                    <div className="p-3 bg-zinc-50 border border-zinc-200/70 rounded-xl space-y-1">
-                      <div className="text-[11px] font-semibold text-zinc-600 flex items-center justify-between">
-                        <span>Perangkat Peserta Terkunci:</span>
-                        <span className="font-mono font-bold text-zinc-900">{resetExamStats.deviceLocked} Peserta</span>
+                    {/* METRIK KARTU RINGKASAN STATUS PENGERJAAN (TERPISAH DARI CARD 1) */}
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3.5">
+                      <div className="bg-white border border-zinc-200/80 rounded-xl p-4 shadow-2xs flex items-center justify-between">
+                        <div>
+                          <div className="text-[11px] font-medium text-zinc-500">Total Peserta</div>
+                          <div className="text-xl font-bold text-zinc-900 font-mono-num mt-0.5">{resetExamStats.total}</div>
+                        </div>
+                        <Users className="w-5 h-5 text-zinc-400" />
                       </div>
-                      <div className="text-[11px] font-semibold text-zinc-600 flex items-center justify-between">
-                        <span>Total Peserta Mapel Ini:</span>
-                        <span className="font-mono font-bold text-blue-600">{resetExamStats.total} Peserta</span>
-                      </div>
-                    </div>
-                  </div>
 
-                  {/* 3. Baris Metrik Status Pengerjaan Mapel Terpilih */}
-                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 pt-2 border-t border-zinc-100">
-                    <div className="p-2.5 bg-zinc-50 border border-zinc-200/60 rounded-xl flex items-center justify-between">
-                      <div>
-                        <div className="text-[10px] font-medium text-zinc-500">Total Peserta</div>
-                        <div className="text-base font-bold text-zinc-900 font-mono">{resetExamStats.total}</div>
+                      <div className="bg-white border border-zinc-200/80 rounded-xl p-4 shadow-2xs flex items-center justify-between">
+                        <div>
+                          <div className="text-[11px] font-medium text-zinc-500">Belum Masuk</div>
+                          <div className="text-xl font-bold text-zinc-700 font-mono-num mt-0.5">{resetExamStats.notStarted}</div>
+                        </div>
+                        <Clock className="w-5 h-5 text-zinc-400" />
                       </div>
-                      <Users className="w-4 h-4 text-zinc-400" />
-                    </div>
-                    <div className="p-2.5 bg-zinc-50 border border-zinc-200/60 rounded-xl flex items-center justify-between">
-                      <div>
-                        <div className="text-[10px] font-medium text-zinc-500">Belum Masuk</div>
-                        <div className="text-base font-bold text-zinc-700 font-mono">{resetExamStats.notStarted}</div>
+
+                      <div className="bg-white border border-emerald-200 rounded-xl p-4 shadow-2xs bg-emerald-50/20 flex items-center justify-between">
+                        <div>
+                          <div className="text-[11px] font-medium text-emerald-700">Sedang Ujian</div>
+                          <div className="text-xl font-bold text-emerald-700 font-mono-num mt-0.5">{resetExamStats.inProgress}</div>
+                        </div>
+                        <Activity className="w-5 h-5 text-emerald-500" />
                       </div>
-                      <Clock className="w-4 h-4 text-zinc-400" />
-                    </div>
-                    <div className="p-2.5 bg-emerald-50/70 border border-emerald-200/70 rounded-xl flex items-center justify-between">
-                      <div>
-                        <div className="text-[10px] font-medium text-emerald-700">Sedang Ujian</div>
-                        <div className="text-base font-bold text-emerald-600 font-mono">{resetExamStats.inProgress}</div>
+
+                      <div className="bg-white border border-rose-200 rounded-xl p-4 shadow-2xs bg-rose-50/20 flex items-center justify-between">
+                        <div>
+                          <div className="text-[11px] font-medium text-rose-700">Terkunci</div>
+                          <div className="text-xl font-bold text-rose-700 font-mono-num mt-0.5">{resetExamStats.locked}</div>
+                        </div>
+                        <ShieldAlert className="w-5 h-5 text-rose-500" />
                       </div>
-                      <Activity className="w-4 h-4 text-emerald-500" />
-                    </div>
-                    <div className="p-2.5 bg-rose-50/70 border border-rose-200/70 rounded-xl flex items-center justify-between">
-                      <div>
-                        <div className="text-[10px] font-medium text-rose-700">Terkunci</div>
-                        <div className="text-base font-bold text-rose-600 font-mono">{resetExamStats.locked}</div>
+
+                      <div className="bg-white border border-blue-200 rounded-xl p-4 shadow-2xs bg-blue-50/20 flex items-center justify-between">
+                        <div>
+                          <div className="text-[11px] font-medium text-blue-700">Selesai</div>
+                          <div className="text-xl font-bold text-blue-700 font-mono-num mt-0.5">{resetExamStats.completed}</div>
+                        </div>
+                        <CheckCircle2 className="w-5 h-5 text-blue-500" />
                       </div>
-                      <ShieldAlert className="w-4 h-4 text-rose-500" />
                     </div>
-                    <div className="p-2.5 bg-blue-50/70 border border-blue-200/70 rounded-xl flex items-center justify-between">
-                      <div>
-                        <div className="text-[10px] font-medium text-blue-700">Selesai</div>
-                        <div className="text-base font-bold text-blue-600 font-mono">{resetExamStats.completed}</div>
-                      </div>
-                      <CheckCircle2 className="w-4 h-4 text-blue-500" />
-                    </div>
-                  </div>
-                </div>
 
                 {/* 4. Panel Aksi Massal (Bulk Reset Actions) */}
                 <div className="bg-gradient-to-r from-zinc-900 to-zinc-800 text-white rounded-xl p-4 shadow-sm space-y-3">
@@ -5719,15 +5888,28 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                       ))}
                     </div>
 
-                    <div className="relative max-w-xs w-full sm:w-64">
-                      <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
-                      <input
-                        type="text"
-                        value={resetSearch}
-                        onChange={(e) => setResetSearch(e.target.value)}
-                        placeholder="Cari nama, NISN, kelas..."
-                        className="w-full pl-9 pr-3 py-1.5 text-xs border border-zinc-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleManualRefreshProctor}
+                        disabled={isRefreshingProctor}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-zinc-50 border border-zinc-300 text-zinc-800 rounded-xl text-xs font-semibold transition-all shadow-2xs cursor-pointer disabled:opacity-60 shrink-0"
+                        title="Segarkan data pengawas seketika dari penyimpanan & server"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 text-zinc-600 ${isRefreshingProctor ? 'animate-spin' : ''}`} />
+                        <span>{isRefreshingProctor ? 'Menyinkronkan...' : 'Segarkan Data'}</span>
+                      </button>
+
+                      <div className="relative max-w-xs w-full sm:w-64">
+                        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+                        <input
+                          type="text"
+                          value={resetSearch}
+                          onChange={(e) => setResetSearch(e.target.value)}
+                          placeholder="Cari nama, NISN, kelas..."
+                          className="w-full pl-9 pr-3 py-1.5 text-xs border border-zinc-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
                     </div>
                   </div>
 
@@ -5948,153 +6130,89 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                   </div>
                 </div>
               </div>
-
-                  </div>
-                )}
+            )}
 
                 {/* ======================================================== */}
                 {/* SUB-VIEW 4: PRESENSI & MONITORING KEHADIRAN UJIAN */}
                 {/* ======================================================== */}
                 {proctorSubView === 'attendance' && (
-                  <div className="space-y-6">
-                    {renderProctorSubNav('attendance')}
-              <div className="space-y-6">
-                {/* TOP BAR PRESENSI */}
-                <div className="bg-white border border-zinc-200/80 rounded-2xl p-6 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-zinc-900 text-white flex items-center justify-center shrink-0">
-                      <ClipboardCheck className="w-5 h-5 text-emerald-400" />
-                    </div>
-                    <div>
-                      <h3 className="text-base font-semibold text-zinc-900 flex items-center gap-2">
-                        Presensi & Monitoring Kehadiran Ujian
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                          Live Sync
-                        </span>
-                      </h3>
-                      <p className="text-xs text-zinc-500">
-                        Peserta yang selesai otomatis dinyatakan HADIR. Yang sedang mengerjakan bertanda -, dan yang belum ujian dapat diset S/I/A/Dispensasi.
-                      </p>
-                    </div>
-                  </div>
+                  <div className="space-y-4">
+                    {/* CARD 1: HEADER TEMPLATE & IDENTITAS MAPEL SESI TERSELEKSI */}
+                    <div className="bg-white border border-zinc-200/80 rounded-2xl shadow-2xs p-5 space-y-4">
+                      {renderProctorSubNav('attendance', true)}
 
-                  <div className="flex flex-wrap items-center gap-2.5">
-                    <button
-                      type="button"
-                      onClick={() => setShowBeritaAcaraModal(true)}
-                      className="inline-flex items-center gap-2 px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl text-xs font-semibold shadow-xs transition-all cursor-pointer"
-                    >
-                      <FileText className="w-4 h-4 text-emerald-400" />
-                      <span>Berita Acara Pelaksanaan</span>
-                    </button>
+                      {/* Baris Identitas Mapel Ujian yang Diseleksi & Tombol Cetak Dokumen */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 items-stretch">
+                        {/* 1. Mata Pelajaran & Judul Ujian */}
+                        <div className="p-3.5 bg-zinc-50/70 border border-zinc-200/70 rounded-xl space-y-1">
+                          <div className="flex items-center justify-between gap-1.5">
+                            <div className="flex items-center gap-1.5 text-zinc-500 text-[11px] font-medium uppercase tracking-wider">
+                              <BookOpen className="w-3.5 h-3.5 text-blue-600" />
+                              <span>Mata Pelajaran & Sesi</span>
+                            </div>
+                            <span className="inline-block px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-100 text-blue-800 border border-blue-200">
+                              {currentAttendanceExam?.session_group || 'Asesmen'}
+                            </span>
+                          </div>
+                          <div className="font-bold text-zinc-900 text-sm truncate" title={currentAttendanceExam?.subject}>
+                            {currentAttendanceExam?.subject || 'Mapel Umum'}
+                          </div>
+                          <div className="text-xs text-zinc-600 truncate" title={currentAttendanceExam?.title}>
+                            {currentAttendanceExam?.title}
+                          </div>
+                        </div>
 
-                    <button
-                      type="button"
-                      onClick={() => setShowDaftarHadirModal(true)}
-                      className="inline-flex items-center gap-2 px-4 py-2 bg-white hover:bg-zinc-50 border border-zinc-300 text-zinc-800 rounded-xl text-xs font-semibold shadow-2xs transition-all cursor-pointer"
-                      title="Buka Lembar Cetak Daftar Hadir Peserta Tes Resmi"
-                    >
-                      <Printer className="w-4 h-4 text-zinc-700" />
-                      <span>Cetak Daftar Hadir (Presensi)</span>
-                    </button>
-                  </div>
-                </div>
+                        {/* 2. Tingkat Peserta */}
+                        <div className="p-3.5 bg-zinc-50/70 border border-zinc-200/70 rounded-xl space-y-1 flex flex-col justify-between">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1.5 text-zinc-500 text-[11px] font-medium uppercase tracking-wider">
+                              <Layers className="w-3.5 h-3.5 text-purple-600" />
+                              <span>Tingkat Peserta</span>
+                            </div>
+                            <div className="font-bold text-zinc-900 text-base">
+                              {currentAttendanceExam ? getGradeLabel(currentAttendanceExam.grade_level) : '-'}
+                            </div>
+                            <div className="text-xs text-zinc-500">
+                              Khusus seluruh peserta tingkat {currentAttendanceExam?.grade_level || '-'}
+                            </div>
+                          </div>
+                          <div className="pt-1 text-[11px] font-mono text-zinc-500 border-t border-zinc-200/60">
+                            Total di Basis Data: <strong className="text-zinc-800">{totalEligible} Peserta</strong>
+                          </div>
+                        </div>
 
-                {/* PANEL FILTER & KONTROL */}
-                <div className="bg-slate-900 text-white rounded-2xl p-5 shadow-xl border border-slate-700 space-y-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-700">
-                    <div className="text-xs font-semibold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
-                      <Sliders className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>Panel Filter & Kontrol Presensi Ujian</span>
-                    </div>
-                    <div className="text-xs text-slate-400">
-                      Ruangan Aktif: <strong className="text-white">{selectedAttendanceRoom === 'ALL' ? 'Semua Ruang' : selectedAttendanceRoom}</strong>
-                    </div>
-                  </div>
+                        {/* 3. Tombol Cetak Dokumen: Cetak BA & Cetak Presensi */}
+                        <div className="p-3.5 bg-zinc-50/70 border border-zinc-200/70 rounded-xl space-y-2 flex flex-col justify-between">
+                          <div className="flex items-center gap-1.5 text-zinc-500 text-[11px] font-medium uppercase tracking-wider">
+                            <Printer className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>Cetak Dokumen Pelaksanaan</span>
+                          </div>
+                          <div className="flex flex-col sm:flex-row gap-2 pt-1">
+                            <button
+                              type="button"
+                              onClick={() => setShowBeritaAcaraModal(true)}
+                              className="flex-1 inline-flex items-center justify-center gap-2 px-3.5 py-2 bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl text-xs font-semibold shadow-2xs transition-all cursor-pointer active:scale-95"
+                              title="Buka Lembar Cetak Berita Acara Ujian"
+                            >
+                              <FileText className="w-4 h-4 text-emerald-400" />
+                              <span>Cetak Berita Acara</span>
+                            </button>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-                    <div>
-                      <label className="block text-[11px] font-medium text-slate-300 mb-1.5">
-                        Mata Pelajaran & Nama Ujian:
-                      </label>
-                      <select
-                        value={selectedAttendanceExamId}
-                        onChange={(e) => {
-                          setSelectedAttendanceExamId(e.target.value);
-                          setSelectedAttendanceRoom('ALL');
-                          setSelectedAttendanceStatus('ALL');
-                        }}
-                        className="w-full px-3 py-2 text-xs bg-slate-800 border border-slate-600 rounded-xl text-white font-medium focus:outline-none focus:ring-2 focus:ring-emerald-400"
-                      >
-                        {exams.length === 0 ? (
-                          <option value="">Belum Ada Sesi Ujian</option>
-                        ) : (
-                          exams.map((ex) => (
-                            <option key={ex.id} value={ex.id}>
-                              {ex.subject} - {ex.title} ({ex.session_group || 'Sesi 1'})
-                            </option>
-                          ))
-                        )}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-[11px] font-medium text-slate-300 mb-1.5">
-                        Ruang Ujian:
-                      </label>
-                      <select
-                        value={selectedAttendanceRoom}
-                        onChange={(e) => setSelectedAttendanceRoom(e.target.value)}
-                        className="w-full px-3 py-2 text-xs bg-slate-800 border border-slate-600 rounded-xl text-white font-medium focus:outline-none focus:ring-2 focus:ring-emerald-400"
-                      >
-                        <option value="ALL">Semua Ruangan</option>
-                        {attendanceRooms.map((r) => (
-                          <option key={r} value={r}>
-                            {r}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-[11px] font-medium text-slate-300 mb-1.5">
-                        Status Peserta:
-                      </label>
-                      <select
-                        value={selectedAttendanceStatus}
-                        onChange={(e) => setSelectedAttendanceStatus(e.target.value)}
-                        className="w-full px-3 py-2 text-xs bg-slate-800 border border-slate-600 rounded-xl text-white font-medium focus:outline-none focus:ring-2 focus:ring-emerald-400"
-                      >
-                        <option value="ALL">Semua Status</option>
-                        <option value="COMPLETED">Dinyatakan Hadir (Selesai Ujian)</option>
-                        <option value="IN_PROGRESS">Sedang Mengerjakan (Status "-")</option>
-                        <option value="NOT_STARTED">Belum Login / Belum Ujian</option>
-                        <option value="SAKIT">Status Khusus: Sakit</option>
-                        <option value="IZIN">Status Khusus: Izin</option>
-                        <option value="ALPHA">Status Khusus: Alpha</option>
-                        <option value="DISPENSASI">Status Khusus: Dispensasi</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-[11px] font-medium text-slate-300 mb-1.5">
-                        Cari Peserta:
-                      </label>
-                      <div className="relative">
-                        <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
-                        <input
-                          type="text"
-                          placeholder="Ketik nama, no ujian atau NISN..."
-                          value={attendanceSearch}
-                          onChange={(e) => setAttendanceSearch(e.target.value)}
-                          className="w-full pl-8 pr-3 py-2 text-xs bg-slate-800 border border-slate-600 rounded-xl text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-400"
-                        />
+                            <button
+                              type="button"
+                              onClick={() => setShowDaftarHadirModal(true)}
+                              className="flex-1 inline-flex items-center justify-center gap-2 px-3.5 py-2 bg-white hover:bg-zinc-100 border border-zinc-300 text-zinc-800 rounded-xl text-xs font-semibold shadow-2xs transition-all cursor-pointer active:scale-95"
+                              title="Buka Lembar Cetak Daftar Hadir Peserta Tes Resmi"
+                            >
+                              <Printer className="w-4 h-4 text-zinc-700" />
+                              <span>Cetak Presensi</span>
+                            </button>
+                          </div>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </div>
 
-                {/* METRIK KARTU RINGKASAN */}
+                    {/* METRIK KARTU RINGKASAN */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                   <div className="bg-white border border-zinc-200/80 rounded-xl p-4 shadow-2xs">
                     <div className="text-[11px] font-medium text-zinc-500">Total Peserta</div>
@@ -6136,14 +6254,64 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
 
                 {/* TABEL PRESENSI PESERTA */}
                 <div className="bg-white border border-zinc-200/80 rounded-2xl shadow-2xs overflow-hidden">
-                  <div className="px-6 py-4 border-b border-zinc-100 flex items-center justify-between">
+                  <div className="p-4 bg-zinc-50/70 border-b border-zinc-200/80 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
                     <div>
-                      <h4 className="text-sm font-semibold text-zinc-900">
-                        Daftar Kehadiran Peserta
+                      <h4 className="text-sm font-bold text-zinc-900 flex items-center gap-2">
+                        <ClipboardCheck className="w-4 h-4 text-emerald-600" />
+                        <span>Daftar Kehadiran Peserta</span>
+                        {currentAttendanceExam && (
+                          <span className="text-xs font-normal text-zinc-500">
+                            &bull; {getGradeLabel(currentAttendanceExam.grade_level)}
+                          </span>
+                        )}
                       </h4>
-                      <p className="text-xs text-zinc-500">
+                      <p className="text-xs text-zinc-500 mt-0.5">
                         Menampilkan {filteredAttendanceStudents.length} dari {totalEligible} peserta.
                       </p>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      {/* Filter Ruang */}
+                      <select
+                        value={selectedAttendanceRoom}
+                        onChange={(e) => setSelectedAttendanceRoom(e.target.value)}
+                        className="px-2.5 py-1.5 text-xs bg-white border border-zinc-300 rounded-xl text-zinc-700 focus:outline-none focus:ring-2 focus:ring-zinc-900 cursor-pointer shadow-2xs"
+                      >
+                        <option value="ALL">Semua Ruangan ({eligibleStudents.length})</option>
+                        {attendanceRooms.map((r) => (
+                          <option key={r} value={r}>
+                            {r}
+                          </option>
+                        ))}
+                      </select>
+
+                      {/* Filter Status Kehadiran */}
+                      <select
+                        value={selectedAttendanceStatus}
+                        onChange={(e) => setSelectedAttendanceStatus(e.target.value)}
+                        className="px-2.5 py-1.5 text-xs bg-white border border-zinc-300 rounded-xl text-zinc-700 focus:outline-none focus:ring-2 focus:ring-zinc-900 cursor-pointer shadow-2xs"
+                      >
+                        <option value="ALL">Semua Status</option>
+                        <option value="COMPLETED">Hadir (Selesai)</option>
+                        <option value="IN_PROGRESS">Sedang Mengerjakan (-)</option>
+                        <option value="NOT_STARTED">Belum Hadir</option>
+                        <option value="SAKIT">Sakit</option>
+                        <option value="IZIN">Izin</option>
+                        <option value="ALPHA">Alpa</option>
+                        <option value="DISPENSASI">Dispensasi</option>
+                      </select>
+
+                      {/* Search Input */}
+                      <div className="relative min-w-[200px] sm:min-w-[220px]">
+                        <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+                        <input
+                          type="text"
+                          placeholder="Cari nama, NISN, no ujian..."
+                          value={attendanceSearch}
+                          onChange={(e) => setAttendanceSearch(e.target.value)}
+                          className="w-full pl-8 pr-3 py-1.5 text-xs bg-white border border-zinc-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-zinc-900 shadow-2xs"
+                        />
+                      </div>
                     </div>
                   </div>
 
@@ -7031,9 +7199,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                   </div>
                 )}
               </div>
-
-                  </div>
-                )}
+            )}
 
                 {/* ======================================================== */}
                 {/* MODAL POPUP: DETAIL SESI UJIAN TERPILIH */}
@@ -7049,9 +7215,13 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                           </div>
                           <div>
                             <h3 className="text-sm font-bold flex items-center gap-2">
-                              Detail Sesi Ujian Aktif
-                              <span className="text-[10px] px-2 py-0.5 rounded-full font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                                Aktif
+                              Detail Sesi Ujian
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono border ${
+                                detailExamData.is_active
+                                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                                  : 'bg-zinc-500/20 text-zinc-300 border-zinc-500/30'
+                              }`}>
+                                {detailExamData.is_active ? 'Publish' : 'Draft'}
                               </span>
                             </h3>
                             <p className="text-xs text-zinc-300">
@@ -7071,6 +7241,25 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
 
                       {/* Modal Body */}
                       <div className="p-6 overflow-y-auto flex-1 space-y-5 text-xs">
+                        {/* Judul & Deskripsi Soal */}
+                        <div className="p-4 bg-zinc-50 border border-zinc-200/80 rounded-xl space-y-2.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">Judul Sesi Ujian</span>
+                            <span className="text-[10px] font-semibold px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                              {detailExamData.subject || 'Mata Pelajaran'}
+                            </span>
+                          </div>
+                          <div className="text-base font-bold text-zinc-900 leading-snug">
+                            {detailExamData.title}
+                          </div>
+                          <div className="pt-2 border-t border-zinc-200/70">
+                            <div className="text-[11px] font-semibold text-zinc-600 mb-1">Deskripsi & Petunjuk Pengerjaan:</div>
+                            <p className="text-xs text-zinc-700 leading-relaxed whitespace-pre-line bg-white p-3 rounded-xl border border-zinc-200 shadow-2xs">
+                              {detailExamData.description ? detailExamData.description : 'Tidak ada deskripsi atau petunjuk tambahan khusus untuk sesi ujian ini.'}
+                            </p>
+                          </div>
+                        </div>
+
                         {/* Ringkasan Data Dasar Ujian */}
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                           <div className="p-3 bg-zinc-50 border border-zinc-200/80 rounded-xl">
@@ -11082,13 +11271,13 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
               /* VIEW: FORM INPUT CSV DENGAN PREVIEW & UPLOAD FILE */
               <div>
                 <div className="flex items-center justify-between pb-3 border-b border-zinc-100 mb-3">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2.5">
                     <div className="w-8 h-8 rounded-lg bg-zinc-900 text-white flex items-center justify-center">
                       <FileSpreadsheet className="w-4 h-4" />
                     </div>
                     <div>
-                      <h3 className="font-semibold text-zinc-900 text-sm">Import Data Peserta (CSV / Excel)</h3>
-                      <p className="text-[11px] text-zinc-500">Mendukung format No. Ujian, NISN, NIS, Kelas, dan Email</p>
+                      <h3 className="font-semibold text-zinc-900 text-sm">Import Data Peserta Lengkap (10 Kolom)</h3>
+                      <p className="text-[11px] text-zinc-500">Mendukung 10 data lengkap sesuai form tambah manual</p>
                     </div>
                   </div>
                   <button
@@ -11103,38 +11292,56 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                   </button>
                 </div>
 
-                <div className="bg-zinc-50 p-3 rounded-xl border border-zinc-200/80 mb-3 text-xs text-zinc-600 space-y-1.5">
-                  <div className="font-semibold text-zinc-800">Format Kolom yang Didukung:</div>
-                  <div className="flex flex-wrap gap-1 font-mono text-[11px]">
-                    <span className="bg-white px-1.5 py-0.5 rounded border border-zinc-200 text-zinc-800">nama</span>
-                    <span className="bg-white px-1.5 py-0.5 rounded border border-zinc-200 text-blue-700 font-semibold">nomor_ujian</span>
-                    <span className="bg-white px-1.5 py-0.5 rounded border border-zinc-200 text-amber-700 font-semibold">nisn</span>
-                    <span className="bg-white px-1.5 py-0.5 rounded border border-zinc-200 text-purple-700 font-semibold">nis</span>
-                    <span className="bg-white px-1.5 py-0.5 rounded border border-zinc-200 text-zinc-800">kelas</span>
-                    <span className="bg-white px-1.5 py-0.5 rounded border border-zinc-200 text-zinc-800">tingkat</span>
-                    <span className="bg-white px-1.5 py-0.5 rounded border border-zinc-200 text-zinc-800">email</span>
+                {/* Daftar 10 Kolom Sesuai Form Manual */}
+                <div className="bg-zinc-50 p-3 rounded-xl border border-zinc-200/80 mb-3 text-xs text-zinc-600 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-zinc-800">10 Kolom Data Sesuai Tambah Manual:</span>
+                    <span className="text-[10px] text-zinc-400 font-mono">10 Field Lengkap</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1 font-mono text-[10px]">
+                    <span className="bg-white px-1.5 py-0.5 rounded border border-zinc-200 text-zinc-800 font-semibold" title="Nama Lengkap (Wajib)">1. nama*</span>
+                    <span className="bg-white px-1.5 py-0.5 rounded border border-blue-200 text-blue-700 font-semibold" title="Nomor Ujian (Opsional, fallback ke NISN)">2. nomor_ujian</span>
+                    <span className="bg-white px-1.5 py-0.5 rounded border border-amber-200 text-amber-700 font-semibold" title="NISN / Username Akun (Wajib, Unik)">3. nisn*</span>
+                    <span className="bg-white px-1.5 py-0.5 rounded border border-purple-200 text-purple-700 font-semibold" title="NIS / Password Awal (Opsional)">4. nis</span>
+                    <span className="bg-white px-1.5 py-0.5 rounded border border-emerald-200 text-emerald-700 font-semibold" title="Jenis Kelamin: L atau P (Wajib)">5. jenis_kelamin</span>
+                    <span className="bg-white px-1.5 py-0.5 rounded border border-teal-200 text-teal-700 font-semibold" title="Agama: Islam, Kristen, Katolik, dll (Wajib)">6. agama</span>
+                    <span className="bg-white px-1.5 py-0.5 rounded border border-zinc-200 text-zinc-800 font-semibold" title="Kelas / Rombel (Wajib)">7. kelas*</span>
+                    <span className="bg-white px-1.5 py-0.5 rounded border border-zinc-200 text-zinc-800 font-semibold" title="Tingkat Kelas: 7, 8, 9, 10, dll (Wajib)">8. tingkat*</span>
+                    <span className="bg-white px-1.5 py-0.5 rounded border border-indigo-200 text-indigo-700 font-semibold" title="Ruang Ujian: misal Ruang 01 (Opsional)">9. ruang</span>
+                    <span className="bg-white px-1.5 py-0.5 rounded border border-zinc-200 text-zinc-700 font-semibold" title="Email SSO Google (Opsional)">10. email</span>
                   </div>
                   <p className="text-[10px] text-zinc-500 leading-relaxed">
-                    * Format 6 kolom standar (tanpa nomor_ujian) juga tetap didukung (nomor ujian akan otomatis disamakan dengan NISN).
+                    * Nilai opsional yang dikosongkan akan otomatis memakai nilai default aman (No. Ujian disamakan dengan NISN, JK = L, Agama = Islam, Ruang = Ruang 01). Format lama juga tetap terbaca otomatis.
                   </p>
                 </div>
 
                 <div className="mb-2.5 flex flex-wrap justify-between items-center gap-2">
-                  <label className="cursor-pointer text-[11px] text-zinc-700 bg-zinc-100 hover:bg-zinc-200 px-2.5 py-1.5 rounded-lg border border-zinc-300 flex items-center gap-1.5 font-medium transition-colors">
-                    <Upload className="w-3.5 h-3.5 text-zinc-600" />
-                    <span>Upload File CSV (.csv / .txt)</span>
-                    <input
-                      type="file"
-                      accept=".csv,.txt"
-                      onChange={handleImportFileUpload}
-                      className="hidden"
-                    />
-                  </label>
+                  <div className="flex items-center gap-2">
+                    <label className="cursor-pointer text-[11px] text-zinc-700 bg-zinc-100 hover:bg-zinc-200 px-2.5 py-1.5 rounded-lg border border-zinc-300 flex items-center gap-1.5 font-medium transition-colors">
+                      <Upload className="w-3.5 h-3.5 text-zinc-600" />
+                      <span>Upload File CSV (.csv / .txt)</span>
+                      <input
+                        type="file"
+                        accept=".csv,.txt"
+                        onChange={handleImportFileUpload}
+                        className="hidden"
+                      />
+                    </label>
+
+                    <button
+                      type="button"
+                      onClick={handleDownloadCsvTemplate}
+                      className="cursor-pointer text-[11px] text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1.5 rounded-lg border border-emerald-300 flex items-center gap-1.5 font-medium transition-colors"
+                    >
+                      <Download className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Unduh Template CSV</span>
+                    </button>
+                  </div>
 
                   <button
                     type="button"
                     onClick={copySampleCsv}
-                    className="text-[11px] text-blue-600 hover:underline flex items-center gap-1"
+                    className="text-[11px] text-blue-600 hover:underline flex items-center gap-1 cursor-pointer"
                   >
                     <Copy className="w-3 h-3" />
                     <span>{copiedText ? 'Format Tersalin!' : 'Salin Contoh Format'}</span>
@@ -11150,7 +11357,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,X-1,10,dewi.lestari@student.sch.id`;
                       setImportCsvText(e.target.value);
                       if (importValidationErrors) setImportValidationErrors(null);
                     }}
-                    placeholder="nama,nomor_ujian,nisn,nis,kelas,tingkat,email&#10;Ahmad Fauzi,UJN-12-001,0058291021,22101,XII MIPA 1,12,ahmad@student.sch.id&#10;Siti Rahmawati,UJN-12-002,0058291022,22102,XII MIPA 2,12,siti.rahma@student.sch.id"
+                    placeholder="nama,nomor_ujian,nisn,nis,jenis_kelamin,agama,kelas,tingkat,ruang,email&#10;Ahmad Fauzi,UJN-12-001,0058291021,22101,L,Islam,XII MIPA 1,12,Ruang 01,ahmad@student.sch.id&#10;Siti Rahmawati,UJN-12-002,0058291022,22102,P,Islam,XII MIPA 2,12,Ruang 01,siti.rahma@student.sch.id"
                     className="w-full p-3 border border-zinc-300 rounded-xl font-mono text-xs focus:ring-2 focus:ring-zinc-900 focus:outline-none transition-colors"
                   ></textarea>
 

@@ -637,7 +637,7 @@ export const storageService = {
       agama: s.agama || 'Islam',
       kelas: s.kelas || '',
       tingkat: s.tingkat || 10,
-      ruang: s.ruang || '',
+      ruang: s.ruang || 'Ruang 01',
       is_active: true,
       is_verified: true,
       google_linked: false,
