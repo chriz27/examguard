@@ -1,5 +1,5 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react';
-import { storageService } from './services/storageService';
+import { storageService, subscribeSync } from './services/storageService';
 import LoginPortal from './pages/auth/LoginPortal';
 
 // Code-splitting dengan lazy load agar HP peserta tidak perlu mengunduh 9.000+ baris AdminDashboard
@@ -19,6 +19,33 @@ export default function App() {
     setInstitution(inst);
     setCurrentUser(user);
     setIsLoading(false);
+
+    // Ambil snapshot penuh dari backend SQLite dan mutakhirkan institusi
+    storageService.syncWithServer().then(() => {
+      setInstitution(storageService.getInstitution());
+    }).catch(() => {});
+
+    // Dengar sinkronisasi real-time via WebSocket
+    const unsubscribe = subscribeSync((event) => {
+      if (event === 'snapshot' || event === 'institution_updated') {
+        setInstitution(storageService.getInstitution());
+      }
+    });
+
+    // Dengar perubahan localStorage / CustomEvent lokal
+    const handleStorageChange = () => {
+      setInstitution(storageService.getInstitution());
+    };
+    window.addEventListener('examguard_storage_updated', handleStorageChange);
+    window.addEventListener('examguard_db_updated', handleStorageChange);
+    window.addEventListener('storage', handleStorageChange);
+
+    return () => {
+      if (typeof unsubscribe === 'function') unsubscribe();
+      window.removeEventListener('examguard_storage_updated', handleStorageChange);
+      window.removeEventListener('examguard_db_updated', handleStorageChange);
+      window.removeEventListener('storage', handleStorageChange);
+    };
   }, []);
 
   const handleLoginSuccess = (user) => {

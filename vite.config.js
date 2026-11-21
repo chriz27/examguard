@@ -19,12 +19,19 @@ const require = createRequire(import.meta.url);
 function examGuardSQLitePlugin() {
   let dbApi, broadcast, setWss;
 
+  let activeWss = null;
+
   function loadDb() {
     try {
-      const dbModule = require(path.resolve(process.cwd(), 'server/db.cjs'));
+      const dbPath = path.resolve(process.cwd(), 'server/db.cjs');
+      delete require.cache[dbPath];
+      const dbModule = require(dbPath);
       dbApi = dbModule.dbApi;
       broadcast = dbModule.broadcast;
       setWss = dbModule.setWss;
+      if (activeWss && typeof setWss === 'function') {
+        setWss(activeWss);
+      }
       return true;
     } catch (err) {
       console.error('[ExamGuard DB] Gagal memuat SQLite engine:', err.message);
@@ -44,6 +51,7 @@ function examGuardSQLitePlugin() {
 
     const WS_PORT = 5174;
     const wss = new WebSocket.Server({ port: WS_PORT });
+    activeWss = wss;
     setWss(wss);
 
     wss.on('connection', (ws, req) => {
@@ -568,3 +576,5 @@ export default defineConfig(({ command }) => ({
     cors: true,
   },
 }));
+
+// reload trigger

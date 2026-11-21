@@ -7,15 +7,41 @@ import {
   School,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
   Smartphone,
   Eye,
   EyeOff,
   RefreshCw,
   ShieldCheck,
+  UserCheck,
+  Check,
 } from 'lucide-react';
-import { storageService, getOrCreateDeviceId } from '../../services/storageService';
+import { storageService, getOrCreateDeviceId, getDeviceClientInfo } from '../../services/storageService';
 
-export default function LoginPortal({ institution, onLoginSuccess }) {
+export default function LoginPortal({ institution: propInstitution, onLoginSuccess }) {
+  const [instState, setInstState] = useState(() => propInstitution || storageService.getInstitution() || {});
+
+  useEffect(() => {
+    if (propInstitution) {
+      setInstState(propInstitution);
+    }
+  }, [propInstitution]);
+
+  useEffect(() => {
+    const handleSync = () => {
+      setInstState(storageService.getInstitution() || {});
+    };
+    window.addEventListener('examguard_storage_updated', handleSync);
+    window.addEventListener('examguard_db_updated', handleSync);
+    window.addEventListener('storage', handleSync);
+    return () => {
+      window.removeEventListener('examguard_storage_updated', handleSync);
+      window.removeEventListener('examguard_db_updated', handleSync);
+      window.removeEventListener('storage', handleSync);
+    };
+  }, []);
+
+  const institution = instState;
   const appModeConfig = storageService.getAppModeConfig();
   const isProduction = appModeConfig?.app_mode === 'production';
   const isSimulation = !isProduction;
@@ -61,7 +87,11 @@ export default function LoginPortal({ institution, onLoginSuccess }) {
   };
 
   // Status integrasi Google OAuth & Google reCAPTCHA
-  const isGoogleOAuthActive = Boolean(institution?.google_oauth_enabled && institution?.google_client_id?.trim());
+  const isGoogleOAuthActive = Boolean(
+    (institution?.google_oauth_verified || institution?.google_oauth_verified_email) &&
+    institution?.google_oauth_enabled &&
+    institution?.google_client_id?.trim()
+  );
   const isGoogleRecaptchaActive = Boolean(institution?.recaptcha_enabled && institution?.recaptcha_site_key?.trim());
   const recaptchaVersion = institution?.recaptcha_version === 'v3' ? 'v3' : 'v2';
 
@@ -71,6 +101,12 @@ export default function LoginPortal({ institution, onLoginSuccess }) {
   const [recaptchaLoading, setRecaptchaLoading] = useState(false);
   const [recaptchaError, setRecaptchaError] = useState(false);
   const [ssoLoading, setSsoLoading] = useState(false);
+
+  // State untuk alur Google One Tap / Penautan / Verifikasi Email SSO
+  const [authStep, setAuthStep] = useState('idle'); // 'idle' | 'google_linking' | 'google_verifying' | 'sso_confirm_identity'
+  const [pendingStudent, setPendingStudent] = useState(null);
+  const [pendingGoogleProfile, setPendingGoogleProfile] = useState(null);
+  const [googleMismatchError, setGoogleMismatchError] = useState('');
 
   // State untuk Captcha Keamanan Mandiri (Default saat Google reCAPTCHA tidak diset / offline)
   const localCanvasRef = useRef(null);
@@ -352,7 +388,8 @@ export default function LoginPortal({ institution, onLoginSuccess }) {
       return;
     }
 
-    if (user.password !== password) {
+    const expectedPassword = user.role === 'student' ? (user.password || user.nis || user.nisn) : user.password;
+    if (password !== expectedPassword && password !== user.password) {
       setErrorMsg(
         activeTab === 'student'
           ? 'Password salah. Password default adalah nomor NIS peserta. Jika lupa, silakan lapor ke Admin/Proktor untuk Reset Password.'
@@ -383,7 +420,35 @@ export default function LoginPortal({ institution, onLoginSuccess }) {
         );
         return;
       }
-      // Ikat perangkat sekarang
+
+      // ─────────────────────────────────────────────────────────────────
+      // ATURAN SSO UNTUK MODE 'BOTH' (Google SSO & No. Ujian / NISN):
+      // Jika Google OAuth aktif di sekolah dan metode login adalah 'BOTH'
+      // ─────────────────────────────────────────────────────────────────
+      if (isGoogleOAuthActive && institution?.auth_method === 'BOTH') {
+        const hasGoogleEmail = Boolean((user.google_email || user.email)?.trim());
+        const isGoogleLinked = Boolean(user.google_linked && hasGoogleEmail && user.google_id);
+
+        if (!isGoogleLinked) {
+          // Kasus 1: Belum ada email untuk SSO / belum punya ID Google
+          // Terapkan Google One Tap login, simpan ke database
+          setPendingStudent(user);
+          setGoogleMismatchError('');
+          setAuthStep('google_linking');
+          triggerGoogleOneTap(user, 'google_linking');
+          return;
+        } else {
+          // Kasus 2: Sudah ada email tersimpan di database
+          // Cek apakah sama dengan email yang digunakan
+          setPendingStudent(user);
+          setGoogleMismatchError('');
+          setAuthStep('google_verifying');
+          triggerGoogleOneTap(user, 'google_verifying');
+          return;
+        }
+      }
+
+      // Ikat perangkat jika mode bukan BOTH atau Google OAuth tidak aktif
       user.active_device_id = currentDeviceId;
       storageService.saveUser(user);
     }
@@ -392,38 +457,87 @@ export default function LoginPortal({ institution, onLoginSuccess }) {
     onLoginSuccess(user);
   };
 
-  // Autentikasi Google Identity Services (GIS) / Google OAuth 2.0 Mode Produksi Tanpa Bypass
-  const handleGoogleSsoProduction = async () => {
-    setErrorMsg('');
-    if (!isGoogleOAuthActive) {
-      setErrorMsg('Integrasi Google OAuth 2.0 belum diaktifkan oleh institusi sekolah.');
-      return;
-    }
-
-    setSsoLoading(true);
-
-    try {
-      if (!window.google?.accounts?.oauth2) {
-        await new Promise((resolve, reject) => {
-          const scriptId = 'examguard-google-gis';
-          let script = document.getElementById(scriptId);
-          if (script) {
-            if (window.google?.accounts?.oauth2) return resolve(true);
-            script.addEventListener('load', () => resolve(true));
-            script.addEventListener('error', () => reject(new Error('Gagal memuat Google Identity Services')));
-            return;
-          }
-          script = document.createElement('script');
-          script.id = scriptId;
-          script.src = 'https://accounts.google.com/gsi/client';
-          script.async = true;
-          script.defer = true;
-          script.onload = () => resolve(true);
-          script.onerror = () => reject(new Error('Gagal memuat Google Identity Services. Pastikan komputer terhubung ke internet.'));
-          document.head.appendChild(script);
-        });
+  // Muat library Google Identity Services (GIS) client
+  const ensureGoogleGis = () => {
+    return new Promise((resolve, reject) => {
+      if (window.google?.accounts?.id && window.google?.accounts?.oauth2) {
+        return resolve(true);
       }
+      const scriptId = 'examguard-google-gis';
+      let script = document.getElementById(scriptId);
+      if (script) {
+        if (window.google?.accounts?.id && window.google?.accounts?.oauth2) return resolve(true);
+        script.addEventListener('load', () => resolve(true));
+        script.addEventListener('error', () => reject(new Error('Gagal memuat Google Identity Services')));
+        return;
+      }
+      script = document.createElement('script');
+      script.id = scriptId;
+      script.src = 'https://accounts.google.com/gsi/client';
+      script.async = true;
+      script.defer = true;
+      script.onload = () => resolve(true);
+      script.onerror = () => reject(new Error('Gagal memuat Google Identity Services. Pastikan komputer terhubung ke internet.'));
+      document.head.appendChild(script);
+    });
+  };
 
+  // Eksekusi prompt Google One Tap
+  const triggerGoogleOneTap = async (targetStudent, mode) => {
+    if (!institution?.google_client_id?.trim()) return;
+    try {
+      await ensureGoogleGis();
+      if (!window.google?.accounts?.id) return;
+
+      window.google.accounts.id.initialize({
+        client_id: institution.google_client_id.trim(),
+        callback: (response) => {
+          if (response.credential) {
+            handleGoogleCredential(response.credential, targetStudent, mode);
+          }
+        },
+        auto_select: false,
+        cancel_on_tap_outside: false,
+      });
+
+      window.google.accounts.id.prompt((notification) => {
+        if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+          console.log('[OneTap] Status:', notification.getNotDisplayedReason?.() || notification.getSkippedReason?.());
+        }
+      });
+    } catch (err) {
+      console.warn('[OneTap] Init error:', err);
+    }
+  };
+
+  // Handler respon JWT dari Google One Tap
+  const handleGoogleCredential = (jwtCredential, targetStudent, mode) => {
+    try {
+      const base64Url = jwtCredential.split('.')[1];
+      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+      const jsonPayload = decodeURIComponent(
+        atob(base64)
+          .split('')
+          .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+          .join('')
+      );
+      const payload = JSON.parse(jsonPayload);
+      const googleEmail = payload.email?.trim().toLowerCase();
+      const googleSub = payload.sub;
+      processGoogleAuthSuccess({ email: googleEmail, sub: googleSub, name: payload.name }, targetStudent, mode);
+    } catch (err) {
+      console.error('Gagal membaca token Google:', err);
+      setGoogleMismatchError('Gagal memvalidasi token dari Google.');
+    }
+  };
+
+  // Autentikasi Google interaktif melalui popup dialog GIS
+  const handleManualGoogleAuth = async (targetStudent, mode) => {
+    setErrorMsg('');
+    setGoogleMismatchError('');
+    setSsoLoading(true);
+    try {
+      await ensureGoogleGis();
       if (!window.google?.accounts?.oauth2) {
         throw new Error('Google Identity Services tidak tersedia di peramban ini.');
       }
@@ -435,70 +549,24 @@ export default function LoginPortal({ institution, onLoginSuccess }) {
           if (response.error) {
             setSsoLoading(false);
             if (response.error !== 'access_denied') {
-              setErrorMsg(`Login Google dibatalkan atau gagal: ${response.error_description || response.error}`);
+              setGoogleMismatchError(`Autentikasi Google dibatalkan atau gagal: ${response.error_description || response.error}`);
             }
             return;
           }
-
           if (response.access_token) {
             try {
               const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
                 headers: { Authorization: `Bearer ${response.access_token}` },
               });
-              if (!res.ok) {
-                throw new Error('Gagal memverifikasi profil akun Google dari server Google.');
-              }
+              if (!res.ok) throw new Error('Gagal memverifikasi profil akun Google dari server Google.');
               const profile = await res.json();
               const googleEmail = profile.email?.trim().toLowerCase();
               const googleSub = profile.sub;
-
-              if (!googleEmail) {
-                throw new Error('Akun Google tidak menyediakan informasi alamat email yang valid.');
-              }
-
-              const user = storageService.getUserByEmail(googleEmail);
-              if (!user) {
-                setErrorMsg(`Akun Google (${googleEmail}) tidak terdaftar dalam database peserta/staf sekolah. Hubungi Admin/Proktor untuk mendaftarkan akun Anda.`);
-                setSsoLoading(false);
-                return;
-              }
-
-              const isVerified = user.is_verified === true || user.is_verified === 'true' || user.is_verified === 1 || user.is_verified === undefined;
-              const isActive = user.is_active === true || user.is_active === 'true' || user.is_active === 1 || user.is_active === undefined;
-
-              if (!isVerified) {
-                setErrorMsg('Akun Anda belum diverifikasi oleh panitia ujian sekolah.');
-                setSsoLoading(false);
-                return;
-              }
-
-              if (!isActive) {
-                setErrorMsg('Akun Anda dinonaktifkan oleh pihak sekolah.');
-                setSsoLoading(false);
-                return;
-              }
-
-              if (user.role === 'student' && user.active_device_id && user.active_device_id !== currentDeviceId) {
-                setErrorMsg(`Akun terkunci di perangkat lain (${user.active_device_id}). Hubungi pengawas untuk Reset Login Perangkat.`);
-                setSsoLoading(false);
-                return;
-              }
-
-              if (user.role === 'student') {
-                user.active_device_id = currentDeviceId;
-                user.google_linked = true;
-                user.google_id = googleSub || user.google_id || ('108' + Date.now());
-                user.google_email = googleEmail;
-                user.google_linked_at = new Date().toISOString();
-                storageService.saveUser(user);
-              }
-
-              storageService.setCurrentUser(user);
               setSsoLoading(false);
-              onLoginSuccess(user);
-            } catch (fetchErr) {
-              setErrorMsg(fetchErr.message || 'Gagal memverifikasi profil akun Google.');
+              processGoogleAuthSuccess({ email: googleEmail, sub: googleSub, name: profile.name }, targetStudent, mode);
+            } catch (fe) {
               setSsoLoading(false);
+              setGoogleMismatchError(fe.message || 'Gagal memverifikasi profil Google.');
             }
           }
         },
@@ -506,15 +574,167 @@ export default function LoginPortal({ institution, onLoginSuccess }) {
 
       tokenClient.requestAccessToken({ prompt: 'select_account' });
     } catch (err) {
-      setErrorMsg(err.message || 'Gagal memulai proses masuk Google SSO.');
       setSsoLoading(false);
+      setGoogleMismatchError(err.message || 'Gagal membuka Google Sign-in.');
     }
   };
 
-  // Opsi SSO HANYA muncul jika Google OAuth aktif & terhubung
-  const showSsoOption =
-    isGoogleOAuthActive &&
-    (institution?.auth_method === 'SSO_ONLY' || institution?.auth_method === 'BOTH');
+  // Proses sukses autentikasi Google untuk ketiga alur: Linking, Verifying, dan SSO Only
+  const processGoogleAuthSuccess = (googleProfile, targetStudent, mode) => {
+    const student = targetStudent || pendingStudent;
+    const currentMode = mode || authStep;
+
+    if (!googleProfile.email) {
+      setGoogleMismatchError('Akun Google tidak menyediakan informasi alamat email yang valid.');
+      return;
+    }
+
+    const email = googleProfile.email.trim().toLowerCase();
+    const sub = googleProfile.sub;
+
+    // ─────────────────────────────────────────────────────────────
+    // KASUS 1: PENAUTAN AKUN GOOGLE (GOOGLE LINKING)
+    // Mode login: BOTH. Kredensial No. Ujian/NISN valid, tapi belum punya email/ID Google.
+    // Simpan email & sub ke database, lalu lanjut ke pre-flight!
+    // ─────────────────────────────────────────────────────────────
+    if (currentMode === 'google_linking') {
+      const updated = {
+        ...student,
+        google_linked: true,
+        google_id: sub || ('gid_' + Date.now()),
+        google_email: email,
+        google_linked_at: new Date().toISOString(),
+        email: student.email || email,
+        active_device_id: currentDeviceId,
+      };
+      storageService.saveUser(updated);
+      storageService.setCurrentUser(updated);
+      setAuthStep('idle');
+      setPendingStudent(null);
+      setPendingGoogleProfile(null);
+      setGoogleMismatchError('');
+      onLoginSuccess(updated);
+      return;
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // KASUS 2: VERIFIKASI AKUN GOOGLE (GOOGLE VERIFYING)
+    // Mode login: BOTH. Kredensial valid, data email sudah ada di database.
+    // Cek apakah email Google yang login SAMA dengan yang di database.
+    // ─────────────────────────────────────────────────────────────
+    if (currentMode === 'google_verifying') {
+      const expectedEmail = (student.google_email || student.email || '').trim().toLowerCase();
+      const actualEmail = email;
+
+      if (expectedEmail && actualEmail !== expectedEmail) {
+        setGoogleMismatchError(
+          `Email Google yang digunakan (${actualEmail}) tidak terdaftar untuk peserta ${student.nama} (${student.nisn || student.nomor_ujian}). Silakan gunakan email terdaftar: ${expectedEmail}`
+        );
+        return;
+      }
+
+      // Email cocok dan data diri cocok! Lanjut ke pre-flight
+      const updated = {
+        ...student,
+        active_device_id: currentDeviceId,
+        ...(student.google_linked ? {} : {
+          google_linked: true,
+          google_id: sub || student.google_id || ('gid_' + Date.now()),
+          google_email: email,
+          google_linked_at: new Date().toISOString(),
+        }),
+      };
+      storageService.saveUser(updated);
+      storageService.setCurrentUser(updated);
+      setAuthStep('idle');
+      setPendingStudent(null);
+      setPendingGoogleProfile(null);
+      setGoogleMismatchError('');
+      onLoginSuccess(updated);
+      return;
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // KASUS 3: LOGIN DENGAN SSO ONLY (SSO_ONLY)
+    // Peserta klik "Masuk dengan Akun Google Peserta".
+    // Cek apakah email terdaftar di database peserta.
+    // Jika ada: Munculkan Konfirmasi Identitas Peserta.
+    // Jika tidak ada: Peringatan email tidak terdaftar.
+    // ─────────────────────────────────────────────────────────────
+    if (currentMode === 'sso_login' || institution?.auth_method === 'SSO_ONLY') {
+      const emailLower = email;
+      const matched = storageService.getUserByEmail(emailLower);
+
+      if (!matched || matched.role !== 'student') {
+        setErrorMsg(
+          `Akun Google (${emailLower}) tidak terdaftar dalam database peserta ujian sekolah. Silakan gunakan akun Google yang telah didaftarkan atau hubungi Admin/Proktor.`
+        );
+        setAuthStep('idle');
+        return;
+      }
+
+      const isVerified = matched.is_verified === true || matched.is_verified === 'true' || matched.is_verified === 1 || matched.is_verified === undefined;
+      const isActive = matched.is_active === true || matched.is_active === 'true' || matched.is_active === 1 || matched.is_active === undefined;
+
+      if (!isVerified) {
+        setErrorMsg('Akun peserta Anda belum diverifikasi oleh panitia ujian sekolah.');
+        setAuthStep('idle');
+        return;
+      }
+      if (!isActive) {
+        setErrorMsg('Akun peserta Anda dinonaktifkan oleh pihak sekolah.');
+        setAuthStep('idle');
+        return;
+      }
+      if (matched.active_device_id && matched.active_device_id !== currentDeviceId) {
+        setErrorMsg(`Akun terkunci di perangkat lain (${matched.active_device_id}). Hubungi pengawas untuk Reset Login Perangkat.`);
+        setAuthStep('idle');
+        return;
+      }
+
+      // Tampilkan Modal Konfirmasi Identitas Peserta
+      setPendingStudent(matched);
+      setPendingGoogleProfile(googleProfile);
+      setAuthStep('sso_confirm_identity');
+    }
+  };
+
+  // Konfirmasi Identitas Peserta pada Mode SSO_ONLY
+  const handleConfirmSsoIdentity = () => {
+    if (!pendingStudent || !pendingGoogleProfile) return;
+    const updated = {
+      ...pendingStudent,
+      google_linked: true,
+      google_id: pendingGoogleProfile.sub || pendingStudent.google_id || ('gid_' + Date.now()),
+      google_email: pendingGoogleProfile.email,
+      google_linked_at: new Date().toISOString(),
+      active_device_id: currentDeviceId,
+    };
+    storageService.saveUser(updated);
+    storageService.setCurrentUser(updated);
+    setAuthStep('idle');
+    setPendingStudent(null);
+    setPendingGoogleProfile(null);
+    onLoginSuccess(updated);
+  };
+
+  // Batalkan Konfirmasi Identitas Peserta pada Mode SSO_ONLY
+  const handleCancelSsoIdentity = () => {
+    setAuthStep('idle');
+    setPendingStudent(null);
+    setPendingGoogleProfile(null);
+    setErrorMsg('Login dibatalkan. Silakan login kembali dengan akun Google yang sesuai dengan identitas Anda.');
+  };
+
+  // Handler tombol SSO di tab login (Hanya aktif untuk mode SSO_ONLY)
+  const handleGoogleSsoProduction = async () => {
+    setErrorMsg('');
+    setAuthStep('sso_login');
+    handleManualGoogleAuth(null, 'sso_login');
+  };
+
+  // Opsi SSO Peserta HANYA tampil di halaman login jika institusi mengatur mode "Hanya Google SSO" (SSO_ONLY)
+  const showSsoOption = isGoogleOAuthActive && institution?.auth_method === 'SSO_ONLY';
 
   return (
     <div className="min-h-screen bg-zinc-50 flex flex-col justify-between items-center p-4 sm:p-6 selection:bg-zinc-900 selection:text-white">
@@ -666,6 +886,56 @@ export default function LoginPortal({ institution, onLoginSuccess }) {
           </div>
         ) : (
           <form onSubmit={handleCredentialsLogin} className="space-y-4">
+            {/* Opsi Login Google SSO di bagian ATAS untuk Mode BOTH (Google SSO & NISN) */}
+            {activeTab === 'student' && isGoogleOAuthActive && institution?.auth_method === 'BOTH' && (
+              <div className="space-y-3 pb-1">
+                <button
+                  type="button"
+                  disabled={ssoLoading}
+                  onClick={handleGoogleSsoProduction}
+                  className="w-full flex items-center justify-center gap-2.5 py-2.5 px-4 rounded-xl border border-zinc-300 bg-white hover:bg-zinc-50 active:bg-zinc-100 disabled:opacity-60 text-xs font-semibold text-zinc-800 shadow-2xs transition-all duration-200 cursor-pointer"
+                >
+                  {ssoLoading ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 text-blue-600 animate-spin" />
+                      <span>Menghubungkan ke Google Identity...</span>
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+                        <path
+                          fill="#4285F4"
+                          d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.65v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.14z"
+                        />
+                        <path
+                          fill="#34A853"
+                          d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.34 24 12 24z"
+                        />
+                        <path
+                          fill="#FBBC05"
+                          d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.16 0 9.97 0 12s.45 3.84 1.25 5.42l4.03-3.15z"
+                        />
+                        <path
+                          fill="#EA4335"
+                          d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.34 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"
+                        />
+                      </svg>
+                      <span>Login dengan SSO Google Terdaftar</span>
+                    </>
+                  )}
+                </button>
+                <div className="relative my-2">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-zinc-200"></div>
+                  </div>
+                  <div className="relative flex justify-center text-xs">
+                    <span className="bg-white px-2.5 text-zinc-400 font-medium text-[11px]">
+                      atau masuk menggunakan no. ujian / nisn
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
             <div>
               <label className="block text-xs font-medium text-zinc-700 mb-1.5">
                 {activeTab === 'student' ? 'Nomor Ujian / NISN Peserta' : 'Username Administrator'}
@@ -822,55 +1092,7 @@ export default function LoginPortal({ institution, onLoginSuccess }) {
               </p>
             )}
 
-            {/* Opsi SSO Peserta (HANYA MUNCUL JIKA GOOGLE OAUTH AKTIF & TERHUBUNG) */}
-            {activeTab === 'student' && showSsoOption && (
-              <div className="pt-2">
-                <div className="relative my-3">
-                  <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t border-zinc-200"></div>
-                  </div>
-                  <div className="relative flex justify-center text-xs">
-                    <span className="bg-white px-2 text-zinc-400">atau</span>
-                  </div>
-                </div>
 
-                <button
-                  type="button"
-                  disabled={ssoLoading}
-                  onClick={handleGoogleSsoProduction}
-                  className="w-full flex items-center justify-center gap-2 py-2 px-3 border border-zinc-300 bg-white hover:bg-zinc-50 active:bg-zinc-100 disabled:opacity-60 rounded-xl text-xs font-medium text-zinc-700 transition-all duration-200 cursor-pointer"
-                >
-                  {ssoLoading ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 text-blue-600 animate-spin" />
-                      <span>Menghubungkan ke Google Identity...</span>
-                    </>
-                  ) : (
-                    <>
-                      <svg className="w-4 h-4" viewBox="0 0 24 24">
-                        <path
-                          fill="#4285F4"
-                          d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.65v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.14z"
-                        />
-                        <path
-                          fill="#34A853"
-                          d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.34 24 12 24z"
-                        />
-                        <path
-                          fill="#FBBC05"
-                          d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.16 0 9.97 0 12s.45 3.84 1.25 5.42l4.03-3.15z"
-                        />
-                        <path
-                          fill="#EA4335"
-                          d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.34 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"
-                        />
-                      </svg>
-                      <span>Masuk dengan Google SSO Peserta</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            )}
           </form>
         )}
 
@@ -928,6 +1150,171 @@ export default function LoginPortal({ institution, onLoginSuccess }) {
           ExamGuard &copy; {new Date().getFullYear()} &bull; Arsitektur Produksi Siap cPanel
         </p>
       </footer>
+       {/* ─────────────────────────────────────────────────────────────
+          MODAL 1: GOOGLE ONE TAP / PENAUTAN & VERIFIKASI AKUN GOOGLE (MODE BOTH)
+          ───────────────────────────────────────────────────────────── */}
+      {(authStep === 'google_linking' || authStep === 'google_verifying') && pendingStudent && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-zinc-200 p-6 space-y-5 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center shrink-0">
+                <svg className="w-6 h-6" viewBox="0 0 24 24">
+                  <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.65v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.14z" />
+                  <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.34 24 12 24z" />
+                  <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.16 0 9.97 0 12s.45 3.84 1.25 5.42l4.03-3.15z" />
+                  <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.34 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z" />
+                </svg>
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-base font-bold text-zinc-900 leading-snug">
+                  {authStep === 'google_linking' ? 'Tautkan Akun Google Anda' : 'Verifikasi Akun Google Peserta'}
+                </h3>
+                <p className="text-xs text-zinc-500">
+                  {authStep === 'google_linking'
+                    ? 'Login berhasil! Tautkan akun Google resmi sekolah Anda.'
+                    : 'Verifikasi akun Google terdaftar untuk membuka soal ujian.'}
+                </p>
+              </div>
+            </div>
+
+            {/* Ringkasan Profil Peserta */}
+            <div className="p-3.5 bg-zinc-50 rounded-xl border border-zinc-200/80 space-y-1.5 text-xs">
+              <div className="flex justify-between items-center text-zinc-600">
+                <span>Nama Peserta:</span>
+                <span className="font-bold text-zinc-900">{pendingStudent.nama}</span>
+              </div>
+              <div className="flex justify-between items-center text-zinc-600">
+                <span>No. Ujian / NISN:</span>
+                <span className="font-mono font-semibold text-zinc-800">{pendingStudent.nomor_ujian || pendingStudent.nisn}</span>
+              </div>
+              <div className="flex justify-between items-center text-zinc-600">
+                <span>Kelas:</span>
+                <span className="font-medium text-zinc-800">{pendingStudent.kelas || '-'}</span>
+              </div>
+              {authStep === 'google_verifying' && (
+                <div className="pt-1.5 border-t border-zinc-200 flex justify-between items-center text-zinc-600">
+                  <span>Email Terdaftar:</span>
+                  <span className="font-mono font-bold text-blue-700">{pendingStudent.google_email || pendingStudent.email}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Error Mismatch Notification */}
+            {googleMismatchError && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 flex items-start gap-2 animate-in fade-in">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <div className="flex-1 leading-relaxed">{googleMismatchError}</div>
+              </div>
+            )}
+
+            <div className="space-y-2.5 pt-1">
+              <button
+                type="button"
+                disabled={ssoLoading}
+                onClick={() => handleManualGoogleAuth(pendingStudent, authStep)}
+                className="w-full flex items-center justify-center gap-2.5 py-2.5 px-4 bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl text-xs font-semibold shadow-xs transition-all cursor-pointer disabled:opacity-50"
+              >
+                {ssoLoading ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin text-white" />
+                    <span>Menghubungkan ke Google...</span>
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" viewBox="0 0 24 24">
+                      <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.65v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.14z" />
+                      <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.34 24 12 24z" />
+                      <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.16 0 9.97 0 12s.45 3.84 1.25 5.42l4.03-3.15z" />
+                      <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.34 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z" />
+                    </svg>
+                    <span>
+                      {authStep === 'google_linking' ? 'Login Akun Google untuk Tautkan' : 'Verifikasi dengan Akun Google'}
+                    </span>
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthStep('idle');
+                  setPendingStudent(null);
+                  setGoogleMismatchError('');
+                }}
+                className="w-full py-2 px-3 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 rounded-xl text-xs font-medium transition-colors cursor-pointer"
+              >
+                Batal & Kembali ke Login
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          MODAL 2: KONFIRMASI IDENTITAS PESERTA (MODE SSO_ONLY)
+          ───────────────────────────────────────────────────────────── */}
+      {authStep === 'sso_confirm_identity' && pendingStudent && pendingGoogleProfile && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-zinc-200 p-6 space-y-5 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 shrink-0">
+                <UserCheck className="w-6 h-6" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-base font-bold text-zinc-900 leading-snug">Konfirmasi Identitas Peserta</h3>
+                <p className="text-xs text-zinc-500">Pastikan data peserta berikut sesuai dengan diri Anda</p>
+              </div>
+            </div>
+
+            {/* Kartu Detail Identitas Peserta */}
+            <div className="p-4 bg-emerald-50/50 rounded-xl border border-emerald-200/80 space-y-2 text-xs">
+              <div className="flex justify-between items-center text-zinc-600">
+                <span>Nama Lengkap:</span>
+                <span className="font-bold text-zinc-900 text-sm">{pendingStudent.nama}</span>
+              </div>
+              <div className="flex justify-between items-center text-zinc-600">
+                <span>Nomor Ujian:</span>
+                <span className="font-mono font-semibold text-zinc-800">{pendingStudent.nomor_ujian || '-'}</span>
+              </div>
+              <div className="flex justify-between items-center text-zinc-600">
+                <span>NISN:</span>
+                <span className="font-mono font-semibold text-zinc-800">{pendingStudent.nisn}</span>
+              </div>
+              <div className="flex justify-between items-center text-zinc-600">
+                <span>Kelas & Ruang:</span>
+                <span className="font-medium text-zinc-800">{pendingStudent.kelas} ({pendingStudent.ruang || 'Ruang 01'})</span>
+              </div>
+              <div className="pt-2 border-t border-emerald-200 flex justify-between items-center text-zinc-600">
+                <span>Akun Google:</span>
+                <span className="font-mono font-bold text-emerald-700">{pendingGoogleProfile.email}</span>
+              </div>
+            </div>
+
+            <p className="text-[11px] text-zinc-500 text-center leading-relaxed">
+              Apakah data peserta ujian di atas sudah sesuai dan benar milik Anda?
+            </p>
+
+            <div className="space-y-2.5 pt-1">
+              <button
+                type="button"
+                onClick={handleConfirmSsoIdentity}
+                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                <span>Ya, Data Sesuai — Lanjut ke Ujian</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleCancelSsoIdentity}
+                className="w-full py-2 px-3 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 rounded-xl text-xs font-medium transition-colors cursor-pointer"
+              >
+                Bukan Data Saya / Ganti Akun Google
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

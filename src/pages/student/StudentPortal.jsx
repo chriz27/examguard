@@ -85,6 +85,18 @@ export default function StudentPortal({ currentUser: propCurrentUser, onLogout }
 
   const [institution, setInstitution] = useState(storageService.getInstitution());
 
+  // Modal Ganti Kata Sandi Mandiri oleh Peserta
+  const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
+  const [oldPasswordInput, setOldPasswordInput] = useState('');
+  const [newPasswordInput, setNewPasswordInput] = useState('');
+  const [confirmPasswordInput, setConfirmPasswordInput] = useState('');
+  const [showOldPass, setShowOldPass] = useState(false);
+  const [showNewPass, setShowNewPass] = useState(false);
+  const [showConfirmPass, setShowConfirmPass] = useState(false);
+  const [changePasswordError, setChangePasswordError] = useState('');
+  const [changePasswordSuccess, setChangePasswordSuccess] = useState('');
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+
   // Dialog Notifikasi & Konfirmasi Modern (Pengganti alert & confirm bawaan browser)
   const [confirmDialog, setConfirmDialog] = useState({
     isOpen: false,
@@ -767,14 +779,17 @@ export default function StudentPortal({ currentUser: propCurrentUser, onLogout }
       }));
     }
 
-    // 6. Check Google SSO (Riil: Sesuai status akun tertaut)
-    if (perms.google_sso === false || (isSimMode && appMode.bypass_google_sso)) {
+    // 6. Check Google SSO (Riil: Sesuai status akun tertaut & verifikasi OAuth sekolah)
+    const isOAuthVerifiedInSchool = Boolean(institution?.google_oauth_verified && institution?.google_oauth_enabled && institution?.google_client_id?.trim());
+    if (perms.google_sso === false || !isOAuthVerifiedInSchool || (isSimMode && appMode.bypass_google_sso)) {
       setPreflightStatus((prev) => ({
         ...prev,
         google_sso: {
           checking: false,
           passed: true,
-          message: isSimMode && appMode.bypass_google_sso
+          message: !isOAuthVerifiedInSchool
+            ? 'OAuth Google belum diverifikasi di admin (Bebas SSO)'
+            : isSimMode && appMode.bypass_google_sso
             ? 'Mode Simulasi: Akun Google SSO di-bypass'
             : 'Login SSO Google tidak diwajibkan oleh sekolah',
         },
@@ -855,6 +870,7 @@ export default function StudentPortal({ currentUser: propCurrentUser, onLogout }
         (pos) => {
           const studentLat = pos.coords.latitude;
           const studentLng = pos.coords.longitude;
+          const accuracy = Math.round(pos.coords.accuracy || 0); // Radius presisi hardware GPS HP
           const targetLat = institution?.center_lat || -6.2088;
           const targetLng = institution?.center_lng || 106.8456;
           const dist = Math.round(calculateHaversineDistance(
@@ -864,7 +880,19 @@ export default function StudentPortal({ currentUser: propCurrentUser, onLogout }
             studentLng
           ));
           const maxRadius = institution?.max_radius_meters || 200;
-          const isWithin = dist <= maxRadius;
+
+          // Toleransi cerdas akurasi sensor HP: jika jarak bersih (jarak - toleransi sensor) masuk radius
+          const effectiveDistance = Math.max(0, dist - accuracy);
+          const isWithin = dist <= maxRadius || effectiveDistance <= maxRadius;
+
+          const isDefaultJakarta = Math.abs(targetLat - (-6.2088)) < 0.001 && Math.abs(targetLng - 106.8456) < 0.001;
+          let msg = isWithin
+            ? `Dalam radius sekolah (${dist}m, akurasi GPS: ±${accuracy}m)`
+            : `Di luar radius sekolah (${dist}m, batas max: ${maxRadius}m, akurasi: ±${accuracy}m)`;
+
+          if (!isWithin && isDefaultJakarta && dist > 5000) {
+            msg += ' (Catatan: Titik sekolah di admin masih default Monas Jakarta)';
+          }
 
           setPreflightStatus((prev) => ({
             ...prev,
@@ -872,20 +900,19 @@ export default function StudentPortal({ currentUser: propCurrentUser, onLogout }
               checking: false,
               passed: isWithin,
               distance: dist,
-              message: isWithin
-                ? `Dalam radius sekolah (${dist}m dari titik pusat)`
-                : `Di luar radius sekolah (${dist}m, batas max: ${maxRadius}m)`,
+              accuracy,
+              message: msg,
             },
           }));
         },
         (err) => {
           let msg = 'Izin lokasi belum diberikan: ' + err.message;
           if (err.code === 1) {
-            msg = 'Izin lokasi GPS ditolak oleh peramban. Klik ikon gembok di URL bar untuk mengizinkan.';
+            msg = 'Izin lokasi GPS ditolak oleh peramban. Buka setelan izin situs atau ikon gembok untuk mengizinkan.';
           } else if (err.code === 2) {
-            msg = 'Layanan GPS perangkat tidak aktif. Nyalakan GPS pada HP/Laptop Anda.';
+            msg = 'Layanan GPS perangkat mati. Aktifkan Lokasi/GPS pada HP Anda.';
           } else if (err.code === 3) {
-            msg = 'Waktu pencarian koordinat GPS habis. Klik tombol periksa ulang.';
+            msg = 'Pencarian satelit GPS timeout. Klik tombol periksa ulang.';
           }
           setPreflightStatus((prev) => ({
             ...prev,
@@ -897,7 +924,7 @@ export default function StudentPortal({ currentUser: propCurrentUser, onLogout }
             },
           }));
         },
-        { enableHighAccuracy: true, timeout: 8000 }
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
       );
     }
   }, [currentStage, institution, currentUser, recheckTrigger, audioTested]);
@@ -956,11 +983,24 @@ export default function StudentPortal({ currentUser: propCurrentUser, onLogout }
       (pos) => {
         const studentLat = pos.coords.latitude;
         const studentLng = pos.coords.longitude;
+        const accuracy = Math.round(pos.coords.accuracy || 0);
         const targetLat = institution?.center_lat || -6.2088;
         const targetLng = institution?.center_lng || 106.8456;
         const dist = Math.round(calculateHaversineDistance(targetLat, targetLng, studentLat, studentLng));
         const maxRadius = institution?.max_radius_meters || 200;
-        const isWithin = dist <= maxRadius;
+
+        // Toleransi cerdas akurasi sensor HP
+        const effectiveDistance = Math.max(0, dist - accuracy);
+        const isWithin = dist <= maxRadius || effectiveDistance <= maxRadius;
+
+        const isDefaultJakarta = Math.abs(targetLat - (-6.2088)) < 0.001 && Math.abs(targetLng - 106.8456) < 0.001;
+        let msg = isWithin
+          ? `Dalam radius sekolah (${dist}m, akurasi GPS: ±${accuracy}m)`
+          : `Di luar radius sekolah (${dist}m, batas max: ${maxRadius}m, akurasi: ±${accuracy}m)`;
+
+        if (!isWithin && isDefaultJakarta && dist > 5000) {
+          msg += ' (Catatan: Titik sekolah di admin masih default Monas Jakarta)';
+        }
 
         setPreflightStatus((prev) => ({
           ...prev,
@@ -968,22 +1008,21 @@ export default function StudentPortal({ currentUser: propCurrentUser, onLogout }
             checking: false,
             passed: isWithin,
             distance: dist,
-            message: isWithin
-              ? `Dalam radius sekolah (${dist}m dari titik pusat)`
-              : `Di luar radius sekolah (${dist}m, batas max: ${maxRadius}m)`,
+            accuracy,
+            message: msg,
           },
         }));
 
         if (isWithin) {
-          showNotification(`Lokasi terverifikasi dalam radius sekolah (${dist}m)!`, 'success');
+          showNotification(`Lokasi GPS HP terverifikasi (${dist}m, akurasi ±${accuracy}m)!`, 'success');
         } else {
-          showNotification(`Lokasi Anda di luar radius sekolah (${dist}m, maks ${maxRadius}m)!`, 'error');
+          showNotification(`Di luar radius: ${dist}m (Maks ${maxRadius}m, akurasi ±${accuracy}m)`, 'error');
         }
       },
       (err) => {
         let msg = 'Izin lokasi belum diberikan: ' + err.message;
         if (err.code === 1) msg = 'Izin lokasi GPS ditolak oleh browser. Buka setelan izin situs di URL bar.';
-        else if (err.code === 2) msg = 'Layanan GPS perangkat mati. Aktifkan GPS pada HP/Laptop Anda.';
+        else if (err.code === 2) msg = 'Layanan GPS perangkat mati. Aktifkan GPS pada HP Anda.';
         else if (err.code === 3) msg = 'Waktu pencarian koordinat GPS habis. Coba lagi.';
         setPreflightStatus((prev) => ({
           ...prev,
@@ -991,7 +1030,7 @@ export default function StudentPortal({ currentUser: propCurrentUser, onLogout }
         }));
         showNotification(msg, 'error');
       },
-      { enableHighAccuracy: true, timeout: 8000 }
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
     );
   };
 
@@ -1035,29 +1074,22 @@ export default function StudentPortal({ currentUser: propCurrentUser, onLogout }
           notifications: {
             checking: false,
             passed: true,
-            message: 'Izin Notifikasi berhasil diaktifkan (Granted)',
+            message: 'Izin Notifikasi peramban aktif (Granted)',
           },
         }));
         showNotification('Izin Notifikasi berhasil diaktifkan!', 'success');
-      } else if (result === 'denied') {
-        setPreflightStatus((prev) => ({
-          ...prev,
-          notifications: {
-            checking: false,
-            passed: false,
-            message: 'Izin Notifikasi diblokir oleh peramban. Klik ikon gembok di URL bar untuk mengizinkan.',
-          },
-        }));
-        showNotification('Izin Notifikasi diblokir peramban. Buka ikon gembok di URL bar.', 'error');
       } else {
+        // Fallback cerdas: Aktifkan notifikasi internal pop-up alert layar + getar HP + alarm suara
+        // Sehingga peserta pada jaringan lokal HTTP atau peramban HP tidak terkunci
         setPreflightStatus((prev) => ({
           ...prev,
           notifications: {
             checking: false,
-            passed: false,
-            message: 'Izin Notifikasi belum disetujui.',
+            passed: true,
+            message: 'Notifikasi Layar Penuh (Pop-up Alert, Getar & Suara Alarm HP) diaktifkan',
           },
         }));
+        showNotification('Notifikasi Layar & Getar HP berhasil diaktifkan!', 'success');
       }
     } catch (err) {
       showNotification('Gagal meminta izin: ' + err.message, 'error');
@@ -1103,36 +1135,118 @@ export default function StudentPortal({ currentUser: propCurrentUser, onLogout }
     }
   };
 
+  // ========================================================
+  // SISTEM AUDIO SINTESIS ALARM & NOTIFIKASI SUARA VOLUME TINGGI
+  // ========================================================
+  const audioContextRef = useRef(null);
+
+  const getOrCreateAudioContext = () => {
+    try {
+      if (!audioContextRef.current) {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtx) {
+          audioContextRef.current = new AudioCtx();
+        }
+      }
+      if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+        audioContextRef.current.resume().catch(() => {});
+      }
+      return audioContextRef.current;
+    } catch (e) {
+      console.warn('AudioContext init error:', e);
+      return null;
+    }
+  };
+
+  /**
+   * Mainkan Suara Alarm Volume Tinggi (Web Audio API Berbasis Sintesis)
+   * Selalu aktif tanpa dependensi file eksternal (100% offline aman)
+   * @param {'test' | 'warning' | 'locked'} type
+   */
+  const playHighVolumeAlarm = (type = 'warning') => {
+    try {
+      const ctx = getOrCreateAudioContext();
+      if (!ctx) return;
+      if (ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
+
+      const now = ctx.currentTime;
+
+      if (type === 'test') {
+        // Nada Uji Coba: Dua beep nada tinggi jelas (Volume Tinggi 0.75)
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(880, now);
+        osc.frequency.setValueAtTime(1174, now + 0.15); // A5 -> D6
+        gain.gain.setValueAtTime(0.75, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.35);
+      } else if (type === 'warning') {
+        // Nada Peringatan Pelanggaran: Sirine 4 pulsa nada tinggi bergantian (Volume Maksimal 0.9)
+        for (let i = 0; i < 4; i++) {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          const startT = now + i * 0.18;
+          const endT = startT + 0.14;
+
+          osc.type = i % 2 === 0 ? 'sawtooth' : 'square';
+          osc.frequency.setValueAtTime(i % 2 === 0 ? 1250 : 920, startT);
+          gain.gain.setValueAtTime(0.9, startT);
+          gain.gain.exponentialRampToValueAtTime(0.01, endT);
+
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(startT);
+          osc.stop(endT);
+        }
+      } else if (type === 'locked') {
+        // Nada Kunci Layar (Batas Toleransi Terlampaui): Sirine darurat menyapu naik-turun kencang (Volume 1.0)
+        for (let cycle = 0; cycle < 3; cycle++) {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          const startT = now + cycle * 0.45;
+          const peakT = startT + 0.22;
+          const endT = startT + 0.44;
+
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(500, startT);
+          osc.frequency.linearRampToValueAtTime(1400, peakT);
+          osc.frequency.linearRampToValueAtTime(450, endT);
+
+          gain.gain.setValueAtTime(1.0, startT);
+          gain.gain.setValueAtTime(1.0, peakT);
+          gain.gain.exponentialRampToValueAtTime(0.02, endT);
+
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(startT);
+          osc.stop(endT);
+        }
+      }
+    } catch (err) {
+      console.warn('Gagal memainkan suara alarm:', err);
+    }
+  };
+
   // 4. Uji & Aktifkan Suara Audio Alarm (Web Audio Synthesis)
   const handleTestAudio = () => {
     try {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (!AudioCtx) throw new Error('Web Audio tidak didukung');
-      const ctx = new AudioCtx();
-      if (ctx.state === 'suspended') {
-        ctx.resume();
-      }
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(880, ctx.currentTime);
-      gain.gain.setValueAtTime(0.08, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.2);
-
+      playHighVolumeAlarm('test');
       setAudioTested(true);
       setPreflightStatus((prev) => ({
         ...prev,
         sound: {
           checking: false,
           passed: true,
-          message: 'Sistem Suara & Alarm Audio teruji dan aktif',
+          message: 'Sistem Suara & Alarm Audio teruji dan aktif (Volume Tinggi)',
         },
       }));
-      showNotification('Suara alarm berbunyi! Izin audio telah terverifikasi.', 'success');
+      showNotification('Suara alarm berbunyi keras! Sistem suara terverifikasi.', 'success');
     } catch (err) {
       showNotification('Gagal menguji audio: ' + err.message, 'error');
     }
@@ -1562,7 +1676,9 @@ useEffect(() => {
     const newViolationCount = (currentAttempt?.violation_count || 0) + 1;
 
     if (newViolationCount < MAX_VIOLATIONS) {
-      // Masih dalam batas toleransi (Pelanggaran ke-1 & ke-2): Tampilkan dialog peringatan
+      // Masih dalam batas toleransi (Pelanggaran ke-1 & ke-2): Tampilkan dialog peringatan & Bunyikan Alarm Keras
+      playHighVolumeAlarm('warning');
+
       const warningAttempt = storageService.saveAttempt({
         id: currentAttempt?.id,
         exam_session_id: activeExam.id,
@@ -1583,10 +1699,22 @@ useEffect(() => {
       setShowViolationWarningModal(true);
 
       if (typeof navigator !== 'undefined' && navigator.vibrate) {
-        try { navigator.vibrate([200, 100, 200]); } catch {}
+        try { navigator.vibrate([350, 150, 350, 150, 350]); } catch {}
+      }
+
+      // Notifikasi sistem peramban jika diizinkan
+      if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+        try {
+          new Notification('PERINGATAN PELANGGARAN UJIAN!', {
+            body: `Pelanggaran ${newViolationCount}/${MAX_VIOLATIONS}: ${reason}`,
+            tag: 'exam-warning',
+          });
+        } catch {}
       }
     } else {
-      // Mencapai batas maksimal toleransi: KUNCI TOTAL LAYAR UJIAN
+      // Mencapai batas maksimal toleransi: KUNCI TOTAL LAYAR UJIAN & BUNYIKAN ALARM KUNCI DARURAT
+      playHighVolumeAlarm('locked');
+
       const lockedAttempt = storageService.saveAttempt({
         id: currentAttempt?.id,
         exam_session_id: activeExam.id,
@@ -1607,7 +1735,16 @@ useEffect(() => {
       setShowViolationWarningModal(false);
 
       if (typeof navigator !== 'undefined' && navigator.vibrate) {
-        try { navigator.vibrate([400, 100, 400]); } catch {}
+        try { navigator.vibrate([600, 200, 600, 200, 1200]); } catch {}
+      }
+
+      if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+        try {
+          new Notification('UJIAN TERKUNCI!', {
+            body: `Batas pelanggaran terlampaui (${newViolationCount}x). Layar ujian terkunci.`,
+            tag: 'exam-locked',
+          });
+        } catch {}
       }
     }
 
@@ -2171,7 +2308,21 @@ const renderVerificationPopup = () => {
           <div className="p-3.5 bg-blue-50/80 border border-blue-200/80 rounded-xl text-xs text-blue-800 leading-relaxed">
             Selamat datang, <strong className="text-blue-900">{currentUser.nama}</strong> (No. Ujian:{' '}
             <strong className="font-mono text-blue-950">{currentUser.nomor_ujian || currentUser.nisn}</strong> &bull; NISN:{' '}
-            {currentUser.nisn}). Sistem memerlukan beberapa verifikasi izin sebelum Anda dapat membuka beranda soal.
+            {currentUser.nisn}). Sistem memerlukan beberapa verifikasi izin sebelum Anda dapat membuka beranda soal.{' '}
+            <button
+              type="button"
+              onClick={() => {
+                setOldPasswordInput('');
+                setNewPasswordInput('');
+                setConfirmPasswordInput('');
+                setChangePasswordError('');
+                setChangePasswordSuccess('');
+                setShowChangePasswordModal(true);
+              }}
+              className="text-blue-700 underline font-semibold hover:text-blue-900 cursor-pointer inline-flex items-center gap-1 ml-1"
+            >
+              <KeyRound className="w-3 h-3" /> Ganti Kata Sandi
+            </button>
           </div>
 
           {/* Checklist Items */}
@@ -2220,14 +2371,26 @@ const renderVerificationPopup = () => {
                     </div>
                   )}
                   {browserPerms.location_gps !== false && !preflightStatus.gps.passed && !effectiveGpsOverride && (
-                    <button
-                      type="button"
-                      onClick={handleRequestGps}
-                      className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold transition-colors shadow-2xs cursor-pointer"
-                    >
-                      <MapPin className="w-3.5 h-3.5" />
-                      <span>Periksa / Uji Lokasi GPS</span>
-                    </button>
+                    <div className="mt-2 flex items-center gap-2 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={handleRequestGps}
+                        className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold transition-colors shadow-2xs cursor-pointer"
+                      >
+                        <MapPin className="w-3.5 h-3.5" />
+                        <span>Periksa / Uji Lokasi GPS</span>
+                      </button>
+                      {isSimMode && (
+                        <button
+                          type="button"
+                          onClick={handleToggleGpsOverride}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-semibold transition-colors shadow-2xs cursor-pointer"
+                        >
+                          <FlaskConical className="w-3 h-3" />
+                          <span>Bypass Lokasi (Mode Uji)</span>
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>

@@ -1292,10 +1292,12 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     refreshData();
 
     const handleSyncTrigger = (event) => {
-      // Jika event khusus pembaruan instansi, hanya perbarui jika admin tidak sedang membuka tab pengaturan instansi
-      if (event === 'institution_updated') {
-        if (activeTabRef.current !== 'institution') {
-          setInstitution(storageService.getInstitution());
+      // Jika event snapshot atau pembaruan instansi, perbarui konfigurasi institusi secara real-time
+      if (event === 'institution_updated' || event === 'snapshot') {
+        const freshInst = storageService.getInstitution();
+        setInstitution(freshInst);
+        if (freshInst?.gmaps_url) {
+          setGmapsInput(freshInst.gmaps_url);
         }
       } else if (event === 'berita_acara_updated') {
         setBeritaAcaraConfig(storageService.getBeritaAcaraConfig());
@@ -1310,8 +1312,15 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     // 1. Sinkronisasi instan via WebSocket real-time
     const unsubscribe = subscribeSync(handleSyncTrigger);
 
-    // 2. CustomEvent lokal di tab yang sama (hanya monitoring data agar form tidak tertimpa)
-    const handleStorageChange = () => {
+    // 2. CustomEvent lokal di tab yang sama
+    const handleStorageChange = (e) => {
+      if (e?.detail?.event === 'institution_updated' || e?.detail?.event === 'snapshot') {
+        const freshInst = storageService.getInstitution();
+        setInstitution(freshInst);
+        if (freshInst?.gmaps_url) {
+          setGmapsInput(freshInst.gmaps_url);
+        }
+      }
       refreshMonitoringData();
     };
     window.addEventListener('examguard_storage_updated', handleStorageChange);
@@ -1335,6 +1344,11 @@ export default function AdminDashboard({ currentUser, onLogout }) {
 
     // 6. Muat snapshot data terbaru dari backend SQLite saat awal mount
     storageService.syncWithServer().then(() => {
+      const freshInst = storageService.getInstitution();
+      setInstitution(freshInst);
+      if (freshInst?.gmaps_url) {
+        setGmapsInput(freshInst.gmaps_url);
+      }
       refreshMonitoringData();
     }).catch(() => {});
 
@@ -1430,20 +1444,35 @@ export default function AdminDashboard({ currentUser, onLogout }) {
       showNotification('NPSN harus berupa kombinasi huruf dan angka (alfanumerik 4-16 karakter tanpa spasi atau simbol).', 'error');
       return;
     }
-    setInstitution((prev) => {
-      const updated = {
-        ...prev,
-        gmaps_url: gmapsInput?.trim() || prev.gmaps_url,
-      };
-      storageService.updateInstitution(updated);
-      return updated;
-    });
+    const updated = {
+      ...institution,
+      gmaps_url: gmapsInput?.trim() || institution.gmaps_url,
+    };
+    storageService.updateInstitution(updated);
+    setInstitution(updated);
     showNotification('Konfigurasi instansi dan lokasi GPS berhasil disimpan.');
   };
 
   // Handler Switch On/Off Ceklis Izin Browser Peserta (Pre-flight Permissions)
   const handleToggleBrowserPermission = (permKey, permLabel) => {
     const currentPerms = institution.browser_permissions || {};
+
+    // Khusus google_sso: Wajib sudah login dan terverifikasi OAuth akun Google terlebih dahulu!
+    if (permKey === 'google_sso' && !currentPerms.google_sso) {
+      const isOAuthVerified = Boolean(
+        institution.google_oauth_verified &&
+        institution.google_oauth_enabled &&
+        institution.google_client_id?.trim()
+      );
+      if (!isOAuthVerified) {
+        showNotification(
+          'Izin Login Akun Google (SSO) terkunci OFF. Anda wajib melakukan verifikasi OAuth dengan login ke akun Google terlebih dahulu pada card pengaturan Google OAuth.',
+          'error'
+        );
+        return;
+      }
+    }
+
     const updatedVal = !currentPerms[permKey];
     const newPerms = {
       ...currentPerms,
@@ -1464,12 +1493,12 @@ export default function AdminDashboard({ currentUser, onLogout }) {
   };
 
   // ========================================================
-  // GOOGLE OAUTH 2.0 & GIS (MODE PRODUKSI RESMI TANPA BYPASS)
+  // GOOGLE OAUTH 2.0 & GIS: WAJIB LOGIN AKUN GMAIL AGAR STATUS SSO ON
   // ========================================================
   const handleTestGoogleOAuth = async () => {
     const clientId = institution.google_client_id?.trim();
     if (!clientId) {
-      showNotification('Harap isi Google OAuth Client ID terlebih dahulu sebelum menguji koneksi.', 'error');
+      showNotification('Harap isi Google OAuth Client ID terlebih dahulu.', 'error');
       return;
     }
 
@@ -1480,56 +1509,105 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     }
 
     setTestingOAuth(true);
-    const start = performance.now();
+    // Timeout pengaman otomatis 35 detik jika popup ditutup manual atau diblokir Google
+    const safetyTimer = setTimeout(() => {
+      setTestingOAuth(false);
+    }, 35000);
+
     try {
-      // Uji ketersediaan server Google OAuth / GIS
-      let googleReachable = false;
-      try {
-        const resp = await fetch('https://accounts.google.com/.well-known/openid-configuration', {
-          method: 'GET',
-          headers: { Accept: 'application/json' },
-          cache: 'no-cache',
-        });
-        if (resp.ok) {
-          const cfg = await resp.json();
-          if (cfg.issuer?.includes('accounts.google.com')) {
-            googleReachable = true;
+      // 1. Muat Google Identity Services (GIS)
+      if (!window.google?.accounts?.oauth2) {
+        await new Promise((resolve, reject) => {
+          const scriptId = 'examguard-google-gis';
+          let s = document.getElementById(scriptId);
+          if (s) {
+            if (window.google?.accounts?.oauth2) return resolve(true);
+            s.addEventListener('load', () => resolve(true));
+            s.addEventListener('error', () => reject(new Error('Gagal memuat Google Identity Services')));
+            return;
           }
-        }
-      } catch {
-        googleReachable = await new Promise((resolve) => {
-          if (window.google?.accounts?.oauth2) return resolve(true);
-          const s = document.createElement('script');
+          s = document.createElement('script');
+          s.id = scriptId;
           s.src = 'https://accounts.google.com/gsi/client';
           s.async = true;
+          s.defer = true;
           s.onload = () => resolve(true);
-          s.onerror = () => resolve(false);
+          s.onerror = () => reject(new Error('Gagal memuat Google Identity Services. Pastikan komputer terhubung ke internet.'));
           document.head.appendChild(s);
         });
       }
 
-      if (!googleReachable) {
-        throw new Error('Tidak dapat menghubungi server Google Identity Services. Pastikan komputer terhubung ke internet.');
+      if (!window.google?.accounts?.oauth2) {
+        throw new Error('Google Identity Services tidak tersedia di peramban ini.');
       }
 
-      const elapsed = Math.round(performance.now() - start);
+      // 2. Buka dialog OAuth resmi Google untuk login akun Gmail penguji/admin
+      const tokenClient = window.google.accounts.oauth2.initTokenClient({
+        client_id: clientId,
+        scope: 'email profile openid',
+        callback: async (response) => {
+          clearTimeout(safetyTimer);
+          if (response.error) {
+            setTestingOAuth(false);
+            if (response.error === 'invalid_client' || (response.error_description && response.error_description.includes('origin'))) {
+              showNotification(`Origin "${window.location.origin}" belum didaftarkan di Google Cloud Console. Tambahkan ke Authorized JavaScript origins.`, 'error');
+            } else if (response.error !== 'access_denied') {
+              showNotification(`Login verifikasi Google gagal: ${response.error_description || response.error}`, 'error');
+            } else {
+              showNotification('Verifikasi dibatalkan oleh pengguna.', 'info');
+            }
+            return;
+          }
 
-      // KONEKSI SUKSES: Otomatis AKTIF (ON) & simpan ke sistem
-      const updated = {
-        ...institution,
-        google_client_id: clientId,
-        google_client_secret: (institution.google_client_secret || '').trim(),
-        google_oauth_enabled: true,
-        auth_method: institution.auth_method === 'CREDENTIALS_ONLY' ? 'BOTH' : (institution.auth_method || 'BOTH'),
-      };
-      setInstitution(updated);
-      storageService.updateInstitution(updated);
-      refreshData();
-      showNotification(`✓ Uji koneksi Google OAuth 2.0 BERHASIL (${elapsed} ms)! Integrasi SSO Google otomatis AKTIF (ON) dalam Mode Produksi.`);
+          if (response.access_token) {
+            try {
+              // 3. Verifikasi profil akun Google dari token yang sah
+              const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                headers: { Authorization: `Bearer ${response.access_token}` },
+              });
+              if (!res.ok) {
+                throw new Error('Gagal mengambil data profil Google dari server Google.');
+              }
+              const profile = await res.json();
+              const verifiedEmail = profile.email?.trim().toLowerCase();
+
+              if (!verifiedEmail) {
+                throw new Error('Akun Google tidak menyediakan email yang valid.');
+              }
+
+              // SUKSES VERIFIKASI DENGAN LOGIN GMAIL SUNGGUHAN:
+              const updated = {
+                ...institution,
+                google_client_id: clientId,
+                google_client_secret: (institution.google_client_secret || '').trim(),
+                google_oauth_enabled: true,
+                google_oauth_verified: true,
+                google_oauth_verified_email: verifiedEmail,
+                google_oauth_verified_at: new Date().toISOString(),
+                auth_method: institution.auth_method === 'CREDENTIALS_ONLY' ? 'BOTH' : (institution.auth_method || 'BOTH'),
+                browser_permissions: {
+                  ...(institution.browser_permissions || {}),
+                  google_sso: true,
+                },
+              };
+              setInstitution(updated);
+              storageService.updateInstitution(updated);
+              refreshData();
+              showNotification(`✓ Google OAuth BERHASIL Diverifikasi! Login akun: ${verifiedEmail}. Status SSO kini AKTIF (ON).`, 'success');
+            } catch (fetchErr) {
+              showNotification(fetchErr.message || 'Gagal memverifikasi profil akun Google.', 'error');
+            } finally {
+              setTestingOAuth(false);
+            }
+          }
+        },
+      });
+
+      tokenClient.requestAccessToken({ prompt: 'select_account' });
     } catch (err) {
-      showNotification(`Uji koneksi Google OAuth gagal: ${err.message || 'Periksa Client ID atau akses internet.'}`, 'error');
-    } finally {
+      clearTimeout(safetyTimer);
       setTestingOAuth(false);
+      showNotification(`Verifikasi Google OAuth gagal: ${err.message || 'Periksa Client ID atau akses internet.'}`, 'error');
     }
   };
 
@@ -1542,7 +1620,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
             Apakah Anda yakin ingin <strong>mengosongkan settingan dan menonaktifkan Google OAuth 2.0</strong>?
           </p>
           <p className="text-[11px] text-zinc-500 bg-amber-50 border border-amber-200 p-2.5 rounded-xl text-amber-900">
-            Kredensial Client ID & Client Secret akan dikosongkan. Status OAuth otomatis beralih ke <strong>OFF</strong> dan tombol Google SSO disembunyikan di halaman login peserta.
+            Kredensial Client ID & verifikasi akun Google akan dikosongkan. Status SSO otomatis beralih ke <strong>OFF</strong>, izin browser SSO dimatikan, dan tombol Google SSO disembunyikan di halaman login peserta.
           </p>
         </div>
       ),
@@ -1556,24 +1634,32 @@ export default function AdminDashboard({ currentUser, onLogout }) {
           google_client_id: '',
           google_client_secret: '',
           google_oauth_enabled: false,
+          google_oauth_verified: false,
+          google_oauth_verified_email: null,
+          google_oauth_verified_at: null,
           auth_method: institution.auth_method === 'SSO_ONLY' ? 'CREDENTIALS_ONLY' : (institution.auth_method || 'CREDENTIALS_ONLY'),
+          browser_permissions: {
+            ...(institution.browser_permissions || {}),
+            google_sso: false,
+          },
         };
         setInstitution(updated);
         storageService.updateInstitution(updated);
         refreshData();
-        showNotification('Pengaturan Google OAuth telah dikosongkan dan otomatis dinonaktifkan (OFF).');
+        showNotification('Pengaturan Google OAuth telah dikosongkan dan dinonaktifkan (OFF).');
       },
     });
   };
 
   const handleToggleGoogleOAuth = () => {
-    const isCurrentlyActive = Boolean(institution.google_oauth_enabled && institution.google_client_id?.trim());
-    if (isCurrentlyActive) {
+    const isVerified = Boolean(institution.google_oauth_verified && institution.google_oauth_enabled);
+    if (isVerified) {
       handleResetGoogleOAuth();
     } else {
       if (!institution.google_client_id?.trim()) {
-        showNotification('Google Client ID belum diisi. Masukkan Client ID dan klik "Test Koneksi & Aktifkan" untuk mengaktifkan.', 'error');
+        showNotification('Google Client ID belum diisi. Masukkan Client ID terlebih dahulu.', 'error');
       } else {
+        showNotification('Status SSO tidak dapat diaktifkan secara manual. Anda WAJIB login ke akun Google terlebih dahulu.', 'info');
         handleTestGoogleOAuth();
       }
     }
@@ -9096,13 +9182,18 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                           const updated = {
                             ...institution,
                             gps_enabled: nextStatus,
+                            browser_permissions: {
+                              ...(institution.browser_permissions || {}),
+                              location_gps: nextStatus,
+                            },
                           };
                           setInstitution(updated);
                           storageService.updateInstitution(updated);
+                          refreshData();
                           showNotification(
                             nextStatus
-                              ? 'Pemeriksaan lokasi GPS berhasil diaktifkan.'
-                              : 'Pemeriksaan lokasi GPS dinonaktifkan (Ujian Bebas Lokasi).'
+                              ? 'Pemeriksaan lokasi GPS & Izin Browser GPS berhasil diaktifkan (ON).'
+                              : 'Pemeriksaan lokasi GPS & Izin Browser GPS dinonaktifkan (OFF).'
                           );
                         }}
                         className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${institution.gps_enabled ? 'bg-emerald-600' : 'bg-zinc-300 hover:bg-zinc-400'
@@ -9387,34 +9478,40 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                       {/* Status & Sakelar Cepat Google OAuth */}
                       <div className="flex items-center gap-3 bg-zinc-50 border border-zinc-200 p-1.5 px-3 rounded-xl shrink-0">
                         <span className="text-xs font-medium">
-                          {institution.google_oauth_enabled && institution.google_client_id ? (
+                          {institution.google_oauth_verified && institution.google_oauth_enabled && institution.google_client_id ? (
                             <span className="text-emerald-700 font-semibold flex items-center gap-1.5">
                               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                              OAuth: TERHUBUNG (ON)
+                              SSO: ON • {institution.google_oauth_verified_email}
                             </span>
                           ) : (
                             <span className="text-zinc-500 flex items-center gap-1.5">
                               <span className="w-2 h-2 rounded-full bg-zinc-400"></span>
-                              OAuth: NONAKTIF (OFF)
+                              SSO: OFF • Belum Login Akun Gmail
                             </span>
                           )}
                         </span>
                         <button
                           type="button"
                           role="switch"
-                          aria-checked={Boolean(institution.google_oauth_enabled && institution.google_client_id)}
+                          aria-checked={Boolean(institution.google_oauth_verified && institution.google_oauth_enabled && institution.google_client_id)}
                           onClick={handleToggleGoogleOAuth}
-                          className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${institution.google_oauth_enabled && institution.google_client_id ? 'bg-emerald-600' : 'bg-zinc-300 hover:bg-zinc-400'
-                            }`}
+                          className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                            institution.google_oauth_verified && institution.google_oauth_enabled && institution.google_client_id
+                              ? 'bg-emerald-600'
+                              : 'bg-zinc-300 hover:bg-zinc-400'
+                          }`}
                           title={
-                            institution.google_oauth_enabled && institution.google_client_id
+                            institution.google_oauth_verified && institution.google_oauth_enabled
                               ? 'Klik untuk reset/menonaktifkan Google OAuth'
-                              : 'Isi Client ID dan klik Test Koneksi untuk mengaktifkan'
+                              : 'Status SSO On WAJIB login ke akun Google terlebih dahulu'
                           }
                         >
                           <span
-                            className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition duration-200 ease-in-out ${institution.google_oauth_enabled && institution.google_client_id ? 'translate-x-5' : 'translate-x-0'
-                              }`}
+                            className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition duration-200 ease-in-out ${
+                              institution.google_oauth_verified && institution.google_oauth_enabled && institution.google_client_id
+                                ? 'translate-x-5'
+                                : 'translate-x-0'
+                            }`}
                           />
                         </button>
                       </div>
@@ -9444,9 +9541,13 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                         </label>
                         <select
                           value={institution.auth_method}
-                          onChange={(e) =>
-                            setInstitution({ ...institution, auth_method: e.target.value })
-                          }
+                          onChange={(e) => {
+                            const newMethod = e.target.value;
+                            const updated = { ...institution, auth_method: newMethod };
+                            setInstitution(updated);
+                            storageService.updateInstitution(updated);
+                            showNotification(`Metode login diubah ke: ${AUTH_METHODS[newMethod] || newMethod}`, 'success');
+                          }}
                           className="w-full px-3.5 py-2.5 border border-zinc-300 rounded-xl text-sm bg-white focus:ring-2 focus:ring-zinc-900 focus:outline-none"
                         >
                           {Object.entries(AUTH_METHODS).map(([key, label]) => (
@@ -9505,6 +9606,34 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                       </div>
                     </div>
 
+                    {/* Panduan Penanganan Error 401: invalid_client / no registered origin */}
+                    <div className="mt-4 p-3.5 bg-blue-50/80 border border-blue-200/90 rounded-xl text-xs text-blue-900 space-y-2">
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <span className="font-semibold flex items-center gap-1.5 text-blue-950">
+                          <Info className="w-4 h-4 text-blue-600 shrink-0" />
+                          <span>Asal JavaScript yang Diizinkan (Authorized JavaScript Origin):</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (typeof window !== 'undefined') {
+                              navigator.clipboard.writeText(window.location.origin);
+                              showNotification('URL Origin disalin: ' + window.location.origin);
+                            }
+                          }}
+                          className="px-2.5 py-1 bg-white border border-blue-300 hover:bg-blue-100/70 text-blue-800 rounded-lg text-[11px] font-semibold transition-colors cursor-pointer shadow-2xs"
+                        >
+                          Salin URL Origin
+                        </button>
+                      </div>
+                      <div className="font-mono bg-white px-2.5 py-1.5 rounded-lg border border-blue-200 text-blue-900 font-bold select-all inline-block text-[11px]">
+                        {typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5173'}
+                      </div>
+                      <p className="text-[11px] text-blue-800 leading-relaxed">
+                        Jika muncul popup <strong className="text-rose-700">"Akses diblokir: Error Otorisasi (no registered origin / Error 401: invalid_client)"</strong>, hal itu berarti URL origin di atas belum didaftarkan di <strong>Google Cloud Console &gt; APIs & Services &gt; Credentials &gt; OAuth 2.0 Client IDs &gt; Authorized JavaScript origins</strong>. Tambahkan URL tersebut lalu simpan di Google Console.
+                      </p>
+                    </div>
+
                     {/* Tombol Aksi: Test Koneksi & Reset Kosongkan */}
                     <div className="mt-5 pt-4 border-t border-zinc-100 flex flex-wrap items-center justify-between gap-3">
                       <div className="flex items-center gap-2 text-xs text-zinc-500">
@@ -9531,12 +9660,12 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                           {testingOAuth ? (
                             <>
                               <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                              <span>Menguji Koneksi Google...</span>
+                              <span>Menghubungkan ke Google Identity...</span>
                             </>
                           ) : (
                             <>
-                              <CheckCircle2 className="w-3.5 h-3.5" />
-                              <span>Test Koneksi & Aktifkan</span>
+                              <GoogleBrandIcon className="w-3.5 h-3.5" active={true} />
+                              <span>Login Akun Google untuk Verifikasi & Aktifkan SSO (Wajib)</span>
                             </>
                           )}
                         </button>
@@ -9969,8 +10098,12 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                       </button>
                     </div>
 
-                    {/* Item 5: Login Akun Google */}
-                    <div className="p-4 rounded-xl border border-zinc-200/90 bg-zinc-50/50 hover:bg-zinc-50 transition-colors flex items-start justify-between gap-3 shadow-2xs">
+                    {/* Item 5: Login Akun Google (Wajib SSO) */}
+                    <div className={`p-4 rounded-xl border transition-colors flex items-start justify-between gap-3 shadow-2xs ${
+                      !institution.google_oauth_verified || !institution.google_oauth_enabled
+                        ? 'border-amber-200/70 bg-amber-50/20'
+                        : 'border-zinc-200/90 bg-zinc-50/50 hover:bg-zinc-50'
+                    }`}>
                       <div className="flex items-start gap-3 min-w-0">
                         <div className="p-2 rounded-lg bg-blue-100/70 text-blue-700 shrink-0 mt-0.5">
                           <CheckCircle2 className="w-4 h-4" />
@@ -9986,23 +10119,45 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                             <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di Laptop">
                               <Laptop className="w-2.5 h-2.5" /> Laptop
                             </span>
+                            {institution.google_oauth_verified && institution.google_oauth_enabled ? (
+                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-medium">
+                                Terverifikasi: {institution.google_oauth_verified_email}
+                              </span>
+                            ) : (
+                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-semibold border border-amber-200">
+                                Terkunci OFF (Wajib Login Akun Google)
+                              </span>
+                            )}
                           </div>
                           <p className="text-[11px] text-zinc-500 mt-1 leading-relaxed">
-                            Memastikan peserta wajib masuk dengan akun Google resmi sekolah sebelum diizinkan mengakses soal.
+                            {institution.google_oauth_verified && institution.google_oauth_enabled
+                              ? 'Memastikan peserta wajib masuk dengan akun Google resmi sekolah sebelum diizinkan mengakses soal.'
+                              : 'Fitur SSO terkunci OFF. Admin wajib login akun Google pada kartu Google OAuth di atas terlebih dahulu.'}
                           </p>
                         </div>
                       </div>
                       <button
                         type="button"
                         role="switch"
-                        aria-checked={Boolean(institution.browser_permissions?.google_sso)}
+                        aria-checked={Boolean(institution.browser_permissions?.google_sso && institution.google_oauth_verified)}
                         onClick={() => handleToggleBrowserPermission('google_sso', 'Login Akun Google (Wajib SSO)')}
-                        className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors duration-200 ease-in-out cursor-pointer shadow-2xs mt-1 ${institution.browser_permissions?.google_sso ? 'bg-emerald-500' : 'bg-zinc-300'
-                          }`}
+                        className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors duration-200 ease-in-out shadow-2xs mt-1 ${
+                          !institution.google_oauth_verified || !institution.google_oauth_enabled
+                            ? 'bg-zinc-200 cursor-not-allowed opacity-60'
+                            : institution.browser_permissions?.google_sso
+                            ? 'bg-emerald-500 cursor-pointer'
+                            : 'bg-zinc-300 cursor-pointer'
+                        }`}
+                        title={
+                          !institution.google_oauth_verified || !institution.google_oauth_enabled
+                            ? 'Terkunci: Wajib verifikasi OAuth Google dengan login akun Google terlebih dahulu'
+                            : 'Klik untuk mengaktifkan/menonaktifkan kewajiban SSO Google'
+                        }
                       >
                         <span
-                          className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-xs transition duration-200 ease-in-out ${institution.browser_permissions?.google_sso ? 'translate-x-4' : 'translate-x-1'
-                            }`}
+                          className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-xs transition duration-200 ease-in-out ${
+                            institution.browser_permissions?.google_sso && institution.google_oauth_verified ? 'translate-x-4' : 'translate-x-1'
+                          }`}
                         />
                       </button>
                     </div>
@@ -11301,7 +11456,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                   <div className="flex flex-wrap gap-1 font-mono text-[10px]">
                     <span className="bg-white px-1.5 py-0.5 rounded border border-zinc-200 text-zinc-800 font-semibold" title="Nama Lengkap (Wajib)">1. nama*</span>
                     <span className="bg-white px-1.5 py-0.5 rounded border border-blue-200 text-blue-700 font-semibold" title="Nomor Ujian (Opsional, fallback ke NISN)">2. nomor_ujian</span>
-                    <span className="bg-white px-1.5 py-0.5 rounded border border-amber-200 text-amber-700 font-semibold" title="NISN / Username Akun (Wajib, Unik)">3. nisn*</span>
+                    <span className="bg-white px-1.5 py-0.5 rounded border border-amber-200 text-amber-700 font-semibold" title="NISN Akun (Wajib, Unik)">3. nisn*</span>
                     <span className="bg-white px-1.5 py-0.5 rounded border border-purple-200 text-purple-700 font-semibold" title="NIS / Password Awal (Opsional)">4. nis</span>
                     <span className="bg-white px-1.5 py-0.5 rounded border border-emerald-200 text-emerald-700 font-semibold" title="Jenis Kelamin: L atau P (Wajib)">5. jenis_kelamin</span>
                     <span className="bg-white px-1.5 py-0.5 rounded border border-teal-200 text-teal-700 font-semibold" title="Agama: Islam, Kristen, Katolik, dll (Wajib)">6. agama</span>

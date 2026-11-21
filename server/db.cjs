@@ -174,6 +174,9 @@ db.exec(`
     recaptcha_version    TEXT NOT NULL DEFAULT 'v2' CHECK(recaptcha_version IN ('v2','v3')),
     finish_token_lead_minutes INTEGER NOT NULL DEFAULT 10,
     browser_permissions TEXT NOT NULL DEFAULT '{}',
+    google_oauth_verified INTEGER NOT NULL DEFAULT 0,
+    google_oauth_verified_email TEXT DEFAULT '',
+    google_oauth_verified_at TEXT DEFAULT '',
     updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
@@ -332,6 +335,17 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_error_logs_level     ON system_error_logs(level);
 `);
 
+// Migration: Tambahkan kolom google_oauth_verified jika belum ada di tabel institution
+try {
+  rawDb.exec(`ALTER TABLE institution ADD COLUMN google_oauth_verified INTEGER NOT NULL DEFAULT 0;`);
+} catch (_) {}
+try {
+  rawDb.exec(`ALTER TABLE institution ADD COLUMN google_oauth_verified_email TEXT DEFAULT '';`);
+} catch (_) {}
+try {
+  rawDb.exec(`ALTER TABLE institution ADD COLUMN google_oauth_verified_at TEXT DEFAULT '';`);
+} catch (_) {}
+
 // ─── Seed Data Default ────────────────────────────────────────────────────────
 function seedDefaultData() {
   // Seed institution jika belum ada
@@ -412,6 +426,9 @@ function rowToInstitution(r) {
     recaptcha_version: r.recaptcha_version,
     finish_token_lead_minutes: r.finish_token_lead_minutes,
     browser_permissions: parseJson(r.browser_permissions, {}),
+    google_oauth_verified: intToBool(r.google_oauth_verified),
+    google_oauth_verified_email: r.google_oauth_verified_email || '',
+    google_oauth_verified_at: r.google_oauth_verified_at || '',
     updated_at: r.updated_at,
   };
 }
@@ -539,12 +556,12 @@ const stmts = {
       idle_timeout_minutes,gps_enabled,center_lat,center_lng,max_radius_meters,
       gmaps_url,auth_method,google_oauth_enabled,google_client_id,google_client_secret,
       recaptcha_enabled,recaptcha_site_key,recaptcha_secret_key,recaptcha_version,
-      finish_token_lead_minutes,browser_permissions,updated_at)
+      finish_token_lead_minutes,browser_permissions,google_oauth_verified,google_oauth_verified_email,google_oauth_verified_at,updated_at)
     VALUES (@id,@name,@npsn,@logo_url,@education_level,@allowed_grades,
       @idle_timeout_minutes,@gps_enabled,@center_lat,@center_lng,@max_radius_meters,
       @gmaps_url,@auth_method,@google_oauth_enabled,@google_client_id,@google_client_secret,
       @recaptcha_enabled,@recaptcha_site_key,@recaptcha_secret_key,@recaptcha_version,
-      @finish_token_lead_minutes,@browser_permissions,@updated_at)
+      @finish_token_lead_minutes,@browser_permissions,@google_oauth_verified,@google_oauth_verified_email,@google_oauth_verified_at,@updated_at)
     ON CONFLICT(id) DO UPDATE SET
       name=excluded.name,npsn=excluded.npsn,logo_url=excluded.logo_url,
       education_level=excluded.education_level,allowed_grades=excluded.allowed_grades,
@@ -556,15 +573,19 @@ const stmts = {
       recaptcha_enabled=excluded.recaptcha_enabled,recaptcha_site_key=excluded.recaptcha_site_key,
       recaptcha_secret_key=excluded.recaptcha_secret_key,recaptcha_version=excluded.recaptcha_version,
       finish_token_lead_minutes=excluded.finish_token_lead_minutes,
-      browser_permissions=excluded.browser_permissions,updated_at=excluded.updated_at
+      browser_permissions=excluded.browser_permissions,
+      google_oauth_verified=excluded.google_oauth_verified,
+      google_oauth_verified_email=excluded.google_oauth_verified_email,
+      google_oauth_verified_at=excluded.google_oauth_verified_at,
+      updated_at=excluded.updated_at
   `),
 
   // Users
   getAllUsers:       db.prepare('SELECT * FROM users ORDER BY role ASC, nama ASC'),
   getUserById:      db.prepare('SELECT * FROM users WHERE id=?'),
-  getUserByUsername:db.prepare('SELECT * FROM users WHERE username=?'),
+  getUserByUsername:db.prepare('SELECT * FROM users WHERE username=? COLLATE NOCASE OR nisn=? COLLATE NOCASE OR nomor_ujian=? COLLATE NOCASE'),
   getUserByNisn:    db.prepare('SELECT * FROM users WHERE nisn=?'),
-  getUserByEmail:   db.prepare('SELECT * FROM users WHERE email=?'),
+  getUserByEmail:   db.prepare('SELECT * FROM users WHERE email=? OR google_email=?'),
   getStudents:      db.prepare("SELECT * FROM users WHERE role='student' ORDER BY nama ASC"),
   insertUser: db.prepare(`
     INSERT INTO users (id,username,password,nama,email,role,nisn,nis,nomor_ujian,
@@ -773,6 +794,9 @@ const dbApi = {
       recaptcha_version: safeStr(data.recaptcha_version, current.recaptcha_version || 'v2'),
       finish_token_lead_minutes: data.finish_token_lead_minutes !== undefined ? data.finish_token_lead_minutes : (current.finish_token_lead_minutes || 10),
       browser_permissions: bp,
+      google_oauth_verified: boolToInt(data.google_oauth_verified !== undefined ? data.google_oauth_verified : current.google_oauth_verified),
+      google_oauth_verified_email: safeStr(data.google_oauth_verified_email, current.google_oauth_verified_email || ''),
+      google_oauth_verified_at: safeStr(data.google_oauth_verified_at, current.google_oauth_verified_at || ''),
       updated_at: now,
     });
     return this.getInstitution();
@@ -788,7 +812,9 @@ const dbApi = {
   },
 
   getUserByUsername(username) {
-    return rowToUser(stmts.getUserByUsername.get(username));
+    if (!username) return null;
+    const u = String(username).trim();
+    return rowToUser(stmts.getUserByUsername.get(u, u, u));
   },
 
   getUserByNisn(nisn) {
@@ -796,7 +822,8 @@ const dbApi = {
   },
 
   getUserByEmail(email) {
-    return rowToUser(stmts.getUserByEmail.get(email?.toLowerCase?.() || email));
+    const em = email?.toLowerCase?.() || email;
+    return rowToUser(stmts.getUserByEmail.get(em, em));
   },
 
   getStudents() {

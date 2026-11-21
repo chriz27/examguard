@@ -44,6 +44,74 @@ export function getOrCreateDeviceId() {
   }
 }
 
+export function getDeviceClientInfo() {
+  if (typeof window === 'undefined') {
+    return { brand: 'Desktop PC', os: 'Windows', fullLabel: 'Komputer Desktop (Windows)', isMobile: false };
+  }
+
+  const ua = navigator.userAgent || '';
+  let brand = 'Komputer Desktop';
+  let os = 'Windows';
+  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+
+  // 1. Deteksi Sistem Operasi (OS)
+  if (/Windows NT 10.0|Windows NT 11.0/i.test(ua)) os = 'Windows 11/10';
+  else if (/Windows NT 6.3/i.test(ua)) os = 'Windows 8.1';
+  else if (/Windows NT 6.1/i.test(ua)) os = 'Windows 7';
+  else if (/Windows/i.test(ua)) os = 'Windows';
+  else if (/iPhone/i.test(ua)) os = 'iOS (iPhone)';
+  else if (/iPad/i.test(ua)) os = 'iPadOS';
+  else if (/Macintosh|Mac OS X/i.test(ua)) os = 'macOS';
+  else if (/Android/i.test(ua)) {
+    const androidVer = ua.match(/Android\s([0-9.]+)/i);
+    os = androidVer ? `Android ${androidVer[1]}` : 'Android';
+  } else if (/CrOS/i.test(ua)) os = 'ChromeOS';
+  else if (/Linux/i.test(ua)) os = 'Linux';
+  else os = 'Unknown OS';
+
+  // 2. Deteksi Merek & Model HP / Perangkat
+  if (/iPhone/i.test(ua)) {
+    brand = 'Apple iPhone';
+  } else if (/iPad/i.test(ua)) {
+    brand = 'Apple iPad';
+  } else if (/Samsung|SM-[A-Z0-9]+|GT-[A-Z0-9]+/i.test(ua)) {
+    const model = ua.match(/SM-[A-Z0-9]+/i);
+    brand = model ? `Samsung (${model[0]})` : 'Samsung Galaxy';
+  } else if (/Xiaomi|Redmi|POCO|Mi\s|22[0-9]{6}[A-Z]|23[0-9]{6}[A-Z]/i.test(ua)) {
+    const redmi = ua.match(/(Redmi[^;\)]*|POCO[^;\)]*|Mi\s[^;\)]*)/i);
+    brand = redmi ? `Xiaomi ${redmi[0].trim()}` : 'Xiaomi / Redmi';
+  } else if (/OPPO|CPH[0-9]{4}/i.test(ua)) {
+    const oppo = ua.match(/CPH[0-9]{4}/i);
+    brand = oppo ? `OPPO (${oppo[0]})` : 'OPPO';
+  } else if (/vivo|V2[0-9]{3}/i.test(ua)) {
+    const vivo = ua.match(/V2[0-9]{3}/i);
+    brand = vivo ? `Vivo (${vivo[0]})` : 'Vivo';
+  } else if (/Realme|RMX[0-9]{4}/i.test(ua)) {
+    const rmx = ua.match(/RMX[0-9]{4}/i);
+    brand = rmx ? `Realme (${rmx[0]})` : 'Realme';
+  } else if (/Infinix|X[0-9]{3,4}/i.test(ua)) {
+    const inf = ua.match(/Infinix\s[A-Z0-9]+|X[0-9]{3,4}/i);
+    brand = inf ? `Infinix (${inf[0]})` : 'Infinix';
+  } else if (/Tecno/i.test(ua)) {
+    brand = 'Tecno';
+  } else if (/Huawei|HMA-|LYA-/i.test(ua)) {
+    brand = 'Huawei';
+  } else if (/ASUS|ROG/i.test(ua)) {
+    brand = 'ASUS';
+  } else if (isMobile) {
+    brand = 'Smartphone Android';
+  } else {
+    brand = /Windows/i.test(os) ? 'PC / Laptop Windows' : (/macOS/i.test(os) ? 'Apple Mac' : 'Komputer Desktop');
+  }
+
+  return {
+    brand,
+    os,
+    fullLabel: `${brand} • ${os}`,
+    isMobile,
+  };
+}
+
 export function subscribeSync(callback) {
   return dbService.subscribe(callback);
 }
@@ -147,6 +215,25 @@ function _applySnapshot(data) {
 // Inisialisasi awal modul di browser
 if (typeof window !== 'undefined') {
   _loadInitialCache();
+
+  // Dengar perubahan lintas-tab/jendela dari localStorage (cross-tab real-time sync)
+  window.addEventListener('storage', (e) => {
+    if (!e.key || e.key === 'examguard_institution') {
+      try {
+        const raw = localStorage.getItem('examguard_institution');
+        if (raw) {
+          _cache.institution = JSON.parse(raw);
+          window.dispatchEvent(new CustomEvent('examguard_storage_updated', {
+            detail: { event: 'institution_updated', institution: _cache.institution }
+          }));
+          window.dispatchEvent(new CustomEvent('examguard_db_updated', {
+            detail: { event: 'institution_updated', data: { institution: _cache.institution } }
+          }));
+        }
+      } catch {}
+    }
+  });
+
   // Fetch snapshot mutakhir dari SQLite backend via REST API
   fetch('/api/db/snapshot')
     .then(r => r.ok ? r.json() : null)
@@ -169,6 +256,9 @@ if (typeof window !== 'undefined') {
         if (data.institution) {
           _cache.institution = data.institution;
           try { localStorage.setItem('examguard_institution', JSON.stringify(data.institution)); } catch {}
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('examguard_storage_updated', { detail: { event: 'institution_updated', institution: data.institution } }));
+          }
         }
         break;
       case 'user_saved':
@@ -291,6 +381,17 @@ export const storageService = {
 
   // ── Institution ───────────────────────────────────────────────────────────
   getInstitution() {
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = localStorage.getItem('examguard_institution');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === 'object') {
+            _cache.institution = parsed;
+          }
+        }
+      } catch {}
+    }
     return _cache.institution || {
       id: 'singleton',
       name: 'SMA Negeri 1 Nusantara',
@@ -323,6 +424,9 @@ export const storageService = {
         camera_webcam: true,
         cookies_iframe: true,
       },
+      google_oauth_verified: false,
+      google_oauth_verified_email: '',
+      google_oauth_verified_at: null,
     };
   },
 
@@ -332,7 +436,11 @@ export const storageService = {
     _cache.institution = updated;
     try { localStorage.setItem('examguard_institution', JSON.stringify(updated)); } catch {}
     // Kirim async ke SQLite backend
-    dbService.updateInstitution(data).catch(err => console.error('[ExamGuard Storage] Sync error updateInstitution:', err));
+    dbService.updateInstitution(updated).catch(err => console.error('[ExamGuard Storage] Sync error updateInstitution:', err));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('examguard_storage_updated', { detail: { event: 'institution_updated', institution: updated } }));
+      window.dispatchEvent(new CustomEvent('examguard_db_updated', { detail: { event: 'institution_updated', institution: updated } }));
+    }
     return updated;
   },
 
@@ -358,7 +466,10 @@ export const storageService = {
   getUserByEmail(email) {
     if (!email) return null;
     const q = String(email).trim().toLowerCase();
-    return (_cache.users || []).find(u => u.email && u.email.toLowerCase() === q) || null;
+    return (_cache.users || []).find(u =>
+      (u.email && u.email.toLowerCase() === q) ||
+      (u.google_email && u.google_email.toLowerCase() === q)
+    ) || null;
   },
 
   saveUser(user) {
@@ -521,6 +632,25 @@ export const storageService = {
       return { success: true, user: _cache.users[idx] };
     }
     return { success: false };
+  },
+
+  changeStudentPassword(studentId, oldPassword, newPassword) {
+    const idx = (_cache.users || []).findIndex(u => u.id === studentId);
+    if (idx < 0) return { success: false, message: 'Data peserta tidak ditemukan.' };
+    const user = _cache.users[idx];
+    const expected = user.password || user.nis || user.nisn;
+    if (oldPassword !== expected) {
+      return { success: false, message: 'Kata sandi saat ini tidak cocok. (Kata sandi default adalah nomor NIS).' };
+    }
+    const cleanNew = String(newPassword || '').trim();
+    if (cleanNew.length < 4) {
+      return { success: false, message: 'Kata sandi baru minimal 4 karakter.' };
+    }
+    _cache.users[idx].password = cleanNew;
+    _cache.users[idx].updated_at = new Date().toISOString();
+    try { localStorage.setItem('examguard_users', JSON.stringify(_cache.users)); } catch {}
+    dbService.updateStudent(studentId, { password: cleanNew }).catch(err => console.error('[ExamGuard Storage] Sync error changeStudentPassword:', err));
+    return { success: true, message: 'Kata sandi berhasil diperbarui.', user: _cache.users[idx] };
   },
 
   resetStudentPassword(studentId) {

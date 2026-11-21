@@ -714,7 +714,7 @@ export const dbService = {
       });
 
       if (!found) {
-        return { success: false, message: 'Username/NISN atau kata sandi tidak valid.' };
+        return { success: false, message: 'No. Ujian / NISN atau kata sandi tidak valid.' };
       }
 
       // Validasi akun aktif

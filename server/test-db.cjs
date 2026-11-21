@@ -49,6 +49,9 @@ try {
   dbApi.deleteExamSession('TEST-EXAM-001');
 } catch {}
 
+// Simpan konfigurasi asli sebelum tes agar tidak merusak data produksi
+const _originalInstitution = dbApi.getInstitution();
+
 // ─── 1. Institution ───────────────────────────────────────────────────────────
 console.log('📋 Institution:');
 test('getInstitution mengembalikan objek', () => {
@@ -64,13 +67,13 @@ test('updateInstitution menyimpan perubahan', () => {
   assertEqual(updated.name, 'SMA Test Updated', 'Nama tidak tersimpan');
   assertEqual(updated.npsn, '12345678', 'NPSN tidak tersimpan');
   // Kembalikan ke default
-  dbApi.updateInstitution({ name: 'SMA Negeri 1 Nusantara', npsn: '20104829' });
+  if (_originalInstitution?.name) dbApi.updateInstitution({ name: _originalInstitution.name, npsn: _originalInstitution.npsn });
 });
 
 test('updateInstitution validasi auth_method', () => {
   const updated = dbApi.updateInstitution({ auth_method: 'BOTH' });
   assertEqual(updated.auth_method, 'BOTH');
-  dbApi.updateInstitution({ auth_method: 'CREDENTIALS_ONLY' });
+  if (_originalInstitution?.auth_method) dbApi.updateInstitution({ auth_method: _originalInstitution.auth_method });
 });
 
 // ─── 2. Users ─────────────────────────────────────────────────────────────────

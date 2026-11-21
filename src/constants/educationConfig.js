@@ -27,8 +27,8 @@ export const EDUCATION_LEVELS = {
 
 export const AUTH_METHODS = {
   SSO_ONLY: 'Hanya Google SSO',
-  CREDENTIALS_ONLY: 'Hanya Username / NISN & Password',
-  BOTH: 'Google SSO & Username / NISN (Keduanya)',
+  CREDENTIALS_ONLY: 'Hanya No. Ujian / NISN & Password',
+  BOTH: 'Google SSO & No. Ujian / NISN (Keduanya)',
 };
 
 export const EXAM_SESSION_GROUPS = [
