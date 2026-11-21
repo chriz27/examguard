@@ -1,5 +1,5 @@
 {
-  "name": "examguard",
+  "name": "exampguard",
   "private": true,
   "version": "1.0.0",
   "type": "module",
@@ -10,6 +10,7 @@
   },
   "scripts": {
     "dev": "node --experimental-sqlite ./node_modules/vite/bin/vite.js --host",
+    "start": "node --experimental-sqlite server/production.cjs",
     "build": "vite build",
     "preview": "node --experimental-sqlite ./node_modules/vite/bin/vite.js preview --host",
     "test:db": "node --experimental-sqlite server/test-db.cjs",

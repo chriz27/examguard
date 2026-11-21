@@ -44,17 +44,49 @@ function _notifyListeners(event, data) {
 let _ws = null;
 let _wsReconnectTimer = null;
 let _wsReady = false;
+let _httpPollTimer = null;
+
+function _startHttpPollingFallback() {
+  if (_httpPollTimer) return;
+  _httpPollTimer = setInterval(async () => {
+    // Jika WebSocket sudah tersambung, nonaktifkan polling fallback
+    if (_wsReady) {
+      clearInterval(_httpPollTimer);
+      _httpPollTimer = null;
+      return;
+    }
+    try {
+      const res = await fetch('/api/db/snapshot');
+      if (res.ok) {
+        const snap = await res.json();
+        _handleServerEvent('snapshot', snap);
+      }
+    } catch {}
+  }, 8000);
+}
 
 function _connectWebSocket() {
   if (typeof window === 'undefined') return;
+  if (!('WebSocket' in window)) {
+    _startHttpPollingFallback();
+    return;
+  }
   if (_ws && (_ws.readyState === WebSocket.OPEN || _ws.readyState === WebSocket.CONNECTING)) return;
 
+  const isHttps = window.location.protocol === 'https:';
+  // Jika diakses via HTTPS (seperti ngrok / SSL proxy) di mana port 5174 tidak di-forward WSS,
+  // jalankan fallback polling HTTP otomatis
+  if (isHttps) {
+    _startHttpPollingFallback();
+  }
+
   const wsHost = window.location.hostname;
-  const wsUrl  = `ws://${wsHost}:5174`;
+  const wsUrl  = isHttps ? `wss://${wsHost}:5174` : `ws://${wsHost}:5174`;
 
   try {
     _ws = new WebSocket(wsUrl);
   } catch {
+    _startHttpPollingFallback();
     _scheduleReconnect();
     return;
   }
@@ -63,6 +95,10 @@ function _connectWebSocket() {
     _wsReady = true;
     console.log('[ExamGuard WS] Terhubung ke server real-time');
     clearTimeout(_wsReconnectTimer);
+    if (_httpPollTimer) {
+      clearInterval(_httpPollTimer);
+      _httpPollTimer = null;
+    }
   };
 
   _ws.onmessage = (event) => {
@@ -74,11 +110,13 @@ function _connectWebSocket() {
 
   _ws.onclose = () => {
     _wsReady = false;
+    _startHttpPollingFallback();
     _scheduleReconnect();
   };
 
   _ws.onerror = () => {
     _wsReady = false;
+    _startHttpPollingFallback();
   };
 }
 
@@ -95,14 +133,14 @@ function _handleServerEvent(evName, data) {
   switch (evName) {
     case 'snapshot':
       // Data awal lengkap dari server saat pertama connect
-      if (data.institution)       _cache.institution       = data.institution;
-      if (data.users)             _cache.users             = data.users;
-      if (data.examSessions)      _cache.examSessions      = data.examSessions;
-      if (data.attempts)          _cache.attempts          = data.attempts;
-      if (data.attendance)        _cache.attendance        = data.attendance;
-      if (data.appModeConfig)     _cache.appModeConfig     = data.appModeConfig;
-      if (data.beritaAcaraConfig) _cache.beritaAcaraConfig = data.beritaAcaraConfig;
-      if (data.systemErrorLogs)   _cache.systemErrorLogs   = data.systemErrorLogs;
+      if (data.institution)                         _cache.institution       = data.institution;
+      if (data.users)                               _cache.users             = data.users;
+      if (data.examSessions || data.exam_sessions)  _cache.examSessions      = data.examSessions || data.exam_sessions;
+      if (data.attempts || data.student_attempts)   _cache.attempts          = data.attempts || data.student_attempts;
+      if (data.attendance || data.exam_attendance)  _cache.attendance        = data.attendance || data.exam_attendance;
+      if (data.appModeConfig || data.app_mode_config) _cache.appModeConfig   = data.appModeConfig || data.app_mode_config;
+      if (data.beritaAcaraConfig || data.berita_acara_config) _cache.beritaAcaraConfig = data.beritaAcaraConfig || data.berita_acara_config;
+      if (data.systemErrorLogs || data.system_error_logs) _cache.systemErrorLogs = data.systemErrorLogs || data.system_error_logs;
       _cache.lastSync = Date.now();
       _notifyListeners('snapshot', data);
       break;
@@ -525,6 +563,13 @@ export const dbService = {
       `/attempts/${encodeURIComponent(studentId)}/${encodeURIComponent(examSessionId)}/ping`,
       { method: 'PUT', body: JSON.stringify({ attemptId, latencyMs }) }
     );
+  },
+
+  async sendExamHeartbeat(studentId, examSessionId, timeSpentSeconds, latencyMs) {
+    return _fetch(
+      `/attempts/${encodeURIComponent(studentId)}/${encodeURIComponent(examSessionId)}/heartbeat`,
+      { method: 'PUT', body: JSON.stringify({ timeSpentSeconds, latencyMs }) }
+    ).catch(() => {});
   },
 
   // Aksi Pengawas

@@ -177,6 +177,7 @@ db.exec(`
     google_oauth_verified INTEGER NOT NULL DEFAULT 0,
     google_oauth_verified_email TEXT DEFAULT '',
     google_oauth_verified_at TEXT DEFAULT '',
+    lock_device_enabled INTEGER NOT NULL DEFAULT 1,
     updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
@@ -346,6 +347,9 @@ try {
   rawDb.exec(`ALTER TABLE institution ADD COLUMN google_oauth_verified_at TEXT DEFAULT '';`);
 } catch (_) {}
 try {
+  rawDb.exec(`ALTER TABLE institution ADD COLUMN lock_device_enabled INTEGER NOT NULL DEFAULT 1;`);
+} catch (_) {}
+try {
   rawDb.exec(`ALTER TABLE users ADD COLUMN login_token TEXT DEFAULT '';`);
 } catch (_) {}
 try {
@@ -443,6 +447,7 @@ function rowToInstitution(r) {
     recaptcha_site_key: r.recaptcha_site_key || '',
     recaptcha_secret_key: r.recaptcha_secret_key || '',
     recaptcha_version: r.recaptcha_version,
+    lock_device_enabled: r.lock_device_enabled !== 0,
     finish_token_lead_minutes: r.finish_token_lead_minutes,
     browser_permissions: parseJson(r.browser_permissions, {}),
     google_oauth_verified: intToBool(r.google_oauth_verified),
@@ -576,12 +581,12 @@ const stmts = {
       idle_timeout_minutes,gps_enabled,center_lat,center_lng,max_radius_meters,
       gmaps_url,auth_method,google_oauth_enabled,google_client_id,google_client_secret,
       recaptcha_enabled,recaptcha_site_key,recaptcha_secret_key,recaptcha_version,
-      finish_token_lead_minutes,browser_permissions,google_oauth_verified,google_oauth_verified_email,google_oauth_verified_at,updated_at)
+      finish_token_lead_minutes,browser_permissions,google_oauth_verified,google_oauth_verified_email,google_oauth_verified_at,lock_device_enabled,updated_at)
     VALUES (@id,@name,@npsn,@logo_url,@education_level,@allowed_grades,
       @idle_timeout_minutes,@gps_enabled,@center_lat,@center_lng,@max_radius_meters,
       @gmaps_url,@auth_method,@google_oauth_enabled,@google_client_id,@google_client_secret,
       @recaptcha_enabled,@recaptcha_site_key,@recaptcha_secret_key,@recaptcha_version,
-      @finish_token_lead_minutes,@browser_permissions,@google_oauth_verified,@google_oauth_verified_email,@google_oauth_verified_at,@updated_at)
+      @finish_token_lead_minutes,@browser_permissions,@google_oauth_verified,@google_oauth_verified_email,@google_oauth_verified_at,@lock_device_enabled,@updated_at)
     ON CONFLICT(id) DO UPDATE SET
       name=excluded.name,npsn=excluded.npsn,logo_url=excluded.logo_url,
       education_level=excluded.education_level,allowed_grades=excluded.allowed_grades,
@@ -597,6 +602,7 @@ const stmts = {
       google_oauth_verified=excluded.google_oauth_verified,
       google_oauth_verified_email=excluded.google_oauth_verified_email,
       google_oauth_verified_at=excluded.google_oauth_verified_at,
+      lock_device_enabled=excluded.lock_device_enabled,
       updated_at=excluded.updated_at
   `),
 
@@ -819,6 +825,7 @@ const dbApi = {
       google_oauth_verified: boolToInt(data.google_oauth_verified !== undefined ? data.google_oauth_verified : current.google_oauth_verified),
       google_oauth_verified_email: safeStr(data.google_oauth_verified_email, current.google_oauth_verified_email || ''),
       google_oauth_verified_at: safeStr(data.google_oauth_verified_at, current.google_oauth_verified_at || ''),
+      lock_device_enabled: boolToInt(data.lock_device_enabled !== undefined ? data.lock_device_enabled : (current.lock_device_enabled !== undefined ? current.lock_device_enabled : true)),
       updated_at: now,
     });
     return this.getInstitution();
@@ -1306,6 +1313,23 @@ const dbApi = {
     return rowToAttempt(stmts.getAttemptById.get(attemptId));
   },
 
+  updateAttemptHeartbeat(studentId, examSessionId, timeSpentSeconds, latencyMs) {
+    const attempt = this.getAttempt(studentId, examSessionId);
+    if (!attempt) return null;
+    const now = new Date().toISOString();
+    const timeSpent = timeSpentSeconds !== undefined && timeSpentSeconds !== null ? Number(timeSpentSeconds) : attempt.time_spent_seconds;
+    const ping = latencyMs !== undefined && latencyMs !== null ? Math.round(Number(latencyMs)) : attempt.ping_latency_ms;
+    db.prepare(`
+      UPDATE student_attempts
+      SET time_spent_seconds = ?,
+          ping_latency_ms = ?,
+          last_ping_at = ?,
+          updated_at = ?
+      WHERE id = ?
+    `).run(timeSpent, ping, now, now, attempt.id);
+    return this.getAttempt(studentId, examSessionId);
+  },
+
   // Aksi Pengawas: Unlock
   proctorUnlockAttempt(studentId, examSessionId) {
     const now = new Date().toISOString();
@@ -1529,17 +1553,20 @@ const dbApi = {
     }
 
     const isProduction = requestedMode === 'production';
+    const isSwitchingToSimulation = requestedMode === 'simulation' && current.app_mode === 'production';
+    const defaultGps = isSwitchingToSimulation ? 1 : boolToInt(current.bypass_gps !== undefined ? current.bypass_gps : 1);
+    const defaultSso = isSwitchingToSimulation ? 1 : boolToInt(current.bypass_google_sso !== undefined ? current.bypass_google_sso : 1);
     const mockCoords = data.mock_gps_coords || current.mock_gps_coords || { lat: -6.2088, lng: 106.8456 };
 
     stmts.upsertAppMode.run({
       app_mode:             isProduction ? 'production' : 'simulation',
-      bypass_gps:           isProduction ? 0 : boolToInt(data.bypass_gps           !== undefined ? data.bypass_gps           : current.bypass_gps),
-      bypass_media:         isProduction ? 0 : boolToInt(data.bypass_media         !== undefined ? data.bypass_media         : current.bypass_media),
-      bypass_audio:         isProduction ? 0 : boolToInt(data.bypass_audio         !== undefined ? data.bypass_audio         : current.bypass_audio),
-      bypass_notifications: isProduction ? 0 : boolToInt(data.bypass_notifications !== undefined ? data.bypass_notifications : current.bypass_notifications),
-      bypass_fullscreen:    isProduction ? 0 : boolToInt(data.bypass_fullscreen    !== undefined ? data.bypass_fullscreen    : current.bypass_fullscreen),
-      bypass_cookies_check: isProduction ? 0 : boolToInt(data.bypass_cookies_check !== undefined ? data.bypass_cookies_check : current.bypass_cookies_check),
-      bypass_google_sso:    isProduction ? 0 : boolToInt(data.bypass_google_sso    !== undefined ? data.bypass_google_sso    : current.bypass_google_sso),
+      bypass_gps:           isProduction ? 0 : (data.bypass_gps           !== undefined ? boolToInt(data.bypass_gps)           : defaultGps),
+      bypass_media:         isProduction ? 0 : (data.bypass_media         !== undefined ? boolToInt(data.bypass_media)         : boolToInt(current.bypass_media)),
+      bypass_audio:         isProduction ? 0 : (data.bypass_audio         !== undefined ? boolToInt(data.bypass_audio)         : boolToInt(current.bypass_audio)),
+      bypass_notifications: isProduction ? 0 : (data.bypass_notifications !== undefined ? boolToInt(data.bypass_notifications) : boolToInt(current.bypass_notifications)),
+      bypass_fullscreen:    isProduction ? 0 : (data.bypass_fullscreen    !== undefined ? boolToInt(data.bypass_fullscreen)    : boolToInt(current.bypass_fullscreen)),
+      bypass_cookies_check: isProduction ? 0 : (data.bypass_cookies_check !== undefined ? boolToInt(data.bypass_cookies_check) : boolToInt(current.bypass_cookies_check)),
+      bypass_google_sso:    isProduction ? 0 : (data.bypass_google_sso    !== undefined ? boolToInt(data.bypass_google_sso)    : defaultSso),
       mock_gps_lat:  isProduction ? null : (mockCoords.lat || null),
       mock_gps_lng:  isProduction ? null : (mockCoords.lng || null),
       signature: data.signature || (isProduction ? 'eg_sig_production' : 'eg_sig_simulation'),

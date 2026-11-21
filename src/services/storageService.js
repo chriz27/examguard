@@ -186,6 +186,9 @@ function _loadInitialCache() {
 function _applySnapshot(data) {
   if (!data) return;
   if (data.institution) {
+    if (typeof data.institution.browser_permissions === 'string') {
+      try { data.institution.browser_permissions = JSON.parse(data.institution.browser_permissions); } catch {}
+    }
     _cache.institution = data.institution;
     try { localStorage.setItem('examguard_institution', JSON.stringify(data.institution)); } catch {}
   }
@@ -193,29 +196,43 @@ function _applySnapshot(data) {
     _cache.users = data.users;
     try { localStorage.setItem('examguard_users', JSON.stringify(data.users)); } catch {}
   }
-  if (Array.isArray(data.examSessions)) {
-    _cache.examSessions = data.examSessions;
-    try { localStorage.setItem('examguard_exam_sessions', JSON.stringify(data.examSessions)); } catch {}
+  const examList = Array.isArray(data.examSessions)
+    ? data.examSessions
+    : (Array.isArray(data.exam_sessions) ? data.exam_sessions : null);
+  if (examList) {
+    _cache.examSessions = examList;
+    try { localStorage.setItem('examguard_exam_sessions', JSON.stringify(examList)); } catch {}
   }
-  if (Array.isArray(data.attempts)) {
-    _cache.attempts = data.attempts;
-    try { localStorage.setItem('examguard_attempts', JSON.stringify(data.attempts)); } catch {}
+  const attemptList = Array.isArray(data.attempts)
+    ? data.attempts
+    : (Array.isArray(data.student_attempts) ? data.student_attempts : null);
+  if (attemptList) {
+    _cache.attempts = attemptList;
+    try { localStorage.setItem('examguard_attempts', JSON.stringify(attemptList)); } catch {}
   }
-  if (Array.isArray(data.attendance)) {
-    _cache.attendance = data.attendance;
-    try { localStorage.setItem('examguard_attendance', JSON.stringify(data.attendance)); } catch {}
+  const attendanceList = Array.isArray(data.attendance)
+    ? data.attendance
+    : (Array.isArray(data.exam_attendance) ? data.exam_attendance : null);
+  if (attendanceList) {
+    _cache.attendance = attendanceList;
+    try { localStorage.setItem('examguard_attendance', JSON.stringify(attendanceList)); } catch {}
   }
-  if (data.appModeConfig) {
-    _cache.appModeConfig = data.appModeConfig;
-    try { localStorage.setItem('examguard_app_mode', JSON.stringify(data.appModeConfig)); } catch {}
+  const appMode = data.appModeConfig || data.app_mode_config;
+  if (appMode) {
+    _cache.appModeConfig = appMode;
+    try { localStorage.setItem('examguard_app_mode', JSON.stringify(appMode)); } catch {}
   }
-  if (data.beritaAcaraConfig) {
-    _cache.beritaAcaraConfig = data.beritaAcaraConfig;
-    try { localStorage.setItem('examguard_berita_acara', JSON.stringify(data.beritaAcaraConfig)); } catch {}
+  const beritaAcara = data.beritaAcaraConfig || data.berita_acara_config;
+  if (beritaAcara) {
+    _cache.beritaAcaraConfig = beritaAcara;
+    try { localStorage.setItem('examguard_berita_acara', JSON.stringify(beritaAcara)); } catch {}
   }
-  if (Array.isArray(data.systemErrorLogs)) {
-    _cache.systemErrorLogs = data.systemErrorLogs;
-    try { localStorage.setItem('examguard_error_logs', JSON.stringify(data.systemErrorLogs)); } catch {}
+  const errorLogs = Array.isArray(data.systemErrorLogs)
+    ? data.systemErrorLogs
+    : (Array.isArray(data.system_error_logs) ? data.system_error_logs : null);
+  if (errorLogs) {
+    _cache.systemErrorLogs = errorLogs;
+    try { localStorage.setItem('examguard_error_logs', JSON.stringify(errorLogs)); } catch {}
   }
 }
 
@@ -228,17 +245,41 @@ if (typeof window !== 'undefined') {
     if (!e.key || e.key === 'examguard_institution') {
       try {
         const raw = localStorage.getItem('examguard_institution');
-        if (raw) {
-          _cache.institution = JSON.parse(raw);
-          window.dispatchEvent(new CustomEvent('examguard_storage_updated', {
-            detail: { event: 'institution_updated', institution: _cache.institution }
-          }));
-          window.dispatchEvent(new CustomEvent('examguard_db_updated', {
-            detail: { event: 'institution_updated', data: { institution: _cache.institution } }
-          }));
-        }
+        if (raw) _cache.institution = JSON.parse(raw);
       } catch {}
     }
+    if (!e.key || e.key === 'examguard_exam_sessions') {
+      try {
+        const raw = localStorage.getItem('examguard_exam_sessions');
+        if (raw) _cache.examSessions = JSON.parse(raw);
+      } catch {}
+    }
+    if (!e.key || e.key === 'examguard_attempts') {
+      try {
+        const raw = localStorage.getItem('examguard_attempts');
+        if (raw) _cache.attempts = JSON.parse(raw);
+      } catch {}
+    }
+    if (!e.key || e.key === 'examguard_users') {
+      try {
+        const raw = localStorage.getItem('examguard_users');
+        if (raw) _cache.users = JSON.parse(raw);
+      } catch {}
+    }
+    if (!e.key || e.key === 'examguard_app_mode') {
+      try {
+        const raw = localStorage.getItem('examguard_app_mode');
+        if (raw) _cache.appModeConfig = JSON.parse(raw);
+      } catch {}
+    }
+    try {
+      window.dispatchEvent(new CustomEvent('examguard_storage_updated', {
+        detail: { event: 'cross_tab_storage', key: e.key }
+      }));
+      window.dispatchEvent(new CustomEvent('examguard_db_updated', {
+        detail: { event: 'cross_tab_storage', key: e.key }
+      }));
+    } catch {}
   });
 
   // Fetch snapshot mutakhir dari SQLite backend via REST API
@@ -357,6 +398,13 @@ if (typeof window !== 'undefined') {
       default:
         break;
     }
+
+    if (typeof window !== 'undefined') {
+      try {
+        window.dispatchEvent(new CustomEvent('examguard_storage_updated', { detail: { event, ...data } }));
+        window.dispatchEvent(new CustomEvent('examguard_db_updated', { detail: { event, ...data } }));
+      } catch {}
+    }
   });
 }
 
@@ -399,7 +447,13 @@ export const storageService = {
         }
       } catch {}
     }
-    return _cache.institution || {
+    if (_cache.institution) {
+      if (_cache.institution.lock_device_enabled === undefined) {
+        _cache.institution.lock_device_enabled = true;
+      }
+      return _cache.institution;
+    }
+    return {
       id: 'singleton',
       name: 'SMA Negeri 1 Nusantara',
       npsn: '20104829',
@@ -434,6 +488,7 @@ export const storageService = {
       google_oauth_verified: false,
       google_oauth_verified_email: '',
       google_oauth_verified_at: null,
+      lock_device_enabled: true,
     };
   },
 
@@ -486,6 +541,24 @@ export const storageService = {
       (u.email && u.email.toLowerCase() === q) ||
       (u.google_email && u.google_email.toLowerCase() === q)
     ) || null;
+  },
+
+  async getUserByEmailFromServer(email) {
+    if (!email) return null;
+    const q = String(email).trim().toLowerCase();
+    try {
+      const res = await fetch(`/api/db/users/by-email/${encodeURIComponent(q)}`);
+      if (res.ok) {
+        const user = await res.json();
+        if (user && user.id) {
+          const idx = (_cache.users || []).findIndex(u => u.id === user.id);
+          if (idx >= 0) _cache.users[idx] = user;
+          else _cache.users.push(user);
+          return user;
+        }
+      }
+    } catch {}
+    return this.getUserByEmail(q);
   },
 
   saveUser(user) {
@@ -869,6 +942,7 @@ export const storageService = {
     if (typeof window !== 'undefined') {
       try {
         window.dispatchEvent(new CustomEvent('examguard_storage_updated', { detail: { event: 'sessions_updated', exam: examData } }));
+        window.dispatchEvent(new CustomEvent('examguard_db_updated', { detail: { event: 'sessions_updated', exam: examData } }));
       } catch {}
     }
 
@@ -889,6 +963,7 @@ export const storageService = {
     if (typeof window !== 'undefined') {
       try {
         window.dispatchEvent(new CustomEvent('examguard_storage_updated', { detail: { event: 'session_deleted', deletedId: id } }));
+        window.dispatchEvent(new CustomEvent('examguard_db_updated', { detail: { event: 'session_deleted', deletedId: id } }));
       } catch {}
     }
 
@@ -1017,13 +1092,41 @@ export const storageService = {
     return attempt;
   },
 
+  async sendExamHeartbeat(studentId, examSessionId, timeSpentSeconds, latencyMs) {
+    const attempt = this.getAttempt(studentId, examSessionId);
+    const now = new Date().toISOString();
+    if (attempt) {
+      if (timeSpentSeconds !== undefined && timeSpentSeconds !== null) attempt.time_spent_seconds = timeSpentSeconds;
+      if (latencyMs !== undefined && latencyMs !== null) attempt.ping_latency_ms = Math.round(latencyMs);
+      attempt.last_ping_at = now;
+      attempt.updated_at = now;
+      try { localStorage.setItem('examguard_attempts', JSON.stringify(_cache.attempts)); } catch {}
+    }
+    return dbService.sendExamHeartbeat(studentId, examSessionId, timeSpentSeconds, latencyMs);
+  },
+
+  async syncAttemptsFromServer() {
+    try {
+      const res = await fetch('/api/db/attempts');
+      if (res.ok) {
+        const attempts = await res.json();
+        if (Array.isArray(attempts)) {
+          _cache.attempts = attempts;
+          try { localStorage.setItem('examguard_attempts', JSON.stringify(attempts)); } catch {}
+          return attempts;
+        }
+      }
+    } catch {}
+    return _cache.attempts || [];
+  },
+
   proctorUnlockAttempt(studentIdOrAttemptId, examSessionId = null) {
     let attempt = examSessionId ? this.getAttempt(studentIdOrAttemptId, examSessionId) : null;
     if (!attempt) {
       attempt = (_cache.attempts || []).find(a => a.id === studentIdOrAttemptId || a.student_id === studentIdOrAttemptId);
     }
     if (!attempt) return null;
-    return this.saveAttempt({
+    const updated = this.saveAttempt({
       ...attempt,
       status: 'IN_PROGRESS',
       violation_count: 0,
@@ -1032,6 +1135,9 @@ export const storageService = {
       is_proctor_action: true,
       is_reset_violations: true,
     });
+    // Panggil backend API khusus unlock untuk memicu broadcast WebSocket 'attempt_unlocked'
+    dbService.proctorUnlockAttempt(attempt.student_id, attempt.exam_session_id).catch(() => {});
+    return updated;
   },
 
   proctorResetViolations(studentIdOrAttemptId, examSessionId = null) {
@@ -1046,7 +1152,10 @@ export const storageService = {
       updates.unlocked_at = new Date().toISOString();
       updates.is_proctor_action = true;
     }
-    return this.saveAttempt(updates);
+    const updated = this.saveAttempt(updates);
+    // Panggil backend API khusus reset-violations untuk memicu broadcast WebSocket 'violations_reset'
+    dbService.proctorResetViolations(attempt.student_id, attempt.exam_session_id).catch(() => {});
+    return updated;
   },
 
   proctorResetAnswerAttempt(studentIdOrAttemptId, examSessionId = null) {
@@ -1230,6 +1339,20 @@ export const storageService = {
     };
   },
 
+  async fetchAppModeFromServer() {
+    if (typeof window === 'undefined') return this.getAppModeConfig();
+    try {
+      const res = await fetch('/api/db/app-mode');
+      if (res.ok) {
+        const conf = await res.json();
+        _cache.appModeConfig = conf;
+        try { localStorage.setItem('examguard_app_mode', JSON.stringify(conf)); } catch {}
+        return conf;
+      }
+    } catch {}
+    return this.getAppModeConfig();
+  },
+
   saveAppModeConfig(config, caller = null) {
     const current = this.getAppModeConfig();
     const isCallerAdmin = caller?.role === 'admin' || this.getCurrentUser()?.role === 'admin';
@@ -1239,16 +1362,44 @@ export const storageService = {
       return { success: false, message: 'Hanya administrator yang diizinkan mengaktifkan Mode Simulasi.' };
     }
 
+    const requestedMode = config.app_mode || current.app_mode || 'production';
+    const isProduction = requestedMode === 'production';
+    const isSwitchingToSimulation = requestedMode === 'simulation' && current.app_mode === 'production';
+
+    const defaultGps = isSwitchingToSimulation ? true : (current.bypass_gps !== undefined ? Boolean(current.bypass_gps) : true);
+    const defaultSso = isSwitchingToSimulation ? true : (current.bypass_google_sso !== undefined ? Boolean(current.bypass_google_sso) : true);
+
     const updated = {
       ...current,
       ...config,
-      signature: generateModeSignature(config.app_mode || current.app_mode),
+      app_mode: requestedMode,
+      bypass_gps: isProduction ? false : (config.bypass_gps !== undefined ? Boolean(config.bypass_gps) : defaultGps),
+      bypass_media: isProduction ? false : (config.bypass_media !== undefined ? Boolean(config.bypass_media) : Boolean(current.bypass_media)),
+      bypass_audio: isProduction ? false : (config.bypass_audio !== undefined ? Boolean(config.bypass_audio) : Boolean(current.bypass_audio)),
+      bypass_notifications: isProduction ? false : (config.bypass_notifications !== undefined ? Boolean(config.bypass_notifications) : Boolean(current.bypass_notifications)),
+      bypass_fullscreen: isProduction ? false : (config.bypass_fullscreen !== undefined ? Boolean(config.bypass_fullscreen) : Boolean(current.bypass_fullscreen)),
+      bypass_cookies_check: isProduction ? false : (config.bypass_cookies_check !== undefined ? Boolean(config.bypass_cookies_check) : Boolean(current.bypass_cookies_check)),
+      bypass_google_sso: isProduction ? false : (config.bypass_google_sso !== undefined ? Boolean(config.bypass_google_sso) : defaultSso),
+      signature: generateModeSignature(requestedMode),
       updated_at: new Date().toISOString(),
     };
+
     _cache.appModeConfig = updated;
     try { localStorage.setItem('examguard_app_mode', JSON.stringify(updated)); } catch {}
     dbService.saveAppModeConfig(updated).catch(() => {});
-    return { success: true, config: updated };
+
+    if (typeof window !== 'undefined') {
+      try {
+        window.dispatchEvent(new CustomEvent('examguard_storage_updated', { detail: { event: 'app_mode_updated', config: updated } }));
+        window.dispatchEvent(new CustomEvent('examguard_db_updated', { detail: { event: 'app_mode_updated', config: updated } }));
+      } catch {}
+    }
+
+    return {
+      ...updated,
+      success: true,
+      config: updated,
+    };
   },
 
   // ── System Error Logs ─────────────────────────────────────────────────────
@@ -1332,18 +1483,22 @@ export const storageService = {
       return { success: false, message: 'Akun Anda belum diverifikasi panitia ujian.' };
     }
 
+    const isLockDevice = inst?.lock_device_enabled !== false;
     const currentDev = getOrCreateDeviceId();
-    if (found.role === 'student' && found.active_device_id && found.active_device_id !== currentDev) {
+
+    if (isLockDevice && found.role === 'student' && found.active_device_id && found.active_device_id !== currentDev) {
       return {
         success: false,
-        message: `Akun terkunci di perangkat lain (${found.active_device_id}). Hubungi pengawas untuk Reset Login Perangkat.`,
+        message: `Akun terkunci di perangkat lain (${found.active_device_id}). Sesuai kebijakan sekolah, akun Anda terikat pada 1 perangkat. Hubungi Pengawas untuk Reset Kunci Perangkat jika Anda berganti perangkat.`,
       };
     }
 
-    // Kunci ke perangkat ini jika peserta
-    if (found.role === 'student' && !found.active_device_id) {
-      found.active_device_id = currentDev;
-      this.saveUser(found);
+    // Ikat ke perangkat ini jika peserta
+    if (found.role === 'student') {
+      if (found.active_device_id !== currentDev) {
+        found.active_device_id = currentDev;
+        this.saveUser(found);
+      }
     }
 
     this.setCurrentUser(found);

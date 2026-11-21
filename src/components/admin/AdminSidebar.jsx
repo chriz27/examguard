@@ -111,13 +111,13 @@ export default function AdminSidebar({
                 src={institutionLogo}
                 alt="Logo Instansi"
                 className="w-9 h-9 rounded-xl object-contain bg-white border border-zinc-200/80 p-0.5 shadow-2xs shrink-0 cursor-pointer"
-                title={institutionName || 'ExamGuard'}
+                title={institutionName || 'ExampGuard v1.0'}
                 onClick={onToggleCollapse}
               />
             ) : (
               <div
                 className="w-9 h-9 rounded-xl bg-zinc-900 text-white flex items-center justify-center shadow-xs shrink-0 cursor-pointer"
-                title="ExamGuard Proctoring"
+                title="ExampGuard v1.0 Proctoring"
                 onClick={onToggleCollapse}
               >
                 <Shield className="w-4 h-4 text-zinc-100" />
@@ -149,10 +149,10 @@ export default function AdminSidebar({
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
                   <span className="font-semibold text-zinc-900 tracking-tight text-base truncate">
-                    ExamGuard
+                    ExampGuard
                   </span>
                   <span className="text-[10px] uppercase font-mono font-medium px-1.5 py-0.5 rounded bg-zinc-100 text-zinc-600 border border-zinc-200 shrink-0">
-                    cPanel
+                    v1.0
                   </span>
                 </div>
                 <p className="text-xs text-zinc-600 font-medium truncate max-w-[140px]" title={institutionName}>

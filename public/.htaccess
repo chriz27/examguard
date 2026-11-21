@@ -1,45 +1,80 @@
+# ==============================================================================
+# ExamGuard Enterprise Apache Web Server Configuration (.htaccess)
+# Tim Pengembang : Fandi dari Jawa tech
+# Versi          : 1.0 (Production Release)
+# ==============================================================================
+
+# 1. Nonaktifkan Directory Browsing (Mencegah eksplorasi struktur file oleh siswa)
+Options -Indexes
+
+# 2. Blokir Akses Langsung ke Berkas Sensitif & Database
+<FilesMatch "\.(db|sqlite|sqlite3|json|wal|shm|sql|env|log|md|lock|git|yml|yaml|cjs)$">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+  </IfModule>
+</FilesMatch>
+
+# Cegah akses ke folder rahasia/sistem
 <IfModule mod_rewrite.c>
   RewriteEngine On
   RewriteBase /
 
-  # 1. Force HTTPS (Wajib untuk Geolocation, Kamera, Mikrofon, dan Secure Cookies)
+  # Blokir akses ke folder .git atau server/
+  RewriteRule ^(\.git|server|node_modules) - [F,L]
+
+  # 3. Force HTTPS (Wajib untuk Akurasi Geolocation GPS, Kamera, Mikrofon & Keamanan Data)
   RewriteCond %{HTTPS} !=on
+  RewriteCond %{HTTP:X-Forwarded-Proto} !https
   RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
 
-  # 2. SPA Routing Fallback ke index.html (Mencegah error 404 saat refresh di cPanel)
+  # 4. Routing REST API ke PHP SQLite Bridge (api/index.php)
+  RewriteRule ^api/db/(.*)$ api/index.php?endpoint=$1 [QSA,L]
+  RewriteRule ^api/(.*)$ api/index.php?endpoint=$1 [QSA,L]
+
+  # 5. SPA Routing Fallback ke index.html (Mencegah 404 saat refresh di cPanel / Subdomain)
   RewriteCond %{REQUEST_FILENAME} !-f
   RewriteCond %{REQUEST_FILENAME} !-d
   RewriteRule ^ index.html [L]
 </IfModule>
 
-# 3. Header Keamanan & Permissions-Policy
+# 6. Enterprise HTTP Security Headers & Permissions-Policy
 <IfModule mod_headers.c>
-  # Izinkan Geolocation, Kamera, Mikrofon, Fullscreen untuk domain sendiri
+  # Izinkan Geolocation GPS, Kamera, Mikrofon, Fullscreen, dan Clipboard untuk domain sendiri
   Header always set Permissions-Policy "geolocation=(self), camera=(self), microphone=(self), fullscreen=(self), clipboard-read=(self), clipboard-write=(self)"
   
-  # Mencegah MIME sniffing
-  Header set X-Content-Type-Options "nosniff"
+  # Mencegah MIME sniffing exploit
+  Header always set X-Content-Type-Options "nosniff"
   
-  # Proteksi clickjacking untuk iframe umum (namun iframe internal tetap jalan)
-  Header set X-Frame-Options "SAMEORIGIN"
+  # Proteksi clickjacking (tetap mengizinkan iframe internal & Google Forms)
+  Header always set X-Frame-Options "SAMEORIGIN"
   
-  # Mencegah XSS attack pada browser lama
-  Header set X-XSS-Protection "1; mode=block"
+  # Mencegah Cross-Site Scripting (XSS)
+  Header always set X-XSS-Protection "1; mode=block"
+  
+  # Referrer Policy aman
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
 
-  # Cache-Control untuk index.html agar perubahan rilis langsung dideteksi siswa
+  # HSTS (Strict-Transport-Security) untuk koneksi terenkripsi
+  Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains" env=HTTPS
+
+  # Cache-Control: index.html selalu dicek ke server (agar update versi langsung diterima siswa)
   <FilesMatch "index\.html">
     Header set Cache-Control "no-cache, no-store, must-revalidate"
     Header set Pragma "no-cache"
     Header set Expires 0
   </FilesMatch>
 
-  # Cache jangka panjang untuk aset ter-hash
-  <FilesMatch "\.(css|js|woff2|woff|ttf|png|jpg|jpeg|svg|ico)$">
+  # Cache jangka panjang untuk file statis terkompilasi (assets vite)
+  <FilesMatch "\.(css|js|woff2|woff|ttf|png|jpg|jpeg|svg|ico|webp)$">
     Header set Cache-Control "max-age=31536000, public, immutable"
   </FilesMatch>
 </IfModule>
 
-# 4. Gzip & Brotli Compression untuk performa cepat di hosting cPanel
+# 7. Gzip & Brotli Compression untuk Akses Cepat dan Ringan
 <IfModule mod_deflate.c>
   AddOutputFilterByType DEFLATE text/plain
   AddOutputFilterByType DEFLATE text/html
@@ -51,5 +86,5 @@
   AddOutputFilterByType DEFLATE application/javascript
   AddOutputFilterByType DEFLATE application/x-javascript
   AddOutputFilterByType DEFLATE application/json
+  AddOutputFilterByType DEFLATE image/svg+xml
 </IfModule>
-

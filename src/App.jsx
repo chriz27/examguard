@@ -55,6 +55,21 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    // Keluar dari mode Fullscreen peramban saat logout
+    try {
+      if (document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement) {
+        if (document.exitFullscreen) {
+          document.exitFullscreen().catch(() => {});
+        } else if (document.webkitExitFullscreen) {
+          document.webkitExitFullscreen().catch(() => {});
+        } else if (document.mozCancelFullScreen) {
+          document.mozCancelFullScreen().catch(() => {});
+        } else if (document.msExitFullscreen) {
+          document.msExitFullscreen().catch(() => {});
+        }
+      }
+    } catch {}
+
     storageService.clearCurrentUser();
     setCurrentUser(null);
   };

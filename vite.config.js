@@ -201,6 +201,15 @@ function examGuardSQLitePlugin() {
         return sendJson(res, result.success ? 200 : 400, result);
       }
 
+      // ── /api/db/users/by-email/:email ────────────────────────────
+      const emailMatch = url.match(/^\/api\/db\/users\/by-email\/(.+)$/);
+      if (emailMatch && method === 'GET') {
+        const email = decodeURIComponent(emailMatch[1]).trim().toLowerCase();
+        const user = dbApi.getUserByEmail(email);
+        if (!user) return sendJson(res, 404, { error: 'Peserta dengan email tersebut tidak ditemukan di database.' });
+        return sendJson(res, 200, user);
+      }
+
       // /api/db/users/:id
       const userMatch = url.match(/^\/api\/db\/users\/([^/]+)(\/.*)?$/);
       if (userMatch) {
@@ -375,6 +384,10 @@ function examGuardSQLitePlugin() {
           }
           if (sub === '/ping') {
             const a = dbApi.updateAttemptPing(body.attemptId, body.latencyMs);
+            return sendJson(res, 200, { success: true, attempt: a });
+          }
+          if (sub === '/heartbeat') {
+            const a = dbApi.updateAttemptHeartbeat(studentId, examId, body.timeSpentSeconds, body.latencyMs);
             return sendJson(res, 200, { success: true, attempt: a });
           }
         }
@@ -568,6 +581,7 @@ export default defineConfig(({ command }) => ({
     port: 5173,
     cors: true,
     strictPort: true,
+    allowedHosts: true,
     hmr: {
       clientPort: 5173,
     },
@@ -579,6 +593,7 @@ export default defineConfig(({ command }) => ({
     host: '0.0.0.0',
     port: 5173,
     cors: true,
+    allowedHosts: true,
   },
 }));
 

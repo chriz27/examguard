@@ -78,6 +78,10 @@ import {
   Crosshair,
   ChevronDown,
   ChevronUp,
+  GraduationCap,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
 } from 'lucide-react';
 import { storageService, cleanNomorUjian, convertGoogleFormUrl, subscribeSync, generateStudentLoginToken } from '../../services/storageService';
 import StudentQrCardModal from '../../components/admin/StudentQrCardModal';
@@ -578,6 +582,15 @@ export default function AdminDashboard({ currentUser, onLogout }) {
       variant: 'danger',
       icon: LogOut,
       onConfirm: () => {
+        try {
+          if (document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement) {
+            if (document.exitFullscreen) {
+              document.exitFullscreen().catch(() => {});
+            } else if (document.webkitExitFullscreen) {
+              document.webkitExitFullscreen().catch(() => {});
+            }
+          }
+        } catch {}
         if (onLogout) onLogout();
       },
     });
@@ -675,6 +688,52 @@ export default function AdminDashboard({ currentUser, onLogout }) {
   const [proctorStatusFilter, setProctorStatusFilter] = useState('ALL'); // 'ALL' | 'LOCKED' | 'IN_PROGRESS' | 'ONLINE' | 'COMPLETED'
   const [examSubTab, setExamSubTab] = useState('active'); // 'active' | 'bank'
   const [selectedSessionGroup, setSelectedSessionGroup] = useState('ALL');
+  const [examSortField, setExamSortField] = useState('start_time'); // Default: urut berdasarkan tanggal mulai
+  const [examSortOrder, setExamSortOrder] = useState('asc'); // 'asc' | 'desc'
+
+  const handleExamSort = (field) => {
+    if (examSortField === field) {
+      setExamSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setExamSortField(field);
+      setExamSortOrder('asc');
+    }
+  };
+
+  const renderSortIcon = (field) => {
+    if (examSortField !== field) {
+      return <ArrowUpDown className="w-3 h-3 text-zinc-400 group-hover:text-zinc-600 transition-colors shrink-0" />;
+    }
+    return examSortOrder === 'asc' ? (
+      <ArrowUp className="w-3 h-3 text-zinc-900 font-bold shrink-0" />
+    ) : (
+      <ArrowDown className="w-3 h-3 text-zinc-900 font-bold shrink-0" />
+    );
+  };
+
+  // State & Handler Sort untuk Tabel Basis Data Peserta
+  const [studentSortField, setStudentSortField] = useState('no'); // 'no' | 'nomor_ujian' | 'nama' | 'nisn' | 'kelas' | 'ruang' | 'active_device_id' | 'google_linked' | 'is_active' | 'is_verified'
+  const [studentSortOrder, setStudentSortOrder] = useState('asc'); // 'asc' | 'desc'
+
+  const handleStudentSort = (field) => {
+    if (studentSortField === field) {
+      setStudentSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setStudentSortField(field);
+      setStudentSortOrder('asc');
+    }
+  };
+
+  const renderStudentSortIcon = (field) => {
+    if (studentSortField !== field) {
+      return <ArrowUpDown className="w-3 h-3 text-zinc-400 group-hover:text-zinc-600 transition-colors shrink-0" />;
+    }
+    return studentSortOrder === 'asc' ? (
+      <ArrowUp className="w-3 h-3 text-zinc-900 font-bold shrink-0" />
+    ) : (
+      <ArrowDown className="w-3 h-3 text-zinc-900 font-bold shrink-0" />
+    );
+  };
 
   // State Mode Aplikasi (Produksi vs Demo/Simulasi/Pengembangan), Diagnostik & Histori Error
   const [appModeConfig, setAppModeConfig] = useState(() => storageService.getAppModeConfig());
@@ -844,8 +903,84 @@ export default function AdminDashboard({ currentUser, onLogout }) {
   const duplicateEditStudent = duplicateEditNisn;
   const hasEditDuplicate = Boolean(duplicateEditNisn || duplicateEditNoUjian || duplicateEditNis);
 
-  // URL Repositori GitHub Resmi ExamGuard
+  // URL Repositori GitHub Resmi ExampGuard
   const GITHUB_REPO_URL = 'https://github.com/chriz27/examguard';
+  const CURRENT_APP_VERSION = 'v1.0.0';
+
+  // State Pemeriksaan Pembaruan GitHub
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+  const [updateCheckResult, setUpdateCheckResult] = useState(null);
+
+  const handleCheckForUpdates = async () => {
+    setIsCheckingUpdate(true);
+    setUpdateCheckResult(null);
+    try {
+      // 1. Coba panggil GitHub Releases API
+      const res = await fetch('https://api.github.com/repos/chriz27/examguard/releases/latest', {
+        headers: { Accept: 'application/vnd.github.v3+json' },
+      });
+
+      if (res.ok) {
+        const release = await res.json();
+        const latestTag = release.tag_name || 'v1.0.0';
+        const cleanLatest = latestTag.replace(/^v/, '');
+        const cleanCurrent = CURRENT_APP_VERSION.replace(/^v/, '');
+        const isNewer = cleanLatest.localeCompare(cleanCurrent, undefined, { numeric: true, sensitivity: 'base' }) > 0;
+
+        setUpdateCheckResult({
+          status: isNewer ? 'update_available' : 'up_to_date',
+          latestVersion: latestTag,
+          currentVersion: CURRENT_APP_VERSION,
+          releaseName: release.name || latestTag,
+          releaseNotes: release.body || '',
+          publishedAt: release.published_at
+            ? new Date(release.published_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
+            : null,
+          downloadUrl: release.html_url || GITHUB_REPO_URL,
+          checkedAt: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        });
+      } else if (res.status === 404) {
+        // Belum ada release resmi di GitHub, coba ambil data commit terbaru
+        let latestCommitDate = null;
+        let commitSha = null;
+        try {
+          const commitRes = await fetch('https://api.github.com/repos/chriz27/examguard/commits?per_page=1');
+          if (commitRes.ok) {
+            const commits = await commitRes.json();
+            if (commits && commits[0]) {
+              latestCommitDate = commits[0].commit?.committer?.date;
+              commitSha = commits[0].sha?.substring(0, 7);
+            }
+          }
+        } catch {}
+
+        setUpdateCheckResult({
+          status: 'up_to_date',
+          latestVersion: CURRENT_APP_VERSION,
+          currentVersion: CURRENT_APP_VERSION,
+          releaseName: 'ExampGuard v1.0 Production Release',
+          releaseNotes: 'Sistem Anda saat ini menggunakan versi produksi stabil (v1.0.0). Terhubung aktif ke repositori GitHub resmi.',
+          commitSha,
+          publishedAt: latestCommitDate
+            ? new Date(latestCommitDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
+            : null,
+          downloadUrl: GITHUB_REPO_URL,
+          checkedAt: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        });
+      } else {
+        throw new Error(`GitHub API merespons status ${res.status}`);
+      }
+    } catch (err) {
+      setUpdateCheckResult({
+        status: 'error',
+        message: err.message || 'Tidak dapat terhubung ke server GitHub. Periksa koneksi internet server.',
+        downloadUrl: GITHUB_REPO_URL,
+        checkedAt: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      });
+    } finally {
+      setIsCheckingUpdate(false);
+    }
+  };
 
   // State Backup & Restore Sistem
   const [backupUseDefaultKey, setBackupUseDefaultKey] = useState(true);
@@ -1024,6 +1159,28 @@ export default function AdminDashboard({ currentUser, onLogout }) {
   const [proctorActiveExamSearch, setProctorActiveExamSearch] = useState('');
   const [proctorActiveExamGroupFilter, setProctorActiveExamGroupFilter] = useState('ALL');
   const [proctorActiveExamGradeFilter, setProctorActiveExamGradeFilter] = useState('ALL');
+  const [proctorActiveExamSortField, setProctorActiveExamSortField] = useState('start_time'); // 'no' | 'session_group' | 'subject' | 'title' | 'grade_level' | 'start_time'
+  const [proctorActiveExamSortOrder, setProctorActiveExamSortOrder] = useState('asc'); // 'asc' | 'desc'
+
+  const handleProctorActiveExamSort = (field) => {
+    if (proctorActiveExamSortField === field) {
+      setProctorActiveExamSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setProctorActiveExamSortField(field);
+      setProctorActiveExamSortOrder('asc');
+    }
+  };
+
+  const renderProctorActiveExamSortIcon = (field) => {
+    if (proctorActiveExamSortField !== field) {
+      return <ArrowUpDown className="w-3 h-3 text-zinc-400 group-hover:text-zinc-600 transition-colors shrink-0" />;
+    }
+    return proctorActiveExamSortOrder === 'asc' ? (
+      <ArrowUp className="w-3 h-3 text-zinc-900 font-bold shrink-0" />
+    ) : (
+      <ArrowDown className="w-3 h-3 text-zinc-900 font-bold shrink-0" />
+    );
+  };
 
   // Filter & Pencarian Khusus Card Pantau Live (Card 2)
   const [monitorSearch, setMonitorSearch] = useState('');
@@ -1044,9 +1201,9 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     });
   }, [exams]);
 
-  // Filter pencarian & kategori pada tabel Daftar Mapel Aktif
+  // Filter pencarian & kategori pada tabel Daftar Mapel Aktif beserta sorting dinamis
   const filteredActiveExamsList = React.useMemo(() => {
-    return activeExamsList.filter((e) => {
+    const list = activeExamsList.filter((e) => {
       if (proctorActiveExamGroupFilter !== 'ALL' && e.session_group !== proctorActiveExamGroupFilter) {
         return false;
       }
@@ -1062,7 +1219,38 @@ export default function AdminDashboard({ currentUser, onLogout }) {
         (e.exam_token && e.exam_token.toLowerCase().includes(q))
       );
     });
-  }, [activeExamsList, proctorActiveExamGroupFilter, proctorActiveExamGradeFilter, proctorActiveExamSearch]);
+
+    return list.sort((a, b) => {
+      let valA, valB;
+      switch (proctorActiveExamSortField) {
+        case 'session_group':
+          valA = (a.session_group || '').toLowerCase();
+          valB = (b.session_group || '').toLowerCase();
+          break;
+        case 'subject':
+          valA = (a.subject || '').toLowerCase();
+          valB = (b.subject || '').toLowerCase();
+          break;
+        case 'title':
+          valA = (a.title || '').toLowerCase();
+          valB = (b.title || '').toLowerCase();
+          break;
+        case 'grade_level':
+          valA = Number(a.grade_level || 0);
+          valB = Number(b.grade_level || 0);
+          break;
+        case 'start_time':
+        default:
+          valA = a.start_time ? new Date(a.start_time).getTime() : 0;
+          valB = b.start_time ? new Date(b.start_time).getTime() : 0;
+          break;
+      }
+
+      if (valA < valB) return proctorActiveExamSortOrder === 'asc' ? -1 : 1;
+      if (valA > valB) return proctorActiveExamSortOrder === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [activeExamsList, proctorActiveExamGroupFilter, proctorActiveExamGradeFilter, proctorActiveExamSearch, proctorActiveExamSortField, proctorActiveExamSortOrder]);
 
   // Sesi ujian aktif yang sedang dipilih di sub-view pengawas
   const currentProctorExam = React.useMemo(() => {
@@ -1173,6 +1361,9 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     setExams(storageService.getExamSessions());
     setAttempts(storageService.getAttempts());
     setAttendance(storageService.getAttendance());
+    storageService.syncAttemptsFromServer().then((fresh) => {
+      if (fresh && Array.isArray(fresh)) setAttempts(fresh);
+    }).catch(() => {});
   };
 
   // Handler Unduh Backup
@@ -1464,15 +1655,17 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     };
     storageService.updateInstitution(updated);
     setInstitution(updated);
-    showNotification('Konfigurasi instansi dan lokasi GPS berhasil disimpan.');
+    showNotification('Pengaturan konfigurasi instansi & kebijakan perangkat berhasil disimpan.');
   };
 
   // Handler Switch On/Off Ceklis Izin Browser Peserta (Pre-flight Permissions)
   const handleToggleBrowserPermission = (permKey, permLabel) => {
     const currentPerms = institution.browser_permissions || {};
+    const isSimMode = appModeConfig?.app_mode === 'simulation';
 
-    // Khusus google_sso: Wajib sudah login dan terverifikasi OAuth akun Google terlebih dahulu!
-    if (permKey === 'google_sso' && !currentPerms.google_sso) {
+    // Khusus google_sso: Di mode produksi wajib sudah login dan terverifikasi OAuth akun Google.
+    // Di mode simulasi/demo, bebas aktifkan/nonaktifkan karena disimulasikan!
+    if (permKey === 'google_sso' && !currentPerms.google_sso && !isSimMode) {
       const isOAuthVerified = Boolean(
         institution.google_oauth_verified &&
         institution.google_oauth_enabled &&
@@ -1480,7 +1673,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
       );
       if (!isOAuthVerified) {
         showNotification(
-          'Izin Login Akun Google (SSO) terkunci OFF. Anda wajib melakukan verifikasi OAuth dengan login ke akun Google terlebih dahulu pada card pengaturan Google OAuth.',
+          'Izin Login Akun Google (SSO) terkunci OFF di Mode Produksi. Anda wajib melakukan verifikasi OAuth dengan login ke akun Google terlebih dahulu pada card pengaturan Google OAuth, atau gunakan Mode Demo.',
           'error'
         );
         return;
@@ -1500,6 +1693,13 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     };
     setInstitution(updatedInst);
     storageService.updateInstitution(updatedInst);
+
+    // Di mode demo, sinkronkan juga dengan sakelar bypass_google_sso
+    if (isSimMode && permKey === 'google_sso') {
+      const updatedMode = storageService.saveAppModeConfig({ bypass_google_sso: updatedVal }, currentUser);
+      setAppModeConfig(updatedMode?.config || updatedMode);
+    }
+
     refreshData();
     showNotification(
       `Izin "${permLabel}" diubah menjadi ${updatedVal ? 'Wajib Divalidasi (ON)' : 'Bebas / Non-Aktif (OFF)'}.`
@@ -1627,26 +1827,27 @@ export default function AdminDashboard({ currentUser, onLogout }) {
 
   const handleResetGoogleOAuth = () => {
     openConfirm({
-      title: 'Reset & Nonaktifkan Google OAuth?',
+      title: 'Nonaktifkan Google OAuth SSO?',
       message: (
         <div className="space-y-2">
           <p>
-            Apakah Anda yakin ingin <strong>mengosongkan settingan dan menonaktifkan Google OAuth 2.0</strong>?
+            Apakah Anda yakin ingin <strong>menonaktifkan integrasi Google OAuth 2.0 (SSO)</strong>?
           </p>
           <p className="text-[11px] text-zinc-500 bg-amber-50 border border-amber-200 p-2.5 rounded-xl text-amber-900">
-            Kredensial Client ID & verifikasi akun Google akan dikosongkan. Status SSO otomatis beralih ke <strong>OFF</strong>, izin browser SSO dimatikan, dan tombol Google SSO disembunyikan di halaman login peserta.
+            Kredensial <strong>Client ID & Client Secret akan tetap tersimpan</strong> di database dan tidak akan dikosongkan. Status SSO beralih ke <strong>OFF</strong>, dan izin login Google di portal peserta dinonaktifkan.
           </p>
         </div>
       ),
-      confirmText: 'Ya, Reset (Kosongkan)',
+      confirmText: 'Ya, Nonaktifkan (Simpan Kredensial)',
       cancelText: 'Batal',
       variant: 'warning',
       icon: Unlink,
       onConfirm: () => {
         const updated = {
           ...institution,
-          google_client_id: '',
-          google_client_secret: '',
+          // JANGAN KOSONGKAN Client ID & Secret - simpan selalu agar tidak hilang!
+          google_client_id: institution.google_client_id || '',
+          google_client_secret: institution.google_client_secret || '',
           google_oauth_enabled: false,
           google_oauth_verified: false,
           google_oauth_verified_email: null,
@@ -1660,7 +1861,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
         setInstitution(updated);
         storageService.updateInstitution(updated);
         refreshData();
-        showNotification('Pengaturan Google OAuth telah dikosongkan dan dinonaktifkan (OFF).');
+        showNotification('Google OAuth telah dinonaktifkan (OFF). Kredensial Client ID & Secret tetap tersimpan.');
       },
     });
   };
@@ -1668,12 +1869,28 @@ export default function AdminDashboard({ currentUser, onLogout }) {
   const handleToggleGoogleOAuth = () => {
     const isVerified = Boolean(institution.google_oauth_verified && institution.google_oauth_enabled);
     if (isVerified) {
-      handleResetGoogleOAuth();
+      // Langsung nonaktifkan SSO tanpa mengosongkan Client ID & Secret
+      const updated = {
+        ...institution,
+        // JANGAN KOSONGKAN Client ID & Secret - simpan selalu agar tidak hilang!
+        google_client_id: institution.google_client_id || '',
+        google_client_secret: institution.google_client_secret || '',
+        google_oauth_enabled: false,
+        google_oauth_verified: false,
+        auth_method: institution.auth_method === 'SSO_ONLY' ? 'CREDENTIALS_ONLY' : (institution.auth_method || 'CREDENTIALS_ONLY'),
+        browser_permissions: {
+          ...(institution.browser_permissions || {}),
+          google_sso: false,
+        },
+      };
+      setInstitution(updated);
+      storageService.updateInstitution(updated);
+      refreshData();
+      showNotification('Google OAuth SSO dinonaktifkan (OFF). Kredensial Client ID & Secret tetap tersimpan.');
     } else {
       if (!institution.google_client_id?.trim()) {
         showNotification('Google Client ID belum diisi. Masukkan Client ID terlebih dahulu.', 'error');
       } else {
-        showNotification('Status SSO tidak dapat diaktifkan secara manual. Anda WAJIB login ke akun Google terlebih dahulu.', 'info');
         handleTestGoogleOAuth();
       }
     }
@@ -3217,12 +3434,30 @@ export default function AdminDashboard({ currentUser, onLogout }) {
   // ========================================================
 
   const handleToggleAppMode = (mode) => {
-    const updated = storageService.saveAppModeConfig({ app_mode: mode }, currentUser);
-    setAppModeConfig(updated);
+    const payload = { app_mode: mode };
+    if (mode === 'simulation') {
+      // Default aktif di mode simulasi/demo: GPS dan Google SSO selalu di-bypass
+      payload.bypass_gps = true;
+      payload.bypass_google_sso = true;
+
+      // Sinkronkan ceklis izin browser peserta agar google_sso aktif di mode simulasi
+      const updatedInst = {
+        ...institution,
+        browser_permissions: {
+          ...(institution.browser_permissions || {}),
+          google_sso: true,
+        },
+      };
+      setInstitution(updatedInst);
+      storageService.updateInstitution(updatedInst);
+    }
+    const res = storageService.saveAppModeConfig(payload, currentUser);
+    const newConfig = res?.config || res;
+    setAppModeConfig(newConfig);
     showNotification(
       mode === 'production'
         ? 'Mode Produksi Diaktifkan: Seluruh proteksi ujian ketat 100% tanpa bypass.'
-        : 'Mode Demo / Simulasi Diaktifkan: Bypass GPS & sensor lokal tersedia.',
+        : 'Mode Demo / Simulasi Diaktifkan: GPS & Google SSO otomatis di-bypass dan izin tersinkronisasi.',
       mode === 'production' ? 'success' : 'info'
     );
   };
@@ -3232,9 +3467,24 @@ export default function AdminDashboard({ currentUser, onLogout }) {
       showNotification('Bypass tidak dapat diaktifkan saat Mode Produksi Resmi aktif.', 'error');
       return;
     }
-    const nextVal = !appModeConfig?.[key];
-    const updated = storageService.saveAppModeConfig({ [key]: nextVal }, currentUser);
-    setAppModeConfig(updated);
+    const nextVal = !Boolean(appModeConfig?.[key]);
+    const res = storageService.saveAppModeConfig({ [key]: nextVal }, currentUser);
+    const newConfig = res?.config || res;
+    setAppModeConfig(newConfig);
+
+    // Jika yang di-toggle adalah bypass_google_sso, sinkronkan langsung ke ceklis izin browser
+    if (key === 'bypass_google_sso') {
+      const updatedInst = {
+        ...institution,
+        browser_permissions: {
+          ...(institution.browser_permissions || {}),
+          google_sso: nextVal,
+        },
+      };
+      setInstitution(updatedInst);
+      storageService.updateInstitution(updatedInst);
+    }
+
     showNotification(`${key}: ${nextVal ? 'Bypass Diaktifkan' : 'Bypass Dinonaktifkan'}`, 'info');
   };
 
@@ -3591,41 +3841,133 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
     showNotification('Template CSV 10 kolom berhasil diunduh.');
   };
 
-  // Filter list data
-  const filteredUsers = users.filter((u) => {
-    const q = userSearch.toLowerCase();
-    return (
-      u.role === 'student' &&
-      (u.nama.toLowerCase().includes(q) ||
-        u.nisn.toLowerCase().includes(q) ||
-        (u.kelas && u.kelas.toLowerCase().includes(q)))
-    );
-  });
+  // Filter list data peserta beserta sorting dinamis di setiap kolom
+  const filteredUsers = React.useMemo(() => {
+    const list = users.filter((u) => {
+      const q = (userSearch || '').toLowerCase();
+      return (
+        u.role === 'student' &&
+        ((u.nama && u.nama.toLowerCase().includes(q)) ||
+          (u.nisn && u.nisn.toLowerCase().includes(q)) ||
+          (u.nomor_ujian && u.nomor_ujian.toLowerCase().includes(q)) ||
+          (u.kelas && u.kelas.toLowerCase().includes(q)) ||
+          (u.ruang && u.ruang.toLowerCase().includes(q)))
+      );
+    });
+
+    return list.sort((a, b) => {
+      let valA, valB;
+      switch (studentSortField) {
+        case 'nomor_ujian':
+          valA = (a.nomor_ujian || '').toLowerCase();
+          valB = (b.nomor_ujian || '').toLowerCase();
+          break;
+        case 'nama':
+          valA = (a.nama || '').toLowerCase();
+          valB = (b.nama || '').toLowerCase();
+          break;
+        case 'nisn':
+          valA = (a.nisn || '').toLowerCase();
+          valB = (b.nisn || '').toLowerCase();
+          break;
+        case 'kelas':
+          valA = (a.kelas || a.rombel || '').toLowerCase();
+          valB = (b.kelas || b.rombel || '').toLowerCase();
+          break;
+        case 'ruang':
+          valA = (a.ruang || '').toLowerCase();
+          valB = (b.ruang || '').toLowerCase();
+          break;
+        case 'active_device_id':
+          valA = (a.active_device_id || '').toLowerCase();
+          valB = (b.active_device_id || '').toLowerCase();
+          break;
+        case 'google_linked':
+          valA = a.google_linked ? 1 : 0;
+          valB = b.google_linked ? 1 : 0;
+          break;
+        case 'is_active':
+          valA = a.is_active === false ? 0 : 1;
+          valB = b.is_active === false ? 0 : 1;
+          break;
+        case 'is_verified':
+          valA = a.is_verified === false ? 0 : 1;
+          valB = b.is_verified === false ? 0 : 1;
+          break;
+        case 'no':
+        default:
+          valA = a.id || 0;
+          valB = b.id || 0;
+          break;
+      }
+
+      if (valA < valB) return studentSortOrder === 'asc' ? -1 : 1;
+      if (valA > valB) return studentSortOrder === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [users, userSearch, studentSortField, studentSortOrder]);
 
   // Hitung jumlah sesi aktif vs bank soal
   const activeExamsCount = exams.filter((e) => !e.is_archived).length;
   const bankExamsCount = exams.filter((e) => e.is_archived).length;
 
-  const filteredExams = exams.filter((e) => {
-    // 1. Filter sub-tab (Sesi Ujian Aktif vs Bank Soal)
-    const isArchived = Boolean(e.is_archived);
-    if (examSubTab === 'active' && isArchived) return false;
-    if (examSubTab === 'bank' && !isArchived) return false;
+  const filteredExams = exams
+    .filter((e) => {
+      // 1. Filter sub-tab (Sesi Ujian Aktif vs Bank Soal)
+      const isArchived = Boolean(e.is_archived);
+      if (examSubTab === 'active' && isArchived) return false;
+      if (examSubTab === 'bank' && !isArchived) return false;
 
-    // 2. Filter kelompok sesi ujian
-    if (selectedSessionGroup !== 'ALL' && e.session_group !== selectedSessionGroup) {
-      return false;
-    }
+      // 2. Filter kelompok sesi ujian
+      if (selectedSessionGroup !== 'ALL' && e.session_group !== selectedSessionGroup) {
+        return false;
+      }
 
-    // 3. Filter pencarian
-    const q = examSearch.toLowerCase();
-    return (
-      (e.title && e.title.toLowerCase().includes(q)) ||
-      (e.subject && e.subject.toLowerCase().includes(q)) ||
-      (e.session_group && e.session_group.toLowerCase().includes(q)) ||
-      (e.exam_token && e.exam_token.toLowerCase().includes(q))
-    );
-  });
+      // 3. Filter pencarian
+      const q = examSearch.toLowerCase();
+      return (
+        (e.title && e.title.toLowerCase().includes(q)) ||
+        (e.subject && e.subject.toLowerCase().includes(q)) ||
+        (e.session_group && e.session_group.toLowerCase().includes(q)) ||
+        (e.exam_token && e.exam_token.toLowerCase().includes(q))
+      );
+    })
+    .sort((a, b) => {
+      let valA = '';
+      let valB = '';
+
+      switch (examSortField) {
+        case 'grade_level':
+          valA = Number(a.grade_level ?? 0);
+          valB = Number(b.grade_level ?? 0);
+          break;
+        case 'subject_title':
+          valA = `${a.subject || ''} ${a.title || ''}`.toLowerCase();
+          valB = `${b.subject || ''} ${b.title || ''}`.toLowerCase();
+          break;
+        case 'session_group':
+          valA = (a.session_group || '').toLowerCase();
+          valB = (b.session_group || '').toLowerCase();
+          break;
+        case 'duration_minutes':
+          valA = Number(a.duration_minutes ?? 0);
+          valB = Number(b.duration_minutes ?? 0);
+          break;
+        case 'start_time':
+        default:
+          valA = a.start_time ? new Date(a.start_time).getTime() : 0;
+          valB = b.start_time ? new Date(b.start_time).getTime() : 0;
+          break;
+        case 'is_active':
+          valA = a.is_active ? 1 : 0;
+          valB = b.is_active ? 1 : 0;
+          break;
+      }
+
+      if (valA < valB) return examSortOrder === 'asc' ? -1 : 1;
+      if (valA > valB) return examSortOrder === 'asc' ? 1 : -1;
+      return 0;
+    });
 
   // 1. Daftar Tingkat Kelas yang didukung institusi (misal Tingkat 10, 11, 12)
   const proctorGradeList = React.useMemo(() => {
@@ -3868,7 +4210,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                 </span>
               </div>
               <p className="text-xs text-zinc-500 truncate">
-                ExamGuard v1.0 &bull; {institution.name} {institution.npsn ? `(NPSN: ${institution.npsn})` : ''} &bull; Terhubung ke Mode Penyimpanan Terpusat cPanel
+                ExampGuard v1.0 &bull; {institution.name} {institution.npsn ? `(NPSN: ${institution.npsn})` : ''} &bull; Terhubung ke Mode Penyimpanan Terpusat cPanel
               </p>
             </div>
           </div>
@@ -4200,19 +4542,89 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                   <table className="w-full text-left text-xs">
                     <thead>
                       <tr className="bg-zinc-50/70 border-b border-zinc-200/80 text-zinc-500 font-medium">
-                        <th className="py-3.5 px-4">Mata Pelajaran & Judul Ujian</th>
-                        <th className="py-3.5 px-4">Kelompok Sesi</th>
-                        <th className="py-3.5 px-4">Token Mulai & Selesai</th>
-                        <th className="py-3.5 px-4">Durasi</th>
-                        <th className="py-3.5 px-4">{examSubTab === 'bank' ? 'Asal Jadwal' : 'Jadwal Sesi'}</th>
-                        <th className="py-3.5 px-4">Status</th>
-                        <th className="py-3.5 px-4 text-center">Aksi</th>
+                        {/* Kolom 1: Tingkatan (Paling Depan Tabel) */}
+                        <th
+                          onClick={() => handleExamSort('grade_level')}
+                          className="py-3.5 px-4 cursor-pointer hover:bg-zinc-100/70 transition-colors group select-none whitespace-nowrap"
+                          title="Klik untuk mengurutkan berdasarkan Tingkatan Kelas"
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <span>Tingkatan</span>
+                            {renderSortIcon('grade_level')}
+                          </div>
+                        </th>
+
+                        {/* Kolom 2: Mata Pelajaran & Judul Ujian */}
+                        <th
+                          onClick={() => handleExamSort('subject_title')}
+                          className="py-3.5 px-4 cursor-pointer hover:bg-zinc-100/70 transition-colors group select-none"
+                          title="Klik untuk mengurutkan berdasarkan Mata Pelajaran & Judul Ujian"
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <span>Mata Pelajaran & Judul Ujian</span>
+                            {renderSortIcon('subject_title')}
+                          </div>
+                        </th>
+
+                        {/* Kolom 3: Kelompok Sesi */}
+                        <th
+                          onClick={() => handleExamSort('session_group')}
+                          className="py-3.5 px-4 cursor-pointer hover:bg-zinc-100/70 transition-colors group select-none whitespace-nowrap"
+                          title="Klik untuk mengurutkan berdasarkan Kelompok Sesi"
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <span>Kelompok Sesi</span>
+                            {renderSortIcon('session_group')}
+                          </div>
+                        </th>
+
+                        {/* Kolom 4: Token Mulai & Selesai */}
+                        <th className="py-3.5 px-4 whitespace-nowrap">Token Mulai & Selesai</th>
+
+                        {/* Kolom 5: Durasi */}
+                        <th
+                          onClick={() => handleExamSort('duration_minutes')}
+                          className="py-3.5 px-4 cursor-pointer hover:bg-zinc-100/70 transition-colors group select-none whitespace-nowrap"
+                          title="Klik untuk mengurutkan berdasarkan Durasi Pengerjaan"
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <span>Durasi</span>
+                            {renderSortIcon('duration_minutes')}
+                          </div>
+                        </th>
+
+                        {/* Kolom 6: Jadwal Sesi (Tanggal Mulai Default) */}
+                        <th
+                          onClick={() => handleExamSort('start_time')}
+                          className="py-3.5 px-4 cursor-pointer hover:bg-zinc-100/70 transition-colors group select-none whitespace-nowrap"
+                          title="Klik untuk mengurutkan berdasarkan Jadwal Sesi / Tanggal Mulai"
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <span>{examSubTab === 'bank' ? 'Asal Jadwal' : 'Jadwal Sesi'}</span>
+                            {renderSortIcon('start_time')}
+                          </div>
+                        </th>
+
+                        {/* Kolom 7: Status */}
+                        <th
+                          onClick={() => handleExamSort('is_active')}
+                          className="py-3.5 px-4 cursor-pointer hover:bg-zinc-100/70 transition-colors group select-none whitespace-nowrap"
+                          title="Klik untuk mengurutkan berdasarkan Status Publikasi"
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <span>Status</span>
+                            {renderSortIcon('is_active')}
+                          </div>
+                        </th>
+
+                        {/* Kolom 8: Aksi */}
+                        <th className="py-3.5 px-4 text-center whitespace-nowrap">Aksi</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-100">
                       {filteredExams.length === 0 ? (
                         <tr>
-                          <td colSpan="7" className="text-center py-12 text-zinc-400 text-xs">
+                          <td colSpan="8" className="text-center py-12 text-zinc-400 text-xs">
                             {examSubTab === 'bank'
                               ? 'Tidak ada soal yang diarsipkan di Bank Soal.'
                               : 'Tidak ada sesi ujian aktif yang cocok dengan filter.'}
@@ -4221,20 +4633,35 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                       ) : (
                         filteredExams.map((exam) => (
                           <tr key={exam.id} className="hover:bg-zinc-50/80 transition-colors">
+                            {/* Kolom 1: Tingkatan (Paling Depan Tabel) */}
+                            <td className="py-3.5 px-4 whitespace-nowrap">
+                              <span className="inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-lg bg-zinc-100 text-zinc-700 border border-zinc-200/90 shadow-2xs">
+                                <GraduationCap className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
+                                <span>{getGradeLabel(exam.grade_level)}</span>
+                              </span>
+                            </td>
+
+                            {/* Kolom 2: Mata Pelajaran & Judul Ujian */}
                             <td className="py-3.5 px-4">
-                              <div className="flex items-center gap-2 mb-1">
-                                <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-zinc-100 text-zinc-600 border border-zinc-200">
-                                  {getGradeLabel(exam.grade_level)}
-                                </span>
+                              {/* Mata Pelajaran (Tebal & Ikon) */}
+                              <div className="font-bold text-zinc-900 text-sm tracking-tight flex items-center gap-1.5">
+                                <BookOpen className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                <span>{exam.subject || exam.title || 'Mata Pelajaran Umum'}</span>
                               </div>
-                              <div className="font-semibold text-zinc-900 text-sm">{exam.title}</div>
+
+                              {/* Judul Ujian / Sesi Pelaksanaan */}
+                              <div className="text-xs font-medium text-zinc-500 mt-0.5 leading-snug">
+                                {exam.title && exam.title !== exam.subject ? exam.title : (exam.session_group || 'Sesi Ujian Sekolah')}
+                              </div>
+
+                              {/* Link Google Sheets Respon jika ada */}
                               {exam.respon_base_url && (
                                 <div className="mt-1">
                                   <a
                                     href={exam.respon_base_url}
                                     target="_blank"
                                     rel="noreferrer"
-                                    className="text-[10px] text-blue-600 hover:underline inline-flex items-center gap-1"
+                                    className="text-[10px] text-blue-600 hover:underline inline-flex items-center gap-1 font-medium"
                                   >
                                     <span>Google Sheets Respon</span>
                                     <ExternalLink className="w-2.5 h-2.5" />
@@ -4836,13 +5263,67 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                       <div className="overflow-x-auto">
                         <table className="w-full text-left text-xs">
                           <thead>
-                            <tr className="bg-zinc-50 border-b border-zinc-200 text-zinc-600 font-semibold">
-                              <th className="py-3 px-3 text-center w-12">No</th>
-                              <th className="py-3 px-3">Kelompok Ujian</th>
-                              <th className="py-3 px-3">Mata Pelajaran</th>
-                              <th className="py-3 px-3">Judul Sesi</th>
-                              <th className="py-3 px-3">Tingkat</th>
-                              <th className="py-3 px-3">Waktu (mulai-selesai)</th>
+                            <tr className="bg-zinc-50 border-b border-zinc-200 text-zinc-600 font-semibold select-none">
+                              <th
+                                className="py-3 px-3 text-center w-12 cursor-pointer group hover:text-zinc-900 transition-colors"
+                                onClick={() => handleProctorActiveExamSort('no')}
+                                title="Klik untuk mengurutkan berdasarkan Nomor"
+                              >
+                                <div className="inline-flex items-center justify-center gap-1">
+                                  <span>No</span>
+                                  {renderProctorActiveExamSortIcon('no')}
+                                </div>
+                              </th>
+                              <th
+                                className="py-3 px-3 cursor-pointer group hover:text-zinc-900 transition-colors"
+                                onClick={() => handleProctorActiveExamSort('session_group')}
+                                title="Klik untuk mengurutkan berdasarkan Kelompok Ujian"
+                              >
+                                <div className="inline-flex items-center gap-1.5">
+                                  <span>Kelompok Ujian</span>
+                                  {renderProctorActiveExamSortIcon('session_group')}
+                                </div>
+                              </th>
+                              <th
+                                className="py-3 px-3 cursor-pointer group hover:text-zinc-900 transition-colors"
+                                onClick={() => handleProctorActiveExamSort('subject')}
+                                title="Klik untuk mengurutkan berdasarkan Mata Pelajaran"
+                              >
+                                <div className="inline-flex items-center gap-1.5">
+                                  <span>Mata Pelajaran</span>
+                                  {renderProctorActiveExamSortIcon('subject')}
+                                </div>
+                              </th>
+                              <th
+                                className="py-3 px-3 cursor-pointer group hover:text-zinc-900 transition-colors"
+                                onClick={() => handleProctorActiveExamSort('title')}
+                                title="Klik untuk mengurutkan berdasarkan Judul Sesi"
+                              >
+                                <div className="inline-flex items-center gap-1.5">
+                                  <span>Judul Sesi</span>
+                                  {renderProctorActiveExamSortIcon('title')}
+                                </div>
+                              </th>
+                              <th
+                                className="py-3 px-3 text-center cursor-pointer group hover:text-zinc-900 transition-colors"
+                                onClick={() => handleProctorActiveExamSort('grade_level')}
+                                title="Klik untuk mengurutkan berdasarkan Tingkat"
+                              >
+                                <div className="inline-flex items-center justify-center gap-1">
+                                  <span>Tingkat</span>
+                                  {renderProctorActiveExamSortIcon('grade_level')}
+                                </div>
+                              </th>
+                              <th
+                                className="py-3 px-3 cursor-pointer group hover:text-zinc-900 transition-colors"
+                                onClick={() => handleProctorActiveExamSort('start_time')}
+                                title="Klik untuk mengurutkan berdasarkan Waktu Ujian"
+                              >
+                                <div className="inline-flex items-center gap-1.5">
+                                  <span>Waktu (mulai-selesai)</span>
+                                  {renderProctorActiveExamSortIcon('start_time')}
+                                </div>
+                              </th>
                               <th className="py-3 px-2 text-center w-24">Pantau</th>
                               <th className="py-3 px-2 text-center w-24">Reset</th>
                               <th className="py-3 px-2 text-center w-24">Presensi</th>
@@ -5018,16 +5499,26 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                         )
                       : null;
 
-                    let status = 'belum'; // belum | mengerjakan | selesai | terkunci
+                    let status = 'belum'; // belum | mengerjakan | keluar | selesai | terkunci
                     if (attempt) {
                       if (attempt.status === 'COMPLETED') {
                         status = 'selesai';
                       } else if (attempt.status === 'LOCKED') {
                         status = 'terkunci';
-                      } else if (attempt.status === 'IN_PROGRESS') {
-                        status = 'mengerjakan';
                       } else if (attempt.status === 'RESET_BY_PROCTOR') {
                         status = 'belum';
+                      } else if (attempt.status === 'IN_PROGRESS') {
+                        // Periksa sinyal heartbeat peserta di laman ujian
+                        const lastSignalTime = attempt.last_ping_at
+                          ? new Date(attempt.last_ping_at).getTime()
+                          : (attempt.updated_at ? new Date(attempt.updated_at).getTime() : 0);
+                        const nowMs = currentLiveTime.getTime();
+                        const elapsedSec = (nowMs - lastSignalTime) / 1000;
+                        if (lastSignalTime > 0 && elapsedSec <= 12) {
+                          status = 'mengerjakan';
+                        } else {
+                          status = 'keluar';
+                        }
                       }
                     }
 
@@ -5048,9 +5539,10 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                     };
                   });
 
-                  // 4. Hitung statistik ringkas (Jumlah Peserta Mengerjakan dan Belum)
+                  // 4. Hitung statistik ringkas (Jumlah Peserta Mengerjakan, Keluar, dan Belum)
                   const totalCount = monitorRows.length;
                   const mengerjakanCount = monitorRows.filter((r) => r.status === 'mengerjakan').length;
+                  const keluarCount = monitorRows.filter((r) => r.status === 'keluar').length;
                   const belumCount = monitorRows.filter((r) => r.status === 'belum').length;
                   const selesaiCount = monitorRows.filter((r) => r.status === 'selesai').length;
                   const terkunciCount = monitorRows.filter((r) => r.status === 'terkunci').length;
@@ -5059,6 +5551,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                   const filteredRows = monitorRows.filter((row) => {
                     if (monitorStatusFilter !== 'ALL') {
                       if (monitorStatusFilter === 'mengerjakan' && row.status !== 'mengerjakan') return false;
+                      if (monitorStatusFilter === 'keluar' && row.status !== 'keluar') return false;
                       if (monitorStatusFilter === 'belum' && row.status !== 'belum') return false;
                       if (monitorStatusFilter === 'selesai' && row.status !== 'selesai') return false;
                       if (monitorStatusFilter === 'terkunci' && row.status !== 'terkunci') return false;
@@ -5431,6 +5924,21 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                               <span className="font-mono font-bold">{mengerjakanCount}</span>
                             </button>
 
+                            {/* Keluar / Terputus */}
+                            <button
+                              type="button"
+                              onClick={() => setMonitorStatusFilter('keluar')}
+                              className={`px-3 py-1 rounded-lg font-medium transition-all cursor-pointer flex items-center gap-1.5 ${
+                                monitorStatusFilter === 'keluar'
+                                  ? 'bg-rose-600 text-white shadow-2xs font-bold'
+                                  : 'bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200'
+                              }`}
+                            >
+                              <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping"></span>
+                              <span>Keluar / Terputus:</span>
+                              <span className="font-mono font-bold">{keluarCount}</span>
+                            </button>
+
                             {/* Belum Mengerjakan */}
                             <button
                               type="button"
@@ -5577,7 +6085,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                                         </span>
                                       </td>
 
-                                      {/* 6. Status (mengerjakan/belum/selesai) */}
+                                      {/* 6. Status (mengerjakan/keluar/belum/selesai/terkunci) */}
                                       <td className="py-3 px-3">
                                         {row.status === 'mengerjakan' && (
                                           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
@@ -5585,9 +6093,15 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                                             <span>Mengerjakan</span>
                                           </span>
                                         )}
+                                        {row.status === 'keluar' && (
+                                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-rose-50 text-rose-700 border border-rose-300">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping"></span>
+                                            <span>Keluar</span>
+                                          </span>
+                                        )}
                                         {row.status === 'terkunci' && (
-                                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-rose-50 text-rose-700 border border-rose-300 animate-pulse">
-                                            <ShieldAlert className="w-3.5 h-3.5 text-rose-600" />
+                                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-300 animate-pulse">
+                                            <ShieldAlert className="w-3.5 h-3.5 text-amber-600" />
                                             <span>Terkunci</span>
                                           </span>
                                         )}
@@ -7692,23 +8206,114 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs">
                     <thead>
-                      <tr className="bg-zinc-50/70 border-b border-zinc-200/80 text-zinc-500 font-medium">
-                        <th className="py-3.5 px-3 text-center w-12">No</th>
-                        <th className="py-3.5 px-3 w-32">No. Ujian</th>
-                        <th className="py-3.5 px-4">Nama Peserta</th>
-                        <th className="py-3.5 px-3">NISN & NIS</th>
-                        <th className="py-3.5 px-3">Kelas & Info</th>
-                        <th className="py-3.5 px-3">Kunci Perangkat</th>
-                        <th className="py-3.5 px-3 text-center">SSO Google</th>
-                        <th className="py-3.5 px-3 text-center">Status Akun</th>
-                        <th className="py-3.5 px-3 text-center">Verifikasi</th>
+                      <tr className="bg-zinc-50/70 border-b border-zinc-200/80 text-zinc-500 font-medium select-none">
+                        <th
+                          className="py-3.5 px-3 text-center w-12 cursor-pointer group hover:text-zinc-900 transition-colors"
+                          onClick={() => handleStudentSort('no')}
+                          title="Klik untuk mengurutkan berdasarkan Nomor"
+                        >
+                          <div className="inline-flex items-center justify-center gap-1">
+                            <span>No</span>
+                            {renderStudentSortIcon('no')}
+                          </div>
+                        </th>
+                        <th
+                          className="py-3.5 px-3 w-32 cursor-pointer group hover:text-zinc-900 transition-colors"
+                          onClick={() => handleStudentSort('nomor_ujian')}
+                          title="Klik untuk mengurutkan berdasarkan Nomor Ujian"
+                        >
+                          <div className="inline-flex items-center gap-1.5">
+                            <span>No. Ujian</span>
+                            {renderStudentSortIcon('nomor_ujian')}
+                          </div>
+                        </th>
+                        <th
+                          className="py-3.5 px-4 cursor-pointer group hover:text-zinc-900 transition-colors"
+                          onClick={() => handleStudentSort('nama')}
+                          title="Klik untuk mengurutkan berdasarkan Nama Peserta"
+                        >
+                          <div className="inline-flex items-center gap-1.5">
+                            <span>Nama Peserta</span>
+                            {renderStudentSortIcon('nama')}
+                          </div>
+                        </th>
+                        <th
+                          className="py-3.5 px-3 cursor-pointer group hover:text-zinc-900 transition-colors"
+                          onClick={() => handleStudentSort('nisn')}
+                          title="Klik untuk mengurutkan berdasarkan NISN & NIS"
+                        >
+                          <div className="inline-flex items-center gap-1.5">
+                            <span>NISN & NIS</span>
+                            {renderStudentSortIcon('nisn')}
+                          </div>
+                        </th>
+                        <th
+                          className="py-3.5 px-3 cursor-pointer group hover:text-zinc-900 transition-colors"
+                          onClick={() => handleStudentSort('kelas')}
+                          title="Klik untuk mengurutkan berdasarkan Rombel/Kelas"
+                        >
+                          <div className="inline-flex items-center gap-1.5">
+                            <span>Rombel</span>
+                            {renderStudentSortIcon('kelas')}
+                          </div>
+                        </th>
+                        <th
+                          className="py-3.5 px-3 cursor-pointer group hover:text-zinc-900 transition-colors"
+                          onClick={() => handleStudentSort('ruang')}
+                          title="Klik untuk mengurutkan berdasarkan Ruang Ujian"
+                        >
+                          <div className="inline-flex items-center gap-1.5">
+                            <span>Ruang</span>
+                            {renderStudentSortIcon('ruang')}
+                          </div>
+                        </th>
+                        <th
+                          className="py-3.5 px-3 cursor-pointer group hover:text-zinc-900 transition-colors"
+                          onClick={() => handleStudentSort('active_device_id')}
+                          title="Klik untuk mengurutkan berdasarkan Kunci Perangkat"
+                        >
+                          <div className="inline-flex items-center gap-1.5">
+                            <span>Kunci Perangkat</span>
+                            {renderStudentSortIcon('active_device_id')}
+                          </div>
+                        </th>
+                        <th
+                          className="py-3.5 px-3 text-center cursor-pointer group hover:text-zinc-900 transition-colors"
+                          onClick={() => handleStudentSort('google_linked')}
+                          title="Klik untuk mengurutkan berdasarkan Status SSO Google"
+                        >
+                          <div className="inline-flex items-center justify-center gap-1">
+                            <span>SSO Google</span>
+                            {renderStudentSortIcon('google_linked')}
+                          </div>
+                        </th>
+                        <th
+                          className="py-3.5 px-3 text-center cursor-pointer group hover:text-zinc-900 transition-colors"
+                          onClick={() => handleStudentSort('is_active')}
+                          title="Klik untuk mengurutkan berdasarkan Status Keaktifan Akun"
+                        >
+                          <div className="inline-flex items-center justify-center gap-1">
+                            <span>Status Akun</span>
+                            {renderStudentSortIcon('is_active')}
+                          </div>
+                        </th>
+                        <th
+                          className="py-3.5 px-3 text-center cursor-pointer group hover:text-zinc-900 transition-colors"
+                          onClick={() => handleStudentSort('is_verified')}
+                          title="Klik untuk mengurutkan berdasarkan Status Verifikasi"
+                        >
+                          <div className="inline-flex items-center justify-center gap-1">
+                            <span>Verifikasi</span>
+                            {renderStudentSortIcon('is_verified')}
+                          </div>
+                        </th>
                         <th className="py-3.5 px-3 text-center w-36">Aksi</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-100">
                       {filteredUsers.length === 0 ? (
                         <tr>
-                          <td colSpan="10" className="text-center py-12 text-zinc-400 text-xs">
+                          <td colSpan="11" className="text-center py-12 text-zinc-400 text-xs">
                             Tidak ada peserta yang ditemukan.
                           </td>
                         </tr>
@@ -7731,32 +8336,40 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                             <td className="py-3.5 px-4">
                               <div className="font-semibold text-zinc-900">{stu.nama}</div>
                               <div className="text-[11px] text-zinc-500 flex items-center gap-1.5 mt-0.5">
-                                <span className="font-medium text-zinc-700">JK: {stu.jenis_kelamin || 'L'}</span>
+                                <span
+                                  className={`font-bold ${stu.jenis_kelamin === 'P' ? 'text-pink-600' : 'text-blue-600'}`}
+                                  title={stu.jenis_kelamin === 'P' ? 'Perempuan' : 'Laki-laki'}
+                                >
+                                  {stu.jenis_kelamin === 'P' ? '♀' : '♂'}
+                                </span>
                                 <span>&bull;</span>
                                 <span className="text-zinc-500">{stu.agama || 'Islam'}</span>
                               </div>
-                            </td>
-
-                            {/* Kolom 3: NISN & NIS */}
-                            <td className="py-3.5 px-4 font-mono">
-                              <div className="font-medium text-zinc-800">NISN: {stu.nisn}</div>
-                              <div className="text-[11px] text-zinc-400">NIS: {stu.nis || '-'}</div>
-                            </td>
-
-                            {/* Kolom 4: Kelas, Tingkat & Ruang */}
-                            <td className="py-3.5 px-4">
-                              <div className="font-medium text-zinc-800">{stu.kelas}</div>
-                              <div className="text-[11px] text-zinc-500 flex items-center gap-1.5 mt-0.5">
-                                <span>{getGradeLabel(stu.tingkat)}</span>
-                                {stu.ruang && (
-                                  <>
-                                    <span>&bull;</span>
-                                    <span className="font-medium text-blue-700 bg-blue-50 px-1.5 py-0.2 rounded border border-blue-200 text-[10px]">
-                                      {stu.ruang}
-                                    </span>
-                                  </>
+                              <div className="text-[11px] truncate mt-0.5 font-mono">
+                                {stu.email ? (
+                                  <span className="text-zinc-600">{stu.email}</span>
+                                ) : (
+                                  <span className="text-zinc-400">-</span>
                                 )}
                               </div>
+                            </td>
+
+                            {/* Kolom 4: NISN & NIS */}
+                            <td className="py-3.5 px-3 font-mono">
+                              <div className="font-medium text-zinc-800">{stu.nisn}</div>
+                              <div className="text-[11px] text-zinc-400">{stu.nis || '-'}</div>
+                            </td>
+
+                            {/* Kolom 5: Rombel */}
+                            <td className="py-3.5 px-3 font-medium text-zinc-800">
+                              {stu.kelas || stu.rombel || '-'} ({getGradeLabel(stu.tingkat)})
+                            </td>
+
+                            {/* Kolom 6: Ruang */}
+                            <td className="py-3.5 px-3 font-mono text-zinc-700">
+                              <span className="px-2 py-0.5 rounded bg-zinc-100 border border-zinc-200 text-xs">
+                                {stu.ruang || '-'}
+                              </span>
                             </td>
 
                             {/* Kolom 5: Kunci Perangkat */}
@@ -8190,12 +8803,12 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                           </h3>
                           <span
                             className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase font-mono ${
-                              appModeConfig.app_mode === 'production'
+                              appModeConfig?.app_mode === 'production'
                                 ? 'bg-zinc-900 text-white'
                                 : 'bg-amber-100 text-amber-800 border border-amber-300'
                             }`}
                           >
-                            {appModeConfig.app_mode === 'production' ? 'Mode Produksi Resmi' : 'Mode Demo / Simulasi'}
+                            {appModeConfig?.app_mode === 'production' ? 'Mode Produksi Resmi' : 'Mode Demo / Simulasi'}
                           </span>
                         </div>
                         <p className="text-xs text-zinc-500">
@@ -8209,8 +8822,8 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                         type="button"
                         onClick={() => handleToggleAppMode('production')}
                         className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                          appModeConfig.app_mode === 'production'
-                            ? 'bg-white text-zinc-900 shadow-2xs'
+                          appModeConfig?.app_mode === 'production'
+                            ? 'bg-white text-zinc-900 shadow-xs border border-zinc-200'
                             : 'text-zinc-600 hover:text-zinc-900'
                         }`}
                       >
@@ -8221,8 +8834,8 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                         type="button"
                         onClick={() => handleToggleAppMode('simulation')}
                         className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                          appModeConfig.app_mode === 'simulation'
-                            ? 'bg-amber-500 text-white shadow-2xs'
+                          appModeConfig?.app_mode === 'simulation'
+                            ? 'bg-amber-500 text-white shadow-xs'
                             : 'text-zinc-600 hover:text-zinc-900'
                         }`}
                       >
@@ -8232,7 +8845,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                     </div>
                   </div>
 
-                  {appModeConfig.app_mode === 'production' ? (
+                  {appModeConfig?.app_mode === 'production' ? (
                     <div className="p-4 bg-emerald-50/70 border border-emerald-200/80 rounded-xl flex items-start gap-3">
                       <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
                       <div className="text-xs text-emerald-950 space-y-1">
@@ -8253,7 +8866,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                             Mode Demo & Simulasi Aktif (Development Environment)
                           </div>
                           <p className="leading-relaxed text-amber-800">
-                            Fitur-fitur di bawah ini dapat di-bypass untuk keperluan presentasi, simulasi guru, atau uji coba di server lokal (Laragon / localhost / HTTP) yang tidak memiliki sertifikat SSL satelit atau modul webcam/mic.
+                            Secara default, <strong>Bypass GPS</strong> dan <strong>Bypass Google SSO</strong> langsung diaktifkan untuk mempermudah uji coba di server lokal / presentasi. Fitur keamanan lainnya dapat Anda aktifkan atau sesuaikan di bawah ini.
                           </p>
                         </div>
                       </div>
@@ -8266,6 +8879,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                             <div className="text-xs font-semibold text-zinc-900 flex items-center gap-1.5">
                               <MapPin className="w-3.5 h-3.5 text-zinc-600" />
                               <span>Bypass Geofence GPS</span>
+                              <span className="text-[9px] bg-amber-100 text-amber-800 px-1.5 py-0.2 rounded font-medium">Default</span>
                             </div>
                             <p className="text-[11px] text-zinc-500 truncate">
                               Izinkan akses di localhost & luar radius
@@ -8275,12 +8889,12 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                             type="button"
                             onClick={() => handleToggleBypass('bypass_gps')}
                             className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                              appModeConfig.bypass_gps ? 'bg-amber-500' : 'bg-zinc-300'
+                              Boolean(appModeConfig?.bypass_gps) ? 'bg-amber-500' : 'bg-zinc-300'
                             }`}
                           >
                             <span
                               className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
-                                appModeConfig.bypass_gps ? 'translate-x-4' : 'translate-x-0'
+                                Boolean(appModeConfig?.bypass_gps) ? 'translate-x-4' : 'translate-x-0'
                               }`}
                             />
                           </button>
@@ -8301,12 +8915,12 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                             type="button"
                             onClick={() => handleToggleBypass('bypass_media')}
                             className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                              appModeConfig.bypass_media ? 'bg-amber-500' : 'bg-zinc-300'
+                              Boolean(appModeConfig?.bypass_media) ? 'bg-amber-500' : 'bg-zinc-300'
                             }`}
                           >
                             <span
                               className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
-                                appModeConfig.bypass_media ? 'translate-x-4' : 'translate-x-0'
+                                Boolean(appModeConfig?.bypass_media) ? 'translate-x-4' : 'translate-x-0'
                               }`}
                             />
                           </button>
@@ -8327,12 +8941,12 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                             type="button"
                             onClick={() => handleToggleBypass('bypass_audio')}
                             className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                              appModeConfig.bypass_audio ? 'bg-amber-500' : 'bg-zinc-300'
+                              Boolean(appModeConfig?.bypass_audio) ? 'bg-amber-500' : 'bg-zinc-300'
                             }`}
                           >
                             <span
                               className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
-                                appModeConfig.bypass_audio ? 'translate-x-4' : 'translate-x-0'
+                                Boolean(appModeConfig?.bypass_audio) ? 'translate-x-4' : 'translate-x-0'
                               }`}
                             />
                           </button>
@@ -8353,12 +8967,12 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                             type="button"
                             onClick={() => handleToggleBypass('bypass_notifications')}
                             className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                              appModeConfig.bypass_notifications ? 'bg-amber-500' : 'bg-zinc-300'
+                              Boolean(appModeConfig?.bypass_notifications) ? 'bg-amber-500' : 'bg-zinc-300'
                             }`}
                           >
                             <span
                               className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
-                                appModeConfig.bypass_notifications ? 'translate-x-4' : 'translate-x-0'
+                                Boolean(appModeConfig?.bypass_notifications) ? 'translate-x-4' : 'translate-x-0'
                               }`}
                             />
                           </button>
@@ -8379,12 +8993,12 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                             type="button"
                             onClick={() => handleToggleBypass('bypass_fullscreen')}
                             className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                              appModeConfig.bypass_fullscreen ? 'bg-amber-500' : 'bg-zinc-300'
+                              Boolean(appModeConfig?.bypass_fullscreen) ? 'bg-amber-500' : 'bg-zinc-300'
                             }`}
                           >
                             <span
                               className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
-                                appModeConfig.bypass_fullscreen ? 'translate-x-4' : 'translate-x-0'
+                                Boolean(appModeConfig?.bypass_fullscreen) ? 'translate-x-4' : 'translate-x-0'
                               }`}
                             />
                           </button>
@@ -8396,6 +9010,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                             <div className="text-xs font-semibold text-zinc-900 flex items-center gap-1.5">
                               <Lock className="w-3.5 h-3.5 text-zinc-600" />
                               <span>Bypass Google SSO</span>
+                              <span className="text-[9px] bg-amber-100 text-amber-800 px-1.5 py-0.2 rounded font-medium">Default</span>
                             </div>
                             <p className="text-[11px] text-zinc-500 truncate">
                               Lewati verifikasi akun Google
@@ -8405,12 +9020,12 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                             type="button"
                             onClick={() => handleToggleBypass('bypass_google_sso')}
                             className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                              appModeConfig.bypass_google_sso ? 'bg-amber-500' : 'bg-zinc-300'
+                              Boolean(appModeConfig?.bypass_google_sso) ? 'bg-amber-500' : 'bg-zinc-300'
                             }`}
                           >
                             <span
                               className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
-                                appModeConfig.bypass_google_sso ? 'translate-x-4' : 'translate-x-0'
+                                Boolean(appModeConfig?.bypass_google_sso) ? 'translate-x-4' : 'translate-x-0'
                               }`}
                             />
                           </button>
@@ -9185,6 +9800,118 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                       </p>
                     </div>
                   </div>
+
+                  {/* Tombol Simpan Identitas Instansi */}
+                  <div className="flex justify-end pt-4 border-t border-zinc-100">
+                    <button
+                      type="submit"
+                      className="px-5 py-2.5 bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl text-xs font-semibold shadow-2xs flex items-center gap-2 cursor-pointer transition-all active:scale-[0.98]"
+                    >
+                      <Save className="w-4 h-4 text-emerald-400" />
+                      <span>Simpan Pengaturan Identitas Instansi</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* FITUR 2b: KEBIJAKAN KEAMANAN KUNCI PERANGKAT UJIAN (DEVICE LOCK BINDING) */}
+                <div className="bg-white border border-zinc-200/80 rounded-2xl p-6 shadow-2xs space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-zinc-100">
+                    <div className="flex items-center gap-3.5">
+                      <div className={`w-11 h-11 rounded-2xl flex items-center justify-center transition-all ${
+                        institution.lock_device_enabled !== false
+                          ? 'bg-emerald-50/80 border border-emerald-200/90 shadow-2xs ring-4 ring-emerald-50/60 text-emerald-700'
+                          : 'bg-amber-50/80 border border-amber-200/90 shadow-2xs ring-4 ring-amber-50/60 text-amber-700'
+                      }`}>
+                        <Smartphone className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-zinc-900">
+                          Kebijakan Kunci Perangkat Peserta (Device Lock)
+                        </h3>
+                        <p className="text-[11px] text-zinc-500">
+                          Atur apakah peserta wajib dikunci pada 1 perangkat atau diperbolehkan ganti perangkat bebas
+                        </p>
+                      </div>
+                    </div>
+
+                    <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border self-start sm:self-auto ${
+                      institution.lock_device_enabled !== false
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                        : 'bg-amber-50 text-amber-700 border-amber-300'
+                    }`}>
+                      {institution.lock_device_enabled !== false ? '🔒 KUNCI 1 PERANGKAT AKTIF' : '🔓 BEBAS GANTI PERANGKAT'}
+                    </span>
+                  </div>
+
+                  <div className="space-y-3">
+                    <p className="text-xs text-zinc-600 leading-relaxed">
+                      Sistem ExamGuard mencatat kode identitas unik peramban/perangkat (ID Perangkat) saat peserta pertama kali masuk ke aplikasi ujian. Pilih kebijakan pengawasan perangkat yang berlaku di sekolah Anda:
+                    </p>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 pt-1">
+                      {/* Opsi 1: Kunci 1 Perangkat (Wajib Reset Admin) */}
+                      <label
+                        className={`flex items-start gap-3 p-4 rounded-xl border-2 transition-all cursor-pointer ${
+                          institution.lock_device_enabled !== false
+                            ? 'bg-emerald-50/50 border-emerald-500 shadow-2xs ring-1 ring-emerald-500/20'
+                            : 'bg-zinc-50/50 border-zinc-200 hover:border-zinc-300'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="lock_device_radio"
+                          checked={institution.lock_device_enabled !== false}
+                          onChange={() => setInstitution({ ...institution, lock_device_enabled: true })}
+                          className="mt-1 w-4 h-4 text-emerald-600 focus:ring-emerald-500"
+                        />
+                        <div className="space-y-1">
+                          <div className="font-bold text-xs text-zinc-900 flex items-center gap-1.5">
+                            <Lock className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>Kunci 1 Perangkat (Wajib Reset oleh Pengawas)</span>
+                          </div>
+                          <p className="text-[11px] text-zinc-600 leading-relaxed">
+                            <strong>Direkomendasikan untuk ujian resmi & ketat.</strong> Peserta hanya boleh login di 1 HP/laptop pertama. Jika peserta ingin berganti perangkat (misal kendala baterai/rusak), Admin atau Proktor wajib menekan tombol <em>"Reset Kunci Perangkat"</em> terlebih dahulu.
+                          </p>
+                        </div>
+                      </label>
+
+                      {/* Opsi 2: Bebas Ganti Perangkat */}
+                      <label
+                        className={`flex items-start gap-3 p-4 rounded-xl border-2 transition-all cursor-pointer ${
+                          institution.lock_device_enabled === false
+                            ? 'bg-amber-50/50 border-amber-500 shadow-2xs ring-1 ring-amber-500/20'
+                            : 'bg-zinc-50/50 border-zinc-200 hover:border-zinc-300'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="lock_device_radio"
+                          checked={institution.lock_device_enabled === false}
+                          onChange={() => setInstitution({ ...institution, lock_device_enabled: false })}
+                          className="mt-1 w-4 h-4 text-amber-600 focus:ring-amber-500"
+                        />
+                        <div className="space-y-1">
+                          <div className="font-bold text-xs text-zinc-900 flex items-center gap-1.5">
+                            <Unlock className="w-3.5 h-3.5 text-amber-600" />
+                            <span>Bebas Ganti Perangkat (Fleksibel / Tanpa Kunci)</span>
+                          </div>
+                          <p className="text-[11px] text-zinc-600 leading-relaxed">
+                            Peserta dapat berganti perangkat/peramban secara mandiri tanpa terblokir. ID perangkat baru akan langsung diperbarui otomatis tanpa memerlukan intervensi reset dari Proktor.
+                          </p>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end pt-3 border-t border-zinc-100">
+                    <button
+                      type="submit"
+                      className="px-5 py-2.5 bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl text-xs font-semibold shadow-2xs flex items-center gap-2 cursor-pointer transition-all active:scale-[0.98]"
+                    >
+                      <Save className="w-4 h-4 text-emerald-400" />
+                      <span>Simpan Kebijakan Kunci Perangkat</span>
+                    </button>
+                  </div>
                 </div>
 
                 {/* FITUR 3: PENGATURAN GPS SEKOLAH (DENGAN SAKELAR ON/OFF CEK LOKASI) */}
@@ -9466,6 +10193,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                       lng={institution.center_lng}
                       radius={institution.max_radius_meters}
                       institutionName={institution.name}
+                      logoUrl={institution.logo_url}
                       onDetectLiveLocation={handleDetectCurrentLocation}
                       isDetectingLocation={isDetectingLocation}
                       onLocationChange={(newLat, newLng) => {
@@ -9495,6 +10223,17 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                         showNotification(`Radius toleransi diubah ke ${newRadius} meter.`);
                       }}
                     />
+                  </div>
+
+                  {/* Tombol Simpan Pengaturan GPS */}
+                  <div className="flex justify-end pt-4 border-t border-zinc-100">
+                    <button
+                      type="submit"
+                      className="px-5 py-2.5 bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl text-xs font-semibold shadow-2xs flex items-center gap-2 cursor-pointer transition-all active:scale-[0.98]"
+                    >
+                      <Save className="w-4 h-4 text-emerald-400" />
+                      <span>Simpan Pengaturan Lokasi & GPS</span>
+                    </button>
                   </div>
                     </div>
                   )}
@@ -9553,8 +10292,10 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                           }`}
                           title={
                             institution.google_oauth_verified && institution.google_oauth_enabled && institution.google_client_id
-                              ? `SSO: ON • Akun: ${institution.google_oauth_verified_email || 'Terverifikasi'}. Klik untuk nonaktifkan/reset.`
-                              : 'SSO: OFF • Belum Login Akun Google. Klik buka detail untuk verifikasi & aktifkan SSO.'
+                              ? `SSO: ON • Akun: ${institution.google_oauth_verified_email || 'Terverifikasi'}. Klik untuk nonaktifkan SSO (Kredensial tetap disimpan).`
+                              : institution.google_client_id
+                              ? 'SSO: OFF • Kredensial tersimpan. Klik untuk verifikasi & aktifkan SSO.'
+                              : 'SSO: OFF • Belum Login Akun Google. Klik buka detail untuk mengisi Client ID.'
                           }
                         >
                           <span
@@ -9707,12 +10448,12 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                         <button
                           type="button"
                           onClick={handleResetGoogleOAuth}
-                          disabled={testingOAuth || (!institution.google_client_id && !institution.google_oauth_enabled)}
+                          disabled={testingOAuth || !institution.google_oauth_enabled}
                           className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-zinc-300 hover:bg-zinc-100 disabled:opacity-40 text-xs font-semibold text-zinc-700 transition-colors cursor-pointer"
-                          title="Kosongkan konfigurasi dan otomatis nonaktifkan OAuth"
+                          title="Nonaktifkan integrasi Google OAuth (Client ID & Secret tetap disimpan)"
                         >
-                          <RotateCcw className="w-3.5 h-3.5 text-zinc-500" />
-                          <span>Reset (Kosongkan)</span>
+                          <Unlink className="w-3.5 h-3.5 text-zinc-500" />
+                          <span>Nonaktifkan SSO</span>
                         </button>
                         <button
                           type="button"
@@ -9733,6 +10474,17 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                           )}
                         </button>
                       </div>
+                    </div>
+
+                    {/* Tombol Simpan Pengaturan Google OAuth */}
+                    <div className="flex justify-end pt-4 border-t border-zinc-100">
+                      <button
+                        type="submit"
+                        className="px-5 py-2.5 bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl text-xs font-semibold shadow-2xs flex items-center gap-2 cursor-pointer transition-all active:scale-[0.98]"
+                      >
+                        <Save className="w-4 h-4 text-emerald-400" />
+                        <span>Simpan Pengaturan Google OAuth (SSO)</span>
+                      </button>
                     </div>
                       </div>
                     )}
@@ -9974,6 +10726,17 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                         </button>
                       </div>
                     </div>
+
+                    {/* Tombol Simpan Pengaturan reCAPTCHA */}
+                    <div className="flex justify-end pt-4 border-t border-zinc-100">
+                      <button
+                        type="submit"
+                        className="px-5 py-2.5 bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl text-xs font-semibold shadow-2xs flex items-center gap-2 cursor-pointer transition-all active:scale-[0.98]"
+                      >
+                        <Save className="w-4 h-4 text-emerald-400" />
+                        <span>Simpan Pengaturan Google reCAPTCHA</span>
+                      </button>
+                    </div>
                       </div>
                     )}
                   </div>
@@ -10025,9 +10788,10 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                           Object.keys(newPerms).forEach((key) => {
                             if (key === 'google_sso' && nextVal) {
                               newPerms[key] = Boolean(
-                                institution.google_oauth_verified &&
-                                institution.google_oauth_enabled &&
-                                institution.google_client_id?.trim()
+                                (appModeConfig?.app_mode === 'simulation') ||
+                                (institution.google_oauth_verified &&
+                                 institution.google_oauth_enabled &&
+                                 institution.google_client_id?.trim())
                               );
                             } else {
                               newPerms[key] = nextVal;
@@ -10140,7 +10904,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                             <span className="text-xs font-semibold text-zinc-900">
                               2. Izinkan Notifications (Peringatan)
                             </span>
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di HP Android via Web Notification">
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di HP Android (Web Notification) & iOS Safari (Notifikasi Layar & Getar)">
                               <Smartphone className="w-2.5 h-2.5" /> HP
                             </span>
                             <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di Laptop / PC">
@@ -10216,7 +10980,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                             <span className="text-xs font-semibold text-zinc-900">
                               4. Izinkan Fullscreen (Layar Penuh)
                             </span>
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di HP Android via Chrome Fullscreen">
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di HP Android (Chrome Fullscreen) & iOS Safari (Viewport Lock)">
                               <Smartphone className="w-2.5 h-2.5" /> HP
                             </span>
                             <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di Laptop / PC via F11 / Fullscreen API">
@@ -10244,68 +11008,85 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                     </div>
 
                     {/* Item 5: Login Akun Google (Wajib SSO) */}
-                    <div className={`p-4 rounded-xl border transition-colors flex items-start justify-between gap-3 shadow-2xs ${
-                      !institution.google_oauth_verified || !institution.google_oauth_enabled
-                        ? 'border-amber-200/70 bg-amber-50/20'
-                        : 'border-zinc-200/90 bg-zinc-50/50 hover:bg-zinc-50'
-                    }`}>
-                      <div className="flex items-start gap-3 min-w-0">
-                        <div className="p-2 rounded-lg bg-blue-100/70 text-blue-700 shrink-0 mt-0.5">
-                          <CheckCircle2 className="w-4 h-4" />
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="text-xs font-semibold text-zinc-900">
-                              5. Login Akun Google (Wajib SSO)
-                            </span>
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di HP">
-                              <Smartphone className="w-2.5 h-2.5" /> HP
-                            </span>
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di Laptop">
-                              <Laptop className="w-2.5 h-2.5" /> Laptop
-                            </span>
-                            {institution.google_oauth_verified && institution.google_oauth_enabled ? (
-                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-medium">
-                                Terverifikasi: {institution.google_oauth_verified_email}
-                              </span>
-                            ) : (
-                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-semibold border border-amber-200">
-                                Terkunci OFF (Wajib Login Akun Google)
-                              </span>
-                            )}
+                    {(() => {
+                      const isSimMode = appModeConfig?.app_mode === 'simulation';
+                      const isSsoAllowed = isSimMode || (institution.google_oauth_verified && institution.google_oauth_enabled);
+                      const isSsoActive = isSimMode
+                        ? Boolean(institution.browser_permissions?.google_sso ?? appModeConfig?.bypass_google_sso)
+                        : Boolean(institution.browser_permissions?.google_sso && institution.google_oauth_verified);
+
+                      return (
+                        <div className={`p-4 rounded-xl border transition-colors flex items-start justify-between gap-3 shadow-2xs ${
+                          !isSsoAllowed
+                            ? 'border-amber-200/70 bg-amber-50/20'
+                            : 'border-zinc-200/90 bg-zinc-50/50 hover:bg-zinc-50'
+                        }`}>
+                          <div className="flex items-start gap-3 min-w-0">
+                            <div className="p-2 rounded-lg bg-blue-100/70 text-blue-700 shrink-0 mt-0.5">
+                              <CheckCircle2 className="w-4 h-4" />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-xs font-semibold text-zinc-900">
+                                  5. Login Akun Google (Wajib SSO)
+                                </span>
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di HP">
+                                  <Smartphone className="w-2.5 h-2.5" /> HP
+                                </span>
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di Laptop">
+                                  <Laptop className="w-2.5 h-2.5" /> Laptop
+                                </span>
+                                {isSimMode ? (
+                                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-semibold border border-amber-300 flex items-center gap-1">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                                    <span>Mode Demo: {isSsoActive ? 'Bypass SSO Aktif (Tersinkron)' : 'SSO Nonaktif'}</span>
+                                  </span>
+                                ) : institution.google_oauth_verified && institution.google_oauth_enabled ? (
+                                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-medium">
+                                    Terverifikasi: {institution.google_oauth_verified_email}
+                                  </span>
+                                ) : (
+                                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-semibold border border-amber-200">
+                                    Terkunci OFF (Wajib Login Akun Google)
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[11px] text-zinc-500 mt-1 leading-relaxed">
+                                {isSimMode
+                                  ? 'Mode Demo / Simulasi aktif: Izin ceklis SSO tersinkronisasi otomatis dengan Bypass SSO. Peserta dapat masuk dan lolos kelayakan tanpa hambatan verifikasi riil.'
+                                  : institution.google_oauth_verified && institution.google_oauth_enabled
+                                  ? 'Memastikan peserta wajib masuk dengan akun Google resmi sekolah sebelum diizinkan mengakses soal.'
+                                  : 'Fitur SSO terkunci OFF. Admin wajib login akun Google pada kartu Google OAuth di atas terlebih dahulu.'}
+                              </p>
+                            </div>
                           </div>
-                          <p className="text-[11px] text-zinc-500 mt-1 leading-relaxed">
-                            {institution.google_oauth_verified && institution.google_oauth_enabled
-                              ? 'Memastikan peserta wajib masuk dengan akun Google resmi sekolah sebelum diizinkan mengakses soal.'
-                              : 'Fitur SSO terkunci OFF. Admin wajib login akun Google pada kartu Google OAuth di atas terlebih dahulu.'}
-                          </p>
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={isSsoActive}
+                            onClick={() => handleToggleBrowserPermission('google_sso', 'Login Akun Google (Wajib SSO)')}
+                            className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors duration-200 ease-in-out shadow-2xs mt-1 ${
+                              !isSsoAllowed
+                                ? 'bg-zinc-200 cursor-not-allowed opacity-60'
+                                : isSsoActive
+                                ? 'bg-emerald-500 cursor-pointer'
+                                : 'bg-zinc-300 cursor-pointer'
+                            }`}
+                            title={
+                              !isSsoAllowed
+                                ? 'Terkunci: Wajib verifikasi OAuth Google dengan login akun Google terlebih dahulu'
+                                : 'Klik untuk mengaktifkan/menonaktifkan kewajiban SSO Google'
+                            }
+                          >
+                            <span
+                              className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-xs transition duration-200 ease-in-out ${
+                                isSsoActive ? 'translate-x-4' : 'translate-x-1'
+                              }`}
+                            />
+                          </button>
                         </div>
-                      </div>
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-checked={Boolean(institution.browser_permissions?.google_sso && institution.google_oauth_verified)}
-                        onClick={() => handleToggleBrowserPermission('google_sso', 'Login Akun Google (Wajib SSO)')}
-                        className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors duration-200 ease-in-out shadow-2xs mt-1 ${
-                          !institution.google_oauth_verified || !institution.google_oauth_enabled
-                            ? 'bg-zinc-200 cursor-not-allowed opacity-60'
-                            : institution.browser_permissions?.google_sso
-                            ? 'bg-emerald-500 cursor-pointer'
-                            : 'bg-zinc-300 cursor-pointer'
-                        }`}
-                        title={
-                          !institution.google_oauth_verified || !institution.google_oauth_enabled
-                            ? 'Terkunci: Wajib verifikasi OAuth Google dengan login akun Google terlebih dahulu'
-                            : 'Klik untuk mengaktifkan/menonaktifkan kewajiban SSO Google'
-                        }
-                      >
-                        <span
-                          className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-xs transition duration-200 ease-in-out ${
-                            institution.browser_permissions?.google_sso && institution.google_oauth_verified ? 'translate-x-4' : 'translate-x-1'
-                          }`}
-                        />
-                      </button>
-                    </div>
+                      );
+                    })()}
 
                     {/* Item 7: Sensor Kamera & Mikrofon */}
                     <div className="p-4 rounded-xl border border-zinc-200/90 bg-zinc-50/50 hover:bg-zinc-50 transition-colors flex items-start justify-between gap-3 shadow-2xs">
@@ -10381,6 +11162,17 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                       </button>
                     </div>
                   </div>
+
+                  {/* Tombol Simpan Ceklis Izin Browser */}
+                  <div className="flex justify-end pt-4 border-t border-zinc-100">
+                    <button
+                      type="submit"
+                      className="px-5 py-2.5 bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl text-xs font-semibold shadow-2xs flex items-center gap-2 cursor-pointer transition-all active:scale-[0.98]"
+                    >
+                      <Save className="w-4 h-4 text-emerald-400" />
+                      <span>Simpan Konfigurasi Ceklis Izin Browser</span>
+                    </button>
+                  </div>
                     </div>
                   )}
                 </div>
@@ -10398,10 +11190,10 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                       </div>
                       <div>
                         <h3 className="text-sm font-semibold text-zinc-900 group-hover:text-blue-600 transition-colors">
-                          Panduan & Pengaturan Pemasangan Aplikasi di cPanel
+                          Panduan Pemasangan ke cPanel (Dual-Backend: Shared Hosting & Node.js)
                         </h3>
                         <p className="text-xs text-zinc-500">
-                          Khusus Super Admin &bull; Standar Apache/LiteSpeed, file .htaccess & perizinan SSL/GPS
+                          Khusus Super Admin &bull; Dukungan PHP 8.x PDO SQLite, cPanel Node.js App, Subdomain & SSL HTTPS
                         </p>
                       </div>
                     </div>
@@ -10419,89 +11211,92 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
 
                   {isGuideCardOpen && (
                     <div className="pt-2 space-y-4 animate-in fade-in slide-in-from-top-2 duration-200">
-                    <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200/80 text-emerald-800">
-                    <p className="font-semibold text-xs mb-1 flex items-center gap-1.5">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                      Konfigurasi Vite & .htaccess Sudah 100% Sesuai Standar cPanel
-                    </p>
-                    <p className="text-[11px] leading-relaxed text-emerald-700">
-                      Proyek ExamGuard telah dikonfigurasi dengan <code className="font-mono bg-emerald-100/80 px-1 rounded">base: './'</code> (jalur relatif) dan berkas <code className="font-mono bg-emerald-100/80 px-1 rounded">public/.htaccess</code> yang menyertakan rewrite fallback ke <code className="font-mono bg-emerald-100/80 px-1 rounded">index.html</code> (mencegah error 404 saat refresh) serta pemaksaan protokol HTTPS.
-                    </p>
-                  </div>
-
-                  <div className="space-y-4 text-xs text-zinc-700">
-                    <div className="flex gap-3">
-                      <span className="w-6 h-6 rounded-full bg-zinc-900 text-white flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">
-                        1
-                      </span>
-                      <div>
-                        <h4 className="font-semibold text-zinc-900">Jalankan Build Produksi</h4>
-                        <p className="text-zinc-600 text-[11px] mt-0.5">
-                          Jalankan perintah build di terminal lokal direktori proyek:
+                      <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200/80 text-emerald-800">
+                        <p className="font-semibold text-xs mb-1 flex items-center gap-1.5">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                          ExampGuard v1.0 Siap 100% untuk Shared Hosting & Subdomain cPanel
                         </p>
-                        <code className="block bg-zinc-900 text-zinc-100 p-2.5 rounded-lg font-mono text-[11px] mt-1.5">
-                          npm run build
-                        </code>
-                        <p className="text-zinc-500 text-[11px] mt-1">
-                          Folder <code className="font-mono">dist/</code> akan terbentuk berisi file <code className="font-mono">index.html</code>, folder <code className="font-mono">assets/</code>, dan file <code className="font-mono">.htaccess</code>.
+                        <p className="text-[11px] leading-relaxed text-emerald-700">
+                          Sistem telah dilengkapi berkas paket <code className="font-mono bg-emerald-100/80 px-1 rounded font-semibold">ExampGuard-v1.0.zip</code> yang memuat jembatan <strong>PHP PDO SQLite REST API</strong> (<code className="font-mono">api/index.php</code>) dan proteksi <strong>.htaccess Enterprise</strong> (mencegah akses unduh database, auto-redirect HTTPS, dan SPA routing anti-error 404).
                         </p>
                       </div>
-                    </div>
 
-                    <div className="flex gap-3">
-                      <span className="w-6 h-6 rounded-full bg-zinc-900 text-white flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">
-                        2
-                      </span>
-                      <div>
-                        <h4 className="font-semibold text-zinc-900">Ambil Berkas Arsip ZIP Siap Pakai</h4>
-                        <p className="text-zinc-600 text-[11px] mt-0.5">
-                          Sistem telah menyediakan berkas paket siap unggah: <code className="font-mono font-semibold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">examguard-cpanel-ready.zip</code> di direktori root aplikasi yang memuat seluruh aset produksi beserta <code className="font-mono">.htaccess</code>.
-                        </p>
-                      </div>
-                    </div>
+                      <div className="space-y-4 text-xs text-zinc-700">
+                        {/* Step 1 */}
+                        <div className="flex gap-3">
+                          <span className="w-6 h-6 rounded-full bg-zinc-900 text-white flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">
+                            1
+                          </span>
+                          <div>
+                            <h4 className="font-semibold text-zinc-900">Ambil Berkas Arsip Rilis Siap Pakai</h4>
+                            <p className="text-zinc-600 text-[11px] mt-0.5">
+                              Berkas paket rilis siap pakai telah disediakan di root direktori proyek: <code className="font-mono font-semibold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">ExampGuard-v1.0.zip</code>. Jika Anda melakukan perubahan kode sumber baru, cukup jalankan <code className="font-mono bg-zinc-100 px-1 py-0.5 rounded">npm run build</code> lalu kompres seluruh isi folder <code className="font-mono">dist/</code>.
+                            </p>
+                          </div>
+                        </div>
 
-                    <div className="flex gap-3">
-                      <span className="w-6 h-6 rounded-full bg-zinc-900 text-white flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">
-                        3
-                      </span>
-                      <div>
-                        <h4 className="font-semibold text-zinc-900">Unggah ke File Manager cPanel Hosting</h4>
-                        <div className="text-zinc-600 text-[11px] mt-0.5 space-y-1">
-                          <div>&bull; Buka cPanel hosting sekolah Anda &rarr; Pilih menu <strong>File Manager</strong>.</div>
-                          <div>&bull; Masuk ke direktori target: <code className="font-mono bg-zinc-100 px-1 py-0.5 rounded">public_html</code> (untuk domain utama) atau folder subdomain (contoh: <code className="font-mono bg-zinc-100 px-1 py-0.5 rounded">public_html/ujian</code>).</div>
-                          <div>&bull; Klik <strong>Upload</strong> lalu unggah berkas <code className="font-mono">examguard-cpanel-ready.zip</code>.</div>
-                          <div>&bull; Klik kanan berkas ZIP tersebut di cPanel &rarr; pilih <strong>Extract</strong> (Ekstrak di folder yang sama).</div>
+                        {/* Step 2 */}
+                        <div className="flex gap-3">
+                          <span className="w-6 h-6 rounded-full bg-zinc-900 text-white flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">
+                            2
+                          </span>
+                          <div>
+                            <h4 className="font-semibold text-zinc-900">PILIHAN METODE A: Shared Hosting cPanel Biasa (Rekomendasi Paling Praktis)</h4>
+                            <div className="text-zinc-600 text-[11px] mt-1 space-y-1">
+                              <div>&bull; Buka cPanel hosting sekolah Anda &rarr; Pilih menu <strong>File Manager</strong>.</div>
+                              <div>&bull; Masuk ke direktori target: <code className="font-mono bg-zinc-100 px-1 py-0.5 rounded">public_html</code> (untuk domain utama) atau folder subdomain (contoh: <code className="font-mono bg-zinc-100 px-1 py-0.5 rounded">public_html/ujian</code> untuk <code className="font-mono">ujian.sekolah.sch.id</code>).</div>
+                              <div>&bull; Klik <strong>Upload</strong> lalu unggah berkas <code className="font-mono font-semibold">ExampGuard-v1.0.zip</code>.</div>
+                              <div>&bull; Klik kanan berkas ZIP tersebut di cPanel &rarr; pilih <strong>Extract</strong> (Ekstrak di folder yang sama).</div>
+                              <div>&bull; Unggah berkas database <code className="font-mono">examguard.db</code> ke folder yang sama (opsional, jika tidak diunggah sistem otomatis membuat database baru saat diakses).</div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Step 3 */}
+                        <div className="flex gap-3">
+                          <span className="w-6 h-6 rounded-full bg-zinc-900 text-white flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">
+                            3
+                          </span>
+                          <div>
+                            <h4 className="font-semibold text-zinc-900">PILIHAN METODE B: cPanel "Setup Node.js App" (CloudLinux / VPS)</h4>
+                            <div className="text-zinc-600 text-[11px] mt-1 space-y-1">
+                              <div>&bull; Unggah seluruh folder proyek ke server cPanel (misal: di direktori <code className="font-mono">/home/user/examguard-app</code>).</div>
+                              <div>&bull; Masuk ke cPanel &rarr; menu <strong>Setup Node.js App</strong> &rarr; klik <strong>Create Application</strong>.</div>
+                              <div>&bull; Pilih versi Node.js (20.x atau 22.x), Mode: <strong>Production</strong>, Application Root: <code className="font-mono">examguard-app</code>, Startup File: <code className="font-mono">app.js</code>.</div>
+                              <div>&bull; Klik tombol <strong>Run NPM Install</strong> kemudian klik <strong>Restart Application</strong>.</div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Step 4 */}
+                        <div className="flex gap-3">
+                          <span className="w-6 h-6 rounded-full bg-zinc-900 text-white flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">
+                            4
+                          </span>
+                          <div>
+                            <h4 className="font-semibold text-zinc-900">Pastikan File Tersembunyi (.htaccess) Terbaca & Aktif</h4>
+                            <p className="text-zinc-600 text-[11px] mt-0.5">
+                              Di pojok kanan atas File Manager cPanel, klik menu <strong>Settings</strong> &rarr; Centang opsi <strong>"Show Hidden Files (dotfiles)"</strong> &rarr; Simpan. Pastikan berkas <code className="font-mono font-medium">.htaccess</code> terlihat dan berada di direktori aplikasi. Berkas ini bertugas memblokir akses langsung ke file database <code className="font-mono">.db</code> dan mengarahkan routing SPA.
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Step 5 */}
+                        <div className="flex gap-3">
+                          <span className="w-6 h-6 rounded-full bg-rose-600 text-white flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">
+                            5
+                          </span>
+                          <div>
+                            <h4 className="font-semibold text-zinc-900">Wajibkan Sertifikat SSL (HTTPS) — Mutlak untuk GPS & Fullscreen</h4>
+                            <p className="text-zinc-600 text-[11px] mt-0.5">
+                              Peramban modern (Google Chrome, Edge, Safari) secara ketat memblokir izin GPS Geolocation, Kamera pengawas, dan Layar Penuh (Fullscreen) jika website diakses melalui protokol tidak aman (HTTP). Buka menu <strong>SSL/TLS Status</strong> di cPanel &rarr; centang domain/subdomain ujian &rarr; klik <strong>Run AutoSSL</strong> hingga terbit sertifikat SSL gratis (Let's Encrypt).
+                            </p>
+                          </div>
                         </div>
                       </div>
                     </div>
-
-                    <div className="flex gap-3">
-                      <span className="w-6 h-6 rounded-full bg-zinc-900 text-white flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">
-                        4
-                      </span>
-                      <div>
-                        <h4 className="font-semibold text-zinc-900">Pastikan File Tersembunyi (.htaccess) Terbaca</h4>
-                        <p className="text-zinc-600 text-[11px] mt-0.5">
-                          Di pojok kanan atas File Manager cPanel, klik menu <strong>Settings</strong> &rarr; Centang opsi <strong>"Show Hidden Files (dotfiles)"</strong> &rarr; Simpan. Pastikan berkas <code className="font-mono font-medium">.htaccess</code> terlihat dan berada di direktori aplikasi.
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex gap-3">
-                      <span className="w-6 h-6 rounded-full bg-zinc-900 text-white flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">
-                        5
-                      </span>
-                      <div>
-                        <h4 className="font-semibold text-zinc-900">Wajibkan Sertifikat SSL (HTTPS)</h4>
-                        <p className="text-zinc-600 text-[11px] mt-0.5">
-                          Peramban modern (Chrome, Edge, Safari) memblokir izin GPS Geolocation, Kamera pengawas, dan Mikrofon jika website berjalan di HTTP tanpa enkripsi. Pastikan fitur SSL cPanel (Let's Encrypt / AutoSSL) aktif untuk domain atau subdomain ujian Anda.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                  </div>
-                )}
-              </div>
+                  )}
+                </div>
 
                 {/* Tombol Simpan Konfigurasi */}
                 <div className="flex justify-end">
@@ -10869,32 +11664,164 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                 <div>
                   <div className="inline-flex items-center gap-2 mb-1.5">
                     <h2 className="text-xl sm:text-2xl font-bold text-zinc-900 tracking-tight">
-                      ExamGuard Proctoring WebApp
+                      ExampGuard v1.0
                     </h2>
-                    <span className="px-2.5 py-0.5 rounded-full bg-zinc-100 text-zinc-800 border border-zinc-200 text-xs font-mono font-semibold">
-                      v1.0.0
+                    <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-mono font-semibold">
+                      v1.0.0 Stable
                     </span>
                   </div>
                   <p className="text-xs sm:text-sm text-zinc-600 max-w-xl mx-auto leading-relaxed">
-                    Sistem Pengawasan Ujian Berbasis Web Mandiri untuk Google Form dengan Proteksi Anti-Curang, GPS Geofencing, Google Workspace SSO, dan Kontrol Pengawas Real-Time.
+                    Sistem Pengawasan Ujian Berbasis Web Mandiri untuk Google Form dengan Proteksi Anti-Curang, GPS Geofencing Terkunci, Multi-Device Lock, dan Dua Mode Deployment cPanel.
                   </p>
                 </div>
 
                 {/* Badges Info */}
                 <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
                   <span className="px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-medium">
-                    ✓ Stable Production Ready
+                    ✓ Production Ready
                   </span>
                   <span className="px-3 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200 text-xs font-medium">
-                    ⚡ 100% Client-Side cPanel SPA
+                    ⚡ PHP PDO SQLite & Node.js Ready
                   </span>
                   <span className="px-3 py-1 rounded-full bg-purple-50 text-purple-700 border border-purple-200 text-xs font-medium">
-                    🛡️ AES-256-GCM Secure Backup
+                    🛡️ Enterprise Cybersecurity
                   </span>
                   <span className="px-3 py-1 rounded-full bg-zinc-100 text-zinc-800 border border-zinc-200 text-xs font-medium">
                     📄 Lisensi MIT
                   </span>
                 </div>
+              </div>
+
+              {/* FITUR KHUSUS: PEMERIKSAAN PEMBARUAN DI GITHUB */}
+              <div className="bg-white border border-zinc-200/80 rounded-2xl p-6 shadow-2xs space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3 border-b border-zinc-100">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 rounded-xl bg-zinc-900 text-white shadow-xs">
+                      <RefreshCw className={`w-5 h-5 ${isCheckingUpdate ? 'animate-spin' : ''}`} />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-semibold text-zinc-900">
+                        Pemeriksaan Pembaruan Sistem (GitHub Release Watcher)
+                      </h3>
+                      <p className="text-xs text-zinc-500">
+                        Cek ketersediaan pembaruan, perbaikan bug, atau fitur baru langsung dari repositori resmi GitHub
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleCheckForUpdates}
+                    disabled={isCheckingUpdate}
+                    className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-zinc-900 hover:bg-zinc-800 active:bg-zinc-950 text-white rounded-xl text-xs font-semibold shadow-xs transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed shrink-0"
+                  >
+                    {isCheckingUpdate ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Memeriksa GitHub...</span>
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        <span>Periksa Pembaruan Sekarang</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {/* Status Hasil Pengecekan */}
+                {updateCheckResult ? (
+                  <div className="animate-in fade-in slide-in-from-top-1 duration-200">
+                    {updateCheckResult.status === 'up_to_date' && (
+                      <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                            <span className="font-semibold text-xs">
+                              Sistem Anda Menggunakan Versi Terbaru ({updateCheckResult.currentVersion})
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full font-mono">
+                            Diperiksa: {updateCheckResult.checkedAt}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-emerald-800 leading-relaxed">
+                          Tidak ada pembaruan baru yang ditemukan. Versi aplikasi yang Anda pasang saat ini adalah versi rilis resmi yang stabil dan siap produksi.
+                        </p>
+                        {updateCheckResult.commitSha && (
+                          <div className="text-[10px] text-emerald-700 pt-1 flex items-center gap-2">
+                            <span>Sinkronisasi Commit: <code className="font-mono bg-emerald-100 px-1 py-0.5 rounded">{updateCheckResult.commitSha}</code></span>
+                            {updateCheckResult.publishedAt && <span>&bull; Rilis: {updateCheckResult.publishedAt}</span>}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {updateCheckResult.status === 'update_available' && (
+                      <div className="p-4 rounded-xl bg-blue-50 border border-blue-200 text-blue-900 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <AlertCircle className="w-4 h-4 text-blue-600 shrink-0" />
+                            <span className="font-semibold text-xs">
+                              Pembaruan Versi Baru Tersedia: {updateCheckResult.latestVersion}
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full font-mono">
+                            Versi Saat Ini: {updateCheckResult.currentVersion}
+                          </span>
+                        </div>
+                        {updateCheckResult.releaseNotes && (
+                          <div className="bg-white/80 border border-blue-200/60 rounded-lg p-2.5 text-[11px] text-blue-950 font-mono whitespace-pre-wrap max-h-36 overflow-y-auto">
+                            {updateCheckResult.releaseNotes}
+                          </div>
+                        )}
+                        <div className="flex items-center gap-2 pt-1">
+                          <a
+                            href={updateCheckResult.downloadUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-2xs transition-colors"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                            <span>Unduh Pembaruan di GitHub</span>
+                            <ExternalLink className="w-3 h-3 text-blue-200" />
+                          </a>
+                        </div>
+                      </div>
+                    )}
+
+                    {updateCheckResult.status === 'error' && (
+                      <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                            <span className="font-semibold text-xs">Pengecekan Pembaruan Gagal</span>
+                          </div>
+                          <span className="text-[10px] text-amber-700 font-mono">{updateCheckResult.checkedAt}</span>
+                        </div>
+                        <p className="text-[11px] text-amber-800 leading-relaxed">
+                          {updateCheckResult.message}
+                        </p>
+                        <a
+                          href={updateCheckResult.downloadUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 text-xs text-amber-800 font-semibold hover:underline pt-1"
+                        >
+                          <span>Kunjungi Halaman Rilis GitHub Secara Manual</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between p-3 rounded-xl bg-zinc-50 border border-zinc-200/70 text-zinc-600 text-xs">
+                    <span className="text-[11px]">
+                      Versi terpasang: <strong className="text-zinc-900 font-mono">v1.0.0</strong> &bull; Klik tombol di atas untuk memeriksa apakah ada rilis terbaru di repositori GitHub resmi.
+                    </span>
+                    <span className="text-[10px] text-zinc-400 font-medium">Auto-Check Ready</span>
+                  </div>
+                )}
               </div>
 
               {/* Grid 2 Kolom: Identitas Aplikasi & Spesifikasi */}
@@ -10906,13 +11833,14 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                     <h3 className="text-sm font-semibold text-zinc-900">Arsitektur & Tujuan Aplikasi</h3>
                   </div>
                   <p className="text-xs text-zinc-600 leading-relaxed">
-                    ExamGuard dirancang khusus untuk memecahkan kelemahan pelaksanaan ujian Google Form standar dengan mengisolasi lingkungan peramban peserta:
+                    ExampGuard v1.0 dirancang khusus untuk memecahkan kelemahan pelaksanaan ujian Google Form standar dengan mengisolasi lingkungan peramban peserta:
                   </p>
                   <ul className="text-xs text-zinc-600 space-y-2 list-disc list-inside">
                     <li><strong>Auto-Lock Screen:</strong> Penguncian seketika jika peserta beralih tab browser atau keluar dari mode Fullscreen.</li>
-                    <li><strong>GPS Geofencing:</strong> Pembatasan pengerjaan ujian hanya dalam radius koordinat instansi/sekolah (Haversine formula).</li>
-                    <li><strong>Single Sign-On (SSO):</strong> Integrasi Google Workspace resmi sekolah dengan proteksi bot Google reCAPTCHA v2.</li>
-                    <li><strong>Role-Based Access Control:</strong> Pemisahan peran Super Admin (kelola instansi & akun) dan Proktor Ujian (monitoring live).</li>
+                    <li><strong>GPS Geofencing Terkunci:</strong> Pin lokasi dikunci ke sensor hardware GPS perangkat (Haversine formula anti-manipulasi).</li>
+                    <li><strong>Multi-Device Lock:</strong> Kunci satu akun hanya untuk satu perangkat (Device ID) untuk mencegah perjokian.</li>
+                    <li><strong>Single Sign-On (SSO):</strong> Integrasi Google Workspace resmi sekolah dengan proteksi duplikasi email peserta.</li>
+                    <li><strong>Dual Backend cPanel:</strong> Mendukung Shared Hosting PHP PDO SQLite dan cPanel Node.js App.</li>
                   </ul>
                 </div>
 
@@ -10925,11 +11853,15 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                   <div className="divide-y divide-zinc-100 text-xs">
                     <div className="py-2 flex justify-between items-center">
                       <span className="text-zinc-500">Versi Rilis</span>
-                      <span className="font-semibold text-zinc-900 font-mono">1.0.0 (Build 2026.11)</span>
+                      <span className="font-semibold text-zinc-900 font-mono">ExampGuard v1.0.0</span>
                     </div>
                     <div className="py-2 flex justify-between items-center">
                       <span className="text-zinc-500">Frontend Engine</span>
                       <span className="font-semibold text-zinc-900">React 19 & Vite 6</span>
+                    </div>
+                    <div className="py-2 flex justify-between items-center">
+                      <span className="text-zinc-500">Database Engine</span>
+                      <span className="font-semibold text-zinc-900">SQLite (WAL Mode & ACID)</span>
                     </div>
                     <div className="py-2 flex justify-between items-center">
                       <span className="text-zinc-500">Styling Framework</span>
@@ -10941,7 +11873,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                     </div>
                     <div className="py-2 flex justify-between items-center">
                       <span className="text-zinc-500">Dukungan Web Server</span>
-                      <span className="font-semibold text-zinc-900">Apache / LiteSpeed / Nginx</span>
+                      <span className="font-semibold text-zinc-900">Apache / LiteSpeed / Nginx / Node.js</span>
                     </div>
                   </div>
                 </div>
@@ -10955,7 +11887,13 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                   <div className="space-y-3 text-xs text-zinc-600 leading-relaxed">
                     <div>
                       <span className="font-semibold text-zinc-900 block">Tim Pengembang:</span>
-                      <span>ExamGuard Architecture & Development Team</span>
+                      <span className="font-medium text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 inline-block mt-0.5">
+                        Fandi dari Jawa tech
+                      </span>
+                    </div>
+                    <div>
+                      <span className="font-semibold text-zinc-900 block">Status Rilis:</span>
+                      <span className="text-zinc-700">Versi 1.0 (Siap Rilis / Production Ready)</span>
                     </div>
                     <div>
                       <span className="font-semibold text-zinc-900 block">Lisensi Perangkat Lunak:</span>
@@ -10979,7 +11917,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                       <h3 className="text-sm font-semibold text-zinc-900">Repositori & Kode Sumber</h3>
                     </div>
                     <p className="text-xs text-zinc-600 leading-relaxed">
-                      Kode sumber resmi ExamGuard tersedia secara terbuka di GitHub. Anda dapat memantau pembaruan, rilis versi, dan kontribusi pengembangan:
+                      Kode sumber resmi ExampGuard tersedia secara terbuka di GitHub. Anda dapat memantau pembaruan, rilis versi, dan kontribusi pengembangan:
                     </p>
                     <p className="text-[11px] text-zinc-400 font-mono bg-zinc-50 p-2 rounded-lg border border-zinc-200/70 truncate">
                       {GITHUB_REPO_URL}
@@ -11997,15 +12935,15 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
 
                 <div className="sm:col-span-2">
                   <label className="block text-xs font-medium text-zinc-700 mb-1">
-                    Alamat Email Peserta <span className="text-zinc-400 font-normal">(Untuk Google SSO)</span>
+                    Alamat Email Peserta <span className="text-zinc-400 font-normal">(Opsional - Untuk Google SSO)</span>
                   </label>
                   <input
                     type="email"
-                    value={newStudentForm.email}
+                    value={newStudentForm.email || ''}
                     onChange={(e) =>
                       setNewStudentForm({ ...newStudentForm, email: e.target.value })
                     }
-                    placeholder="nama.peserta@student.sch.id"
+                    placeholder="nama.peserta@student.sch.id (opsional)"
                     className="w-full px-3 py-2 border border-zinc-300 rounded-xl text-xs font-mono focus:ring-2 focus:ring-zinc-900 focus:outline-none"
                   />
                   <p className="text-[10px] text-zinc-400 mt-0.5">
@@ -12349,27 +13287,28 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
 
                 <div className="sm:col-span-2">
                   <label className="block text-xs font-medium text-zinc-700 mb-1">
-                    Alamat Email Peserta <span className="text-zinc-400 font-normal">(Akun Google SSO)</span>
+                    Alamat Email Peserta <span className="text-zinc-400 font-normal">(Opsional - Akun Google SSO)</span>
                   </label>
                   <input
                     type="email"
-                    required
-                    value={editingStudent.email}
+                    value={editingStudent.email || ''}
                     onChange={(e) =>
                       setEditingStudent({ ...editingStudent, email: e.target.value })
                     }
+                    placeholder="nama.peserta@student.sch.id (opsional)"
                     className="w-full px-3 py-2 border border-zinc-300 rounded-xl text-xs font-mono focus:ring-2 focus:ring-zinc-900 focus:outline-none"
                   />
 
                   {/* Deteksi jika email diubah */}
-                  {editingStudent.email.trim().toLowerCase() !==
+                  {Boolean(editingStudent.email?.trim() || editingStudent.original_email?.trim()) &&
+                    (editingStudent.email || '').trim().toLowerCase() !==
                     (editingStudent.original_email || '').trim().toLowerCase() && (
                       <div className="mt-2 p-2.5 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-2 text-amber-800 text-[11px] leading-relaxed">
                         <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                         <div>
                           <strong className="font-semibold">Perhatian Perubahan Email:</strong>
                           <p className="mt-0.5">
-                            Alamat email diubah dari <code className="font-mono bg-amber-100/70 px-1 rounded">{editingStudent.original_email || '-'}</code> menjadi <code className="font-mono bg-amber-100/70 px-1 rounded">{editingStudent.email}</code>.
+                            Alamat email diubah dari <code className="font-mono bg-amber-100/70 px-1 rounded">{editingStudent.original_email || '-'}</code> menjadi <code className="font-mono bg-amber-100/70 px-1 rounded">{editingStudent.email || '(Kosong)'}</code>.
                           </p>
                           <p className="mt-0.5 font-medium text-amber-900">
                             Sesuai aturan sistem, status Google SSO akan <strong>otomatis OFF</strong> (ID Google tersimpan akan dihapus). Peserta harus login ulang lewat Google SSO dengan email baru ini.

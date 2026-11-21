@@ -17,6 +17,8 @@ import {
   Check,
   QrCode,
   Camera,
+  X,
+  ChevronRight,
 } from 'lucide-react';
 import QrScannerModal from '../../components/common/QrScannerModal';
 import { storageService, getOrCreateDeviceId, getDeviceClientInfo } from '../../services/storageService';
@@ -45,9 +47,11 @@ export default function LoginPortal({ institution: propInstitution, onLoginSucce
   }, []);
 
   const institution = instState;
-  const appModeConfig = storageService.getAppModeConfig();
+  // Status mode lingkungan aplikasi — selalu sinkron dengan database
+  const [appModeConfig, setAppModeConfig] = useState(() => storageService.getAppModeConfig());
   const isProduction = appModeConfig?.app_mode === 'production';
   const isSimulation = !isProduction;
+  const isGoogleSsoBypassed = isSimulation && Boolean(appModeConfig?.bypass_google_sso);
 
   const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
   const [logoClicks, setLogoClicks] = useState(0);
@@ -191,6 +195,30 @@ export default function LoginPortal({ institution: propInstitution, onLoginSucce
       drawLocalCaptcha(newCode);
     }, 60);
   };
+
+  // Sinkronisasi status Mode Produksi / Simulasi selalu dicek dari database server
+  useEffect(() => {
+    storageService.fetchAppModeFromServer().then((conf) => {
+      if (conf) setAppModeConfig(conf);
+    });
+
+    const handleAppModeChange = (e) => {
+      if (e?.detail?.config) {
+        setAppModeConfig(e.detail.config);
+      } else {
+        storageService.fetchAppModeFromServer().then((conf) => {
+          if (conf) setAppModeConfig(conf);
+        });
+      }
+    };
+
+    window.addEventListener('examguard_storage_updated', handleAppModeChange);
+    window.addEventListener('examguard_db_updated', handleAppModeChange);
+    return () => {
+      window.removeEventListener('examguard_storage_updated', handleAppModeChange);
+      window.removeEventListener('examguard_db_updated', handleAppModeChange);
+    };
+  }, []);
 
   // Inisialisasi Captcha Mandiri jika Google reCAPTCHA tidak aktif
   useEffect(() => {
@@ -377,10 +405,11 @@ export default function LoginPortal({ institution: propInstitution, onLoginSucce
       return;
     }
 
-    // Cek penguncian perangkat
-    if (user.active_device_id && user.active_device_id !== currentDeviceId) {
+    // Cek penguncian perangkat jika diaktifkan oleh kebijakan sekolah
+    const isDeviceLockEnabled = institution?.lock_device_enabled !== false;
+    if (isDeviceLockEnabled && user.active_device_id && user.active_device_id !== currentDeviceId) {
       setErrorMsg(
-        `Akun terkunci di perangkat lain (${user.active_device_id}). Silakan lapor pengawas ujian untuk "Reset Login Perangkat".`
+        `Akun terkunci di perangkat lain (${user.active_device_id}). Sesuai kebijakan sekolah, akun Anda terikat pada 1 perangkat. Silakan lapor pengawas ujian untuk "Reset Login Perangkat".`
       );
       return;
     }
@@ -389,8 +418,9 @@ export default function LoginPortal({ institution: propInstitution, onLoginSucce
     // ATURAN SSO UNTUK MODE 'BOTH' (Google SSO & No. Ujian / NISN):
     // "metodelogin scan kartu ujian qr ini hanya menggantukan metode input manual
     // dan tetap melakukan cek email seperti seharusnya."
+    // (Di-bypass otomatis jika Mode Simulasi / bypass_google_sso aktif)
     // ─────────────────────────────────────────────────────────────────
-    if (isGoogleOAuthActive && institution?.auth_method === 'BOTH') {
+    if (!isGoogleSsoBypassed && isGoogleOAuthActive && institution?.auth_method === 'BOTH') {
       const hasGoogleEmail = Boolean((user.google_email || user.email)?.trim());
       const isGoogleLinked = Boolean(user.google_linked && hasGoogleEmail && user.google_id);
 
@@ -461,7 +491,8 @@ export default function LoginPortal({ institution: propInstitution, onLoginSucce
     }
 
     // ATURAN WAJIB SSO: Hanya jika SSO Google AKTIF & TERHUBUNG dan Instansi mengatur "Hanya SSO"
-    const isAuthMethodSSOOnly = isGoogleOAuthActive && institution?.auth_method === 'SSO_ONLY';
+    // (Bebas login kredensial jika Mode Simulasi / bypass_google_sso aktif)
+    const isAuthMethodSSOOnly = !isGoogleSsoBypassed && isGoogleOAuthActive && institution?.auth_method === 'SSO_ONLY';
     if (isAuthMethodSSOOnly && user.role === 'student') {
       setErrorMsg(
         'Instansi saat ini mengatur metode masuk "Hanya Google SSO". Seluruh peserta wajib masuk menggunakan tombol "Masuk dengan Akun Google Peserta" di bawah.'
@@ -495,9 +526,10 @@ export default function LoginPortal({ institution: propInstitution, onLoginSucce
 
     // Cek penguncian 1 perangkat untuk peserta
     if (user.role === 'student') {
-      if (user.active_device_id && user.active_device_id !== currentDeviceId) {
+      const isDeviceLockEnabled = institution?.lock_device_enabled !== false;
+      if (isDeviceLockEnabled && user.active_device_id && user.active_device_id !== currentDeviceId) {
         setErrorMsg(
-          `Akun terkunci di perangkat lain (${user.active_device_id}). Silakan temui pengawas ujian untuk "Reset Login Perangkat".`
+          `Akun terkunci di perangkat lain (${user.active_device_id}). Sesuai kebijakan sekolah, akun Anda terikat pada 1 perangkat. Silakan temui pengawas ujian untuk "Reset Login Perangkat".`
         );
         return;
       }
@@ -505,8 +537,9 @@ export default function LoginPortal({ institution: propInstitution, onLoginSucce
       // ─────────────────────────────────────────────────────────────────
       // ATURAN SSO UNTUK MODE 'BOTH' (Google SSO & No. Ujian / NISN):
       // Jika Google OAuth aktif di sekolah dan metode login adalah 'BOTH'
+      // (Di-bypass otomatis jika Mode Simulasi / bypass_google_sso aktif)
       // ─────────────────────────────────────────────────────────────────
-      if (isGoogleOAuthActive && institution?.auth_method === 'BOTH') {
+      if (!isGoogleSsoBypassed && isGoogleOAuthActive && institution?.auth_method === 'BOTH') {
         const hasGoogleEmail = Boolean((user.google_email || user.email)?.trim());
         const isGoogleLinked = Boolean(user.google_linked && hasGoogleEmail && user.google_id);
 
@@ -616,6 +649,12 @@ export default function LoginPortal({ institution: propInstitution, onLoginSucce
   const handleManualGoogleAuth = async (targetStudent, mode) => {
     setErrorMsg('');
     setGoogleMismatchError('');
+
+    if (!institution?.google_client_id?.trim()) {
+      setGoogleMismatchError('Google Client ID belum dikonfigurasi di pengaturan instansi oleh Administrator.');
+      return;
+    }
+
     setSsoLoading(true);
     try {
       await ensureGoogleGis();
@@ -661,7 +700,7 @@ export default function LoginPortal({ institution: propInstitution, onLoginSucce
   };
 
   // Proses sukses autentikasi Google untuk ketiga alur: Linking, Verifying, dan SSO Only
-  const processGoogleAuthSuccess = (googleProfile, targetStudent, mode) => {
+  const processGoogleAuthSuccess = async (googleProfile, targetStudent, mode) => {
     const student = targetStudent || pendingStudent;
     const currentMode = mode || authStep;
 
@@ -679,6 +718,15 @@ export default function LoginPortal({ institution: propInstitution, onLoginSucce
     // Simpan email & sub ke database, lalu lanjut ke pre-flight!
     // ─────────────────────────────────────────────────────────────
     if (currentMode === 'google_linking') {
+      // Cek apakah email telah digunakan di akun peserta lain
+      const existingOther = await storageService.getUserByEmailFromServer(email);
+      if (existingOther && String(existingOther.id) !== String(student.id)) {
+        setGoogleMismatchError(
+          `Akun Google (${email}) sudah digunakan oleh peserta lain atas nama "${existingOther.nama || 'Peserta Lain'}" (NISN: ${existingOther.nisn || existingOther.nis || '-'}). Setiap peserta wajib menggunakan email pribadi yang belum terdaftar di akun lain.`
+        );
+        return;
+      }
+
       const updated = {
         ...student,
         google_linked: true,
@@ -744,39 +792,40 @@ export default function LoginPortal({ institution: propInstitution, onLoginSucce
     // ─────────────────────────────────────────────────────────────
     if (currentMode === 'sso_login' || institution?.auth_method === 'SSO_ONLY') {
       const emailLower = email;
-      const matched = storageService.getUserByEmail(emailLower);
+      storageService.getUserByEmailFromServer(emailLower).then((matched) => {
+        if (!matched || matched.role !== 'student') {
+          setErrorMsg(
+            `Akun Google (${emailLower}) tidak terdaftar dalam database peserta ujian sekolah. Silakan gunakan akun Google resmi yang terdaftar, atau hubungi Admin/Proktor.`
+          );
+          setAuthStep('idle');
+          return;
+        }
 
-      if (!matched || matched.role !== 'student') {
-        setErrorMsg(
-          `Akun Google (${emailLower}) tidak terdaftar dalam database peserta ujian sekolah. Silakan gunakan akun Google yang telah didaftarkan atau hubungi Admin/Proktor.`
-        );
-        setAuthStep('idle');
-        return;
-      }
+        const isVerified = matched.is_verified === true || matched.is_verified === 'true' || matched.is_verified === 1 || matched.is_verified === undefined;
+        const isActive = matched.is_active === true || matched.is_active === 'true' || matched.is_active === 1 || matched.is_active === undefined;
 
-      const isVerified = matched.is_verified === true || matched.is_verified === 'true' || matched.is_verified === 1 || matched.is_verified === undefined;
-      const isActive = matched.is_active === true || matched.is_active === 'true' || matched.is_active === 1 || matched.is_active === undefined;
+        if (!isVerified) {
+          setErrorMsg('Akun peserta Anda belum diverifikasi oleh panitia ujian sekolah.');
+          setAuthStep('idle');
+          return;
+        }
+        if (!isActive) {
+          setErrorMsg('Akun peserta Anda dinonaktifkan oleh pihak sekolah.');
+          setAuthStep('idle');
+          return;
+        }
+        const isDeviceLockEnabled = institution?.lock_device_enabled !== false;
+        if (isDeviceLockEnabled && matched.active_device_id && matched.active_device_id !== currentDeviceId) {
+          setErrorMsg(`Akun terkunci di perangkat lain (${matched.active_device_id}). Sesuai kebijakan sekolah, akun Anda terikat pada 1 perangkat. Hubungi pengawas untuk Reset Login Perangkat.`);
+          setAuthStep('idle');
+          return;
+        }
 
-      if (!isVerified) {
-        setErrorMsg('Akun peserta Anda belum diverifikasi oleh panitia ujian sekolah.');
-        setAuthStep('idle');
-        return;
-      }
-      if (!isActive) {
-        setErrorMsg('Akun peserta Anda dinonaktifkan oleh pihak sekolah.');
-        setAuthStep('idle');
-        return;
-      }
-      if (matched.active_device_id && matched.active_device_id !== currentDeviceId) {
-        setErrorMsg(`Akun terkunci di perangkat lain (${matched.active_device_id}). Hubungi pengawas untuk Reset Login Perangkat.`);
-        setAuthStep('idle');
-        return;
-      }
-
-      // Tampilkan Modal Konfirmasi Identitas Peserta
-      setPendingStudent(matched);
-      setPendingGoogleProfile(googleProfile);
-      setAuthStep('sso_confirm_identity');
+        // Tampilkan Modal Konfirmasi Identitas Peserta
+        setPendingStudent(matched);
+        setPendingGoogleProfile(googleProfile);
+        setAuthStep('sso_confirm_identity');
+      });
     }
   };
 
@@ -807,9 +856,13 @@ export default function LoginPortal({ institution: propInstitution, onLoginSucce
     setErrorMsg('Login dibatalkan. Silakan login kembali dengan akun Google yang sesuai dengan identitas Anda.');
   };
 
-  // Handler tombol SSO di tab login (Hanya aktif untuk mode SSO_ONLY)
+  // Handler tombol SSO di tab login (Aktif untuk mode SSO_ONLY dan BOTH)
   const handleGoogleSsoProduction = async () => {
     setErrorMsg('');
+    if (!institution?.google_client_id?.trim()) {
+      setErrorMsg('Google Client ID belum dikonfigurasi di pengaturan instansi oleh Administrator.');
+      return;
+    }
     setAuthStep('sso_login');
     handleManualGoogleAuth(null, 'sso_login');
   };
@@ -1266,7 +1319,7 @@ export default function LoginPortal({ institution: propInstitution, onLoginSucce
           </div>
         )}
         <p className="text-[11px] text-zinc-400">
-          ExamGuard &copy; {new Date().getFullYear()} &bull; Arsitektur Produksi oleh Jawa Tech
+          ExampGuard v1.0 &copy; {new Date().getFullYear()} &bull; Arsitektur Produksi oleh Fandi dari Jawa tech
         </p>
       </footer>
        {/* ─────────────────────────────────────────────────────────────
@@ -1434,6 +1487,7 @@ export default function LoginPortal({ institution: propInstitution, onLoginSucce
           </div>
         </div>
       )}
+
       {/* Modal Scanner QR Code Kartu Ujian */}
       <QrScannerModal
         isOpen={isQrScannerOpen}

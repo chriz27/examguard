@@ -70,6 +70,13 @@ test('updateInstitution menyimpan perubahan', () => {
   if (_originalInstitution?.name) dbApi.updateInstitution({ name: _originalInstitution.name, npsn: _originalInstitution.npsn });
 });
 
+test('updateInstitution menyimpan lock_device_enabled', () => {
+  const updated = dbApi.updateInstitution({ lock_device_enabled: false });
+  assertEqual(updated.lock_device_enabled, false, 'lock_device_enabled false tidak tersimpan');
+  const restored = dbApi.updateInstitution({ lock_device_enabled: true });
+  assertEqual(restored.lock_device_enabled, true, 'lock_device_enabled true tidak tersimpan');
+});
+
 test('updateInstitution validasi auth_method', () => {
   const updated = dbApi.updateInstitution({ auth_method: 'BOTH' });
   assertEqual(updated.auth_method, 'BOTH');
@@ -282,6 +289,14 @@ test('updateAttemptTime memperbarui waktu pengerjaan', () => {
   assertEqual(a.time_spent_seconds, 1800);
 });
 
+test('updateAttemptHeartbeat memperbarui sinyal pengerjaan & latency', () => {
+  const a = dbApi.updateAttemptHeartbeat(testStudentId, 'TEST-EXAM-001', 1810, 45);
+  assert(a !== null);
+  assertEqual(a.time_spent_seconds, 1810);
+  assertEqual(a.ping_latency_ms, 45);
+  assert(a.last_ping_at !== null);
+});
+
 // ─── 5. Exam Attendance ───────────────────────────────────────────────────────
 console.log('\n📋 Exam Attendance:');
 test('updateAttendance menyimpan presensi', () => {
@@ -329,6 +344,8 @@ test('getBeritaAcaraConfig mengembalikan konfigurasi', () => {
 
 // ─── 7. App Mode Config ───────────────────────────────────────────────────────
 console.log('\n🔧 App Mode Config:');
+dbApi.saveAppModeConfig({ app_mode: 'production' }, 'admin');
+
 test('getAppModeConfig mengembalikan mode produksi default', () => {
   const config = dbApi.getAppModeConfig();
   assert(config !== null);
@@ -343,11 +360,13 @@ test('saveAppModeConfig hanya admin yang bisa aktifkan simulation', () => {
   assert(!result.success, 'student tidak boleh mengubah ke simulation');
 });
 
-test('saveAppModeConfig admin bisa aktifkan simulation', () => {
-  const result = dbApi.saveAppModeConfig({ app_mode: 'simulation', bypass_gps: true }, 'admin');
+test('saveAppModeConfig admin bisa aktifkan simulation dan default bypass GPS + SSO aktif', () => {
+  const result = dbApi.saveAppModeConfig({ app_mode: 'simulation' }, 'admin');
   assert(result.success, `Gagal: ${result?.message}`);
   assertEqual(result.config.app_mode, 'simulation');
   assertEqual(result.config.bypass_gps, true);
+  assertEqual(result.config.bypass_google_sso, true);
+  assertEqual(result.config.bypass_media, false);
   // Kembalikan ke production
   dbApi.saveAppModeConfig({ app_mode: 'production' }, 'admin');
 });
