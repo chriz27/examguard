@@ -239,6 +239,11 @@ function examGuardSQLitePlugin() {
             broadcast('user_updated', { user });
             return sendJson(res, 200, { success: true, user });
           }
+          if (sub === '/reset-token') {
+            const user = dbApi.resetStudentLoginToken(userId);
+            broadcast('user_updated', { user });
+            return sendJson(res, 200, { success: true, user });
+          }
           if (sub === '/update-admin') {
             const r = dbApi.updateAdminProfile(userId, body);
             if (r.success) broadcast('user_updated', { user: r.user });

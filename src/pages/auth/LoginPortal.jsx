@@ -15,7 +15,10 @@ import {
   ShieldCheck,
   UserCheck,
   Check,
+  QrCode,
+  Camera,
 } from 'lucide-react';
+import QrScannerModal from '../../components/common/QrScannerModal';
 import { storageService, getOrCreateDeviceId, getDeviceClientInfo } from '../../services/storageService';
 
 export default function LoginPortal({ institution: propInstitution, onLoginSuccess }) {
@@ -101,6 +104,7 @@ export default function LoginPortal({ institution: propInstitution, onLoginSucce
   const [recaptchaLoading, setRecaptchaLoading] = useState(false);
   const [recaptchaError, setRecaptchaError] = useState(false);
   const [ssoLoading, setSsoLoading] = useState(false);
+  const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
 
   // State untuk alur Google One Tap / Penautan / Verifikasi Email SSO
   const [authStep, setAuthStep] = useState('idle'); // 'idle' | 'google_linking' | 'google_verifying' | 'sso_confirm_identity'
@@ -333,6 +337,83 @@ export default function LoginPortal({ institution: propInstitution, onLoginSucce
       setPassword('23101'); // Password default NIS peserta
       setIsCaptchaVerified(true);
     }
+  };
+
+  // Handler Login Otomatis via Scan QR Code Kartu Ujian
+  const handleQrScanSuccess = (decodedPayload) => {
+    setIsQrScannerOpen(false);
+    setErrorMsg('');
+
+    let token = String(decodedPayload || '').trim();
+    if (token.startsWith('{') && token.endsWith('}')) {
+      try {
+        const parsed = JSON.parse(token);
+        token = parsed.login_token || parsed.token || parsed.nisn || parsed.nomor_ujian || parsed.username || token;
+      } catch {}
+    }
+
+    const user = storageService.getUserByLoginToken(token) || storageService.getUserByUsername(token);
+
+    if (!user) {
+      setErrorMsg('Data peserta dari QR Code / Token tidak ditemukan di sistem sekolah. Pastikan kartu ujian benar atau hubungi pengawas.');
+      return;
+    }
+
+    if (user.role !== 'student') {
+      setErrorMsg('QR Code ini bukan akun peserta ujian.');
+      return;
+    }
+
+    const isActive = user.is_active === true || user.is_active === 'true' || user.is_active === 1 || user.is_active === undefined;
+    const isVerified = user.is_verified === true || user.is_verified === 'true' || user.is_verified === 1 || user.is_verified === undefined;
+
+    if (!isActive) {
+      setErrorMsg('Akun peserta Anda dinonaktifkan oleh pihak sekolah. Hubungi proctor/admin.');
+      return;
+    }
+
+    if (!isVerified) {
+      setErrorMsg('Akun peserta Anda belum diverifikasi oleh panitia ujian sekolah.');
+      return;
+    }
+
+    // Cek penguncian perangkat
+    if (user.active_device_id && user.active_device_id !== currentDeviceId) {
+      setErrorMsg(
+        `Akun terkunci di perangkat lain (${user.active_device_id}). Silakan lapor pengawas ujian untuk "Reset Login Perangkat".`
+      );
+      return;
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // ATURAN SSO UNTUK MODE 'BOTH' (Google SSO & No. Ujian / NISN):
+    // "metodelogin scan kartu ujian qr ini hanya menggantukan metode input manual
+    // dan tetap melakukan cek email seperti seharusnya."
+    // ─────────────────────────────────────────────────────────────────
+    if (isGoogleOAuthActive && institution?.auth_method === 'BOTH') {
+      const hasGoogleEmail = Boolean((user.google_email || user.email)?.trim());
+      const isGoogleLinked = Boolean(user.google_linked && hasGoogleEmail && user.google_id);
+
+      if (!isGoogleLinked) {
+        setPendingStudent(user);
+        setGoogleMismatchError('');
+        setAuthStep('google_linking');
+        triggerGoogleOneTap(user, 'google_linking');
+        return;
+      } else {
+        setPendingStudent(user);
+        setGoogleMismatchError('');
+        setAuthStep('google_verifying');
+        triggerGoogleOneTap(user, 'google_verifying');
+        return;
+      }
+    }
+
+    // Jika bukan BOTH atau Google OAuth tidak aktif
+    user.active_device_id = currentDeviceId;
+    storageService.saveUser(user);
+    storageService.setCurrentUser(user);
+    onLoginSuccess(user);
   };
 
   const handleCredentialsLogin = (e) => {
@@ -828,7 +909,7 @@ export default function LoginPortal({ institution: propInstitution, onLoginSucce
         ) : (
           <div className="mb-6 text-center pb-3 border-b border-zinc-100">
             <h2 className="text-base font-bold text-zinc-900">Portal Peserta Ujian</h2>
-            <p className="text-xs text-zinc-500 mt-0.5">Silakan masuk menggunakan No. Ujian / NISN dan Password</p>
+            <p className="text-xs text-zinc-500 mt-0.5">Silakan masuk menggunakan data peserta dari panitia ujian</p>
           </div>
         )}
 
@@ -886,6 +967,21 @@ export default function LoginPortal({ institution: propInstitution, onLoginSucce
           </div>
         ) : (
           <form onSubmit={handleCredentialsLogin} className="space-y-4">
+            {/* Tombol Scan QR Kartu Ujian (Inklusif satu paket dengan mode No. Ujian / NISN, TIDAK muncul di mode SSO Only) */}
+            {activeTab === 'student' && institution?.auth_method !== 'SSO_ONLY' && (
+              <div className="mb-1">
+                <button
+                  type="button"
+                  onClick={() => setIsQrScannerOpen(true)}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border border-blue-200 bg-blue-50/80 hover:bg-blue-100 active:bg-blue-200/80 text-xs font-semibold text-blue-800 shadow-2xs transition-all cursor-pointer group"
+                  title="Buka Kamera untuk Scan QR Code pada Kartu Ujian Peserta"
+                >
+                  <QrCode className="w-4 h-4 text-blue-600 group-hover:scale-110 transition-transform" />
+                  <span>Scan Kartu Ujian (Login QR Code Instan)</span>
+                </button>
+              </div>
+            )}
+
             {/* Opsi Login Google SSO di bagian ATAS untuk Mode BOTH (Google SSO & NISN) */}
             {activeTab === 'student' && isGoogleOAuthActive && institution?.auth_method === 'BOTH' && (
               <div className="space-y-3 pb-1">
@@ -937,9 +1033,22 @@ export default function LoginPortal({ institution: propInstitution, onLoginSucce
               </div>
             )}
             <div>
-              <label className="block text-xs font-medium text-zinc-700 mb-1.5">
-                {activeTab === 'student' ? 'Nomor Ujian / NISN Peserta' : 'Username Administrator'}
-              </label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-medium text-zinc-700">
+                  {activeTab === 'student' ? 'Nomor Ujian / NISN Peserta' : 'Username Administrator'}
+                </label>
+                {activeTab === 'student' && institution?.auth_method !== 'SSO_ONLY' && (
+                  <button
+                    type="button"
+                    onClick={() => setIsQrScannerOpen(true)}
+                    className="inline-flex items-center gap-1 text-[11px] text-blue-600 hover:text-blue-800 font-semibold cursor-pointer transition-colors"
+                    title="Buka Kamera untuk Scan QR Code Kartu Ujian"
+                  >
+                    <QrCode className="w-3 h-3 text-blue-600" />
+                    <span>Scan QR</span>
+                  </button>
+                )}
+              </div>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-zinc-400">
                   <User className="w-4 h-4" />
@@ -950,8 +1059,18 @@ export default function LoginPortal({ institution: propInstitution, onLoginSucce
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   placeholder={activeTab === 'student' ? 'Contoh: UJN-12-001 atau 0058291021' : 'admin'}
-                  className="w-full pl-10 pr-3.5 py-2.5 bg-white border border-zinc-300 rounded-xl text-sm text-zinc-900 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:border-zinc-900 transition-all"
+                  className={`w-full pl-10 ${activeTab === 'student' && institution?.auth_method !== 'SSO_ONLY' ? 'pr-10' : 'pr-3.5'} py-2.5 bg-white border border-zinc-300 rounded-xl text-sm text-zinc-900 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:border-zinc-900 transition-all`}
                 />
+                {activeTab === 'student' && institution?.auth_method !== 'SSO_ONLY' && (
+                  <button
+                    type="button"
+                    onClick={() => setIsQrScannerOpen(true)}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-zinc-400 hover:text-blue-600 cursor-pointer"
+                    title="Scan QR Code Kartu Ujian"
+                  >
+                    <QrCode className="w-4 h-4" />
+                  </button>
+                )}
               </div>
               {activeTab === 'student' && (
                 <p className="mt-1 text-[11px] text-zinc-500 flex items-center justify-between">
@@ -995,8 +1114,8 @@ export default function LoginPortal({ institution: propInstitution, onLoginSucce
                     <div className="flex items-center gap-2">
                       <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
                       <div>
-                        <div className="font-semibold">Google reCAPTCHA v3 Aktif</div>
-                        <div className="text-[10px] text-emerald-700">Terproteksi otomatis di latar belakang tanpa interaksi klik</div>
+                        <div className="font-semibold">Verifikasi Kemanan Aktif</div>
+                        <div className="text-[10px] text-emerald-700">Terproteksi otomatis oleh Google reCAPTCHA</div>
                       </div>
                     </div>
                     {recaptchaLoading ? (
@@ -1147,7 +1266,7 @@ export default function LoginPortal({ institution: propInstitution, onLoginSucce
           </div>
         )}
         <p className="text-[11px] text-zinc-400">
-          ExamGuard &copy; {new Date().getFullYear()} &bull; Arsitektur Produksi Siap cPanel
+          ExamGuard &copy; {new Date().getFullYear()} &bull; Arsitektur Produksi oleh Jawa Tech
         </p>
       </footer>
        {/* ─────────────────────────────────────────────────────────────
@@ -1315,6 +1434,12 @@ export default function LoginPortal({ institution: propInstitution, onLoginSucce
           </div>
         </div>
       )}
+      {/* Modal Scanner QR Code Kartu Ujian */}
+      <QrScannerModal
+        isOpen={isQrScannerOpen}
+        onClose={() => setIsQrScannerOpen(false)}
+        onScanSuccess={handleQrScanSuccess}
+      />
     </div>
   );
 }

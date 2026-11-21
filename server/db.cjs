@@ -345,9 +345,28 @@ try {
 try {
   rawDb.exec(`ALTER TABLE institution ADD COLUMN google_oauth_verified_at TEXT DEFAULT '';`);
 } catch (_) {}
+try {
+  rawDb.exec(`ALTER TABLE users ADD COLUMN login_token TEXT DEFAULT '';`);
+} catch (_) {}
+try {
+  rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_users_login_token ON users(login_token);`);
+} catch (_) {}
 
 // ─── Seed Data Default ────────────────────────────────────────────────────────
 function seedDefaultData() {
+  // Pastikan semua peserta memiliki login_token unik otomatis
+  try {
+    const studentsWithoutToken = db.prepare("SELECT id, nisn, nomor_ujian FROM users WHERE (login_token IS NULL OR login_token = '') AND role='student'").all();
+    if (studentsWithoutToken && studentsWithoutToken.length > 0) {
+      const updateTokenStmt = db.prepare("UPDATE users SET login_token=? WHERE id=?");
+      for (const s of studentsWithoutToken) {
+        const seed = (s.nomor_ujian || s.nisn || s.id || 'STD').replace(/[^a-zA-Z0-9]/g, '').slice(-6).toUpperCase();
+        const r1 = Math.random().toString(36).substring(2, 10).toUpperCase();
+        const r2 = Math.random().toString(36).substring(2, 10).toUpperCase();
+        updateTokenStmt.run(`EGTOK-${seed}-${r1}-${r2}`, s.id);
+      }
+    }
+  } catch (_) {}
   // Seed institution jika belum ada
   const instRow = db.prepare("SELECT id FROM institution WHERE id='singleton'").get();
   if (!instRow) {
@@ -457,6 +476,7 @@ function rowToUser(r) {
     google_email: r.google_email || null,
     google_linked_at: r.google_linked_at || null,
     active_device_id: r.active_device_id || null,
+    login_token: r.login_token || '',
     created_at: r.created_at,
     updated_at: r.updated_at,
   };
@@ -583,17 +603,18 @@ const stmts = {
   // Users
   getAllUsers:       db.prepare('SELECT * FROM users ORDER BY role ASC, nama ASC'),
   getUserById:      db.prepare('SELECT * FROM users WHERE id=?'),
-  getUserByUsername:db.prepare('SELECT * FROM users WHERE username=? COLLATE NOCASE OR nisn=? COLLATE NOCASE OR nomor_ujian=? COLLATE NOCASE'),
+  getUserByUsername:db.prepare("SELECT * FROM users WHERE username=? COLLATE NOCASE OR nisn=? COLLATE NOCASE OR nomor_ujian=? COLLATE NOCASE OR (login_token=? AND login_token != '')"),
+  getUserByLoginToken: db.prepare("SELECT * FROM users WHERE login_token=? AND login_token != ''"),
   getUserByNisn:    db.prepare('SELECT * FROM users WHERE nisn=?'),
   getUserByEmail:   db.prepare('SELECT * FROM users WHERE email=? OR google_email=?'),
   getStudents:      db.prepare("SELECT * FROM users WHERE role='student' ORDER BY nama ASC"),
   insertUser: db.prepare(`
     INSERT INTO users (id,username,password,nama,email,role,nisn,nis,nomor_ujian,
       jenis_kelamin,agama,kelas,tingkat,ruang,is_active,is_verified,
-      google_linked,google_id,google_email,google_linked_at,active_device_id,updated_at)
+      google_linked,google_id,google_email,google_linked_at,active_device_id,login_token,updated_at)
     VALUES (@id,@username,@password,@nama,@email,@role,@nisn,@nis,@nomor_ujian,
       @jenis_kelamin,@agama,@kelas,@tingkat,@ruang,@is_active,@is_verified,
-      @google_linked,@google_id,@google_email,@google_linked_at,@active_device_id,@updated_at)
+      @google_linked,@google_id,@google_email,@google_linked_at,@active_device_id,@login_token,@updated_at)
   `),
   updateUser: db.prepare(`
     UPDATE users SET
@@ -603,6 +624,7 @@ const stmts = {
       is_active=@is_active,is_verified=@is_verified,
       google_linked=@google_linked,google_id=@google_id,google_email=@google_email,
       google_linked_at=@google_linked_at,active_device_id=@active_device_id,
+      login_token=@login_token,
       updated_at=@updated_at
     WHERE id=@id
   `),
@@ -814,7 +836,13 @@ const dbApi = {
   getUserByUsername(username) {
     if (!username) return null;
     const u = String(username).trim();
-    return rowToUser(stmts.getUserByUsername.get(u, u, u));
+    return rowToUser(stmts.getUserByUsername.get(u, u, u, u));
+  },
+
+  getUserByLoginToken(token) {
+    if (!token) return null;
+    const t = String(token).trim();
+    return rowToUser(stmts.getUserByLoginToken.get(t));
   },
 
   getUserByNisn(nisn) {
@@ -833,7 +861,15 @@ const dbApi = {
   saveUser(data) {
     const now = new Date().toISOString();
     const existing = data.id ? this.getUserById(data.id) : null;
+    const generateStudentToken = (u) => {
+      const seed = (u.nomor_ujian || u.nisn || u.id || 'STD').replace(/[^a-zA-Z0-9]/g, '').slice(-6).toUpperCase();
+      const r1 = Math.random().toString(36).substring(2, 10).toUpperCase();
+      const r2 = Math.random().toString(36).substring(2, 10).toUpperCase();
+      return `EGTOK-${seed}-${r1}-${r2}`;
+    };
+
     if (existing) {
+      const isStudent = (data.role || existing.role) === 'student';
       stmts.updateUser.run({
         id: data.id,
         username: safeStr(data.username, existing.username),
@@ -856,17 +892,20 @@ const dbApi = {
         google_email: data.google_email !== undefined ? data.google_email : existing.google_email,
         google_linked_at: data.google_linked_at !== undefined ? data.google_linked_at : existing.google_linked_at,
         active_device_id: data.active_device_id !== undefined ? data.active_device_id : existing.active_device_id,
+        login_token: safeStr(data.login_token, existing.login_token || (isStudent ? generateStudentToken(existing) : '')),
         updated_at: now,
       });
     } else {
       const id = data.id || generateUUID();
+      const role = safeStr(data.role, 'student');
+      const isStudent = role === 'student';
       stmts.insertUser.run({
         id,
         username: safeStr(data.username, id),
         password: safeStr(data.password, ''),
         nama: safeStr(data.nama, 'Pengguna Baru'),
         email: safeStr(data.email, `${id}@examguard.sch.id`).toLowerCase(),
-        role: safeStr(data.role, 'student'),
+        role,
         nisn: safeStr(data.nisn, ''),
         nis: safeStr(data.nis, ''),
         nomor_ujian: safeStr(data.nomor_ujian, ''),
@@ -882,6 +921,7 @@ const dbApi = {
         google_email: data.google_email || null,
         google_linked_at: data.google_linked_at || null,
         active_device_id: data.active_device_id || null,
+        login_token: safeStr(data.login_token, isStudent ? generateStudentToken(data) : ''),
         updated_at: now,
       });
     }
@@ -1025,6 +1065,17 @@ const dbApi = {
     } else {
       this.saveUser({ id: studentId, google_linked: false, google_id: null, google_email: null, google_linked_at: null });
     }
+    return this.getUserById(studentId);
+  },
+
+  resetStudentLoginToken(studentId) {
+    const user = this.getUserById(studentId);
+    if (!user) throw new Error('Data peserta tidak ditemukan.');
+    const seed = (user.nomor_ujian || user.nisn || user.id || 'STD').replace(/[^a-zA-Z0-9]/g, '').slice(-6).toUpperCase();
+    const r1 = Math.random().toString(36).substring(2, 10).toUpperCase();
+    const r2 = Math.random().toString(36).substring(2, 10).toUpperCase();
+    const newToken = `EGTOK-${seed}-${r1}-${r2}`;
+    this.saveUser({ id: studentId, login_token: newToken });
     return this.getUserById(studentId);
   },
 

@@ -76,8 +76,11 @@ import {
   FlaskConical,
   Loader2,
   Crosshair,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
-import { storageService, cleanNomorUjian, convertGoogleFormUrl, subscribeSync } from '../../services/storageService';
+import { storageService, cleanNomorUjian, convertGoogleFormUrl, subscribeSync, generateStudentLoginToken } from '../../services/storageService';
+import StudentQrCardModal from '../../components/admin/StudentQrCardModal';
 import {
   createSystemBackupPackage,
   restoreSystemBackupPackage,
@@ -697,6 +700,13 @@ export default function AdminDashboard({ currentUser, onLogout }) {
   }, []);
 
   // Password visibility & State Uji Koneksi Produksi
+  // Accordion / Collapsible Cards State di Pengaturan Instansi
+  const [isGpsCardOpen, setIsGpsCardOpen] = useState(false);
+  const [isOAuthCardOpen, setIsOAuthCardOpen] = useState(false);
+  const [isRecaptchaCardOpen, setIsRecaptchaCardOpen] = useState(false);
+  const [isPreflightCardOpen, setIsPreflightCardOpen] = useState(false);
+  const [isGuideCardOpen, setIsGuideCardOpen] = useState(false);
+
   const [showGoogleSecret, setShowGoogleSecret] = useState(false);
   const [showRecaptchaSecret, setShowRecaptchaSecret] = useState(false);
   const [testingOAuth, setTestingOAuth] = useState(false);
@@ -741,6 +751,10 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     email: '',
     is_verified: true,
   });
+
+  // Modal Kartu Ujian & QR Code Peserta
+  const [viewingStudentQr, setViewingStudentQr] = useState(null);
+  const [showPrintAllCardsModal, setShowPrintAllCardsModal] = useState(false);
 
   // Modal Edit Peserta
   const [showEditStudentModal, setShowEditStudentModal] = useState(false);
@@ -2887,6 +2901,15 @@ export default function AdminDashboard({ currentUser, onLogout }) {
   };
 
   // Handler Tambah Peserta Manual
+  const handleViewStudentQr = (student) => {
+    let stu = { ...student };
+    if (!stu.login_token) {
+      stu.login_token = generateStudentLoginToken(stu.nomor_ujian || stu.nisn || stu.id);
+      storageService.saveUser(stu);
+    }
+    setViewingStudentQr(stu);
+  };
+
   const handleOpenAddModal = () => {
     setAddStudentError('');
     setNewStudentForm({
@@ -7639,6 +7662,21 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                   </button>
 
                   <button
+                    onClick={() => {
+                      if (filteredUsers.length === 0) {
+                        showNotification('Tidak ada peserta untuk dicetak kartu ujiannya.', 'error');
+                        return;
+                      }
+                      setShowPrintAllCardsModal(true);
+                    }}
+                    className="inline-flex items-center justify-center gap-2 px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-xs font-semibold rounded-xl shadow-2xs transition-all cursor-pointer"
+                    title="Cetak Seluruh Kartu Ujian Peserta Lengkap dengan QR Code Login Instan"
+                  >
+                    <QrCode className="w-4 h-4 text-indigo-600" />
+                    <span>Cetak Kartu QR Peserta ({filteredUsers.length})</span>
+                  </button>
+
+                  <button
                     onClick={handleClearAllStudents}
                     className="inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs font-medium rounded-xl shadow-2xs transition-all cursor-pointer"
                     title="Hapus seluruh data peserta sekaligus"
@@ -7869,6 +7907,15 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                             {/* Kolom 9: Aksi (Edit, Reset Password, Reset SSO, Hapus) */}
                             <td className="py-3.5 px-4 text-center">
                               <div className="flex items-center justify-center gap-1.5">
+                                {/* Lihat & Cetak QR Code Kartu Ujian */}
+                                <button
+                                  onClick={() => handleViewStudentQr(stu)}
+                                  className="p-1.5 text-indigo-700 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 rounded-lg border border-indigo-200 transition-colors cursor-pointer shadow-2xs"
+                                  title="Lihat & Cetak QR Code Kartu Ujian Peserta"
+                                >
+                                  <QrCode className="w-3.5 h-3.5 text-indigo-600" />
+                                </button>
+
                                 {/* Edit Akun */}
                                 <button
                                   onClick={() => handleOpenEditModal(stu)}
@@ -9028,7 +9075,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                     <div>
                       <label className="block text-xs font-medium text-zinc-700 mb-1.5 flex items-center justify-between">
                         <span>NPSN / Kode Sekolah</span>
-                        <span className="text-[10px] text-zinc-600 font-mono bg-zinc-100 px-1.5 py-0.5 rounded border border-zinc-200">Alfanumerik</span>
+                        
                       </label>
                       <input
                         type="text"
@@ -9042,9 +9089,6 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                         }}
                         className="w-full px-3.5 py-2.5 border border-zinc-300 rounded-xl text-sm font-mono tracking-wider uppercase focus:ring-2 focus:ring-zinc-900 focus:outline-none"
                       />
-                      <p className="text-[10px] text-zinc-400 mt-1">
-                        Huruf (A-Z) dan angka (0-9) saja, tanpa spasi dan tanpa karakter khusus.
-                      </p>
                     </div>
 
                     <div>
@@ -9144,40 +9188,42 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                 </div>
 
                 {/* FITUR 3: PENGATURAN GPS SEKOLAH (DENGAN SAKELAR ON/OFF CEK LOKASI) */}
-                <div className="bg-white border border-zinc-200/80 rounded-xl p-6 shadow-2xs space-y-5">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-zinc-100 gap-3">
-                    <div className="flex items-center gap-2.5">
-                      <MapPin className="w-5 h-5 text-zinc-700" />
+                <div className={`bg-white border rounded-2xl p-6 shadow-2xs transition-all ${
+                  institution.gps_enabled ? 'border-emerald-200/90 ring-1 ring-emerald-100' : 'border-zinc-200/80'
+                }`}>
+                  <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all ${isGpsCardOpen ? 'pb-4 border-b border-zinc-100' : ''}`}>
+                    <div
+                      onClick={() => setIsGpsCardOpen(prev => !prev)}
+                      className="flex items-center gap-3.5 cursor-pointer select-none group"
+                      title={isGpsCardOpen ? 'Klik untuk menciutkan setelan GPS' : 'Klik untuk membuka detail setelan GPS'}
+                    >
+                      <div
+                        className={`w-11 h-11 rounded-2xl flex items-center justify-center transition-all ${
+                          institution.gps_enabled
+                            ? 'bg-emerald-50/80 border border-emerald-200/90 shadow-2xs ring-4 ring-emerald-50/60 text-emerald-700'
+                            : 'bg-zinc-100 border border-zinc-200 text-zinc-500'
+                        }`}
+                      >
+                        <MapPin className="w-5 h-5" />
+                      </div>
                       <div>
-                        <h3 className="text-sm font-semibold text-zinc-900">
-                          Geofencing GPS Lokasi Sekolah (Haversine Formula)
+                        <h3 className="text-sm font-bold text-zinc-900 group-hover:text-emerald-600 transition-colors">
+                          Lokasi Sekolah (GPS)
                         </h3>
-                        <p className="text-xs text-zinc-500">
+                        <p className="text-xs text-zinc-500 mt-0.5">
                           Atur apakah peserta wajib berada di area fisik sekolah saat mengikuti ujian.
                         </p>
                       </div>
                     </div>
 
-                    {/* Sakelar ON / OFF Cek Lokasi Login Ujian */}
-                    <div className="flex items-center gap-3 bg-zinc-50 border border-zinc-200 p-1.5 px-3 rounded-xl shrink-0">
-                      <span className="text-xs font-medium text-zinc-700">
-                        {institution.gps_enabled ? (
-                          <span className="text-emerald-700 font-semibold flex items-center gap-1.5">
-                            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                            Cek Lokasi: AKTIF
-                          </span>
-                        ) : (
-                          <span className="text-zinc-500 flex items-center gap-1.5">
-                            <span className="w-2 h-2 rounded-full bg-zinc-400"></span>
-                            Cek Lokasi: NON-AKTIF
-                          </span>
-                        )}
-                      </span>
+                    {/* Sakelar ON / OFF Cek Lokasi & Tombol Accordion */}
+                    <div className="flex items-center gap-2.5">
                       <button
                         type="button"
                         role="switch"
                         aria-checked={institution.gps_enabled}
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.stopPropagation();
                           const nextStatus = !institution.gps_enabled;
                           const updated = {
                             ...institution,
@@ -9196,23 +9242,37 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                               : 'Pemeriksaan lokasi GPS & Izin Browser GPS dinonaktifkan (OFF).'
                           );
                         }}
-                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${institution.gps_enabled ? 'bg-emerald-600' : 'bg-zinc-300 hover:bg-zinc-400'
-                          }`}
+                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                          institution.gps_enabled ? 'bg-emerald-600' : 'bg-zinc-300 hover:bg-zinc-400'
+                        }`}
                         title={
                           institution.gps_enabled
-                            ? 'Klik untuk mematikan validasi lokasi GPS'
-                            : 'Klik untuk mengaktifkan validasi lokasi GPS'
+                            ? `Cek Lokasi GPS: AKTIF (Radius ${institution.max_radius_meters || 100}m). Klik untuk mematikan validasi lokasi GPS.`
+                            : 'Cek Lokasi GPS: NON-AKTIF (Peserta dapat ujian dari mana saja). Klik untuk mengaktifkan validasi lokasi GPS.'
                         }
                       >
                         <span
-                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${institution.gps_enabled ? 'translate-x-5' : 'translate-x-0'
-                            }`}
+                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition duration-200 ease-in-out ${
+                            institution.gps_enabled ? 'translate-x-5' : 'translate-x-0'
+                          }`}
                         />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setIsGpsCardOpen(prev => !prev)}
+                        className="p-2 rounded-xl border border-zinc-200 bg-white hover:bg-zinc-100 active:bg-zinc-200 text-zinc-600 hover:text-zinc-900 shadow-2xs transition-all cursor-pointer flex items-center justify-center"
+                        title={isGpsCardOpen ? 'Tutup Detail Setelan GPS' : `Buka Detail Setelan GPS (${institution.gps_enabled ? 'Cek Lokasi Aktif: ' + (institution.max_radius_meters || 100) + 'm' : 'Non-aktif'})`}
+                        aria-label={isGpsCardOpen ? 'Tutup Detail Setelan GPS' : 'Buka Detail Setelan GPS'}
+                      >
+                        {isGpsCardOpen ? <ChevronUp className="w-4 h-4 text-zinc-600" /> : <ChevronDown className="w-4 h-4 text-zinc-600" />}
                       </button>
                     </div>
                   </div>
 
-                  {/* Banner Status GPS ON/OFF */}
+                  {isGpsCardOpen && (
+                    <div className="pt-2 space-y-4 animate-in fade-in slide-in-from-top-2 duration-200">
+                      {/* Banner Status GPS ON/OFF */}
                   {!institution.gps_enabled ? (
                     <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800 flex items-start gap-2.5">
                       <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
@@ -9436,6 +9496,8 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                       }}
                     />
                   </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* FITUR 4: METODE AUTENTIKASI & KEAMANAN GOOGLE (MODE PRODUKSI RESMI TANPA BYPASS) */}
@@ -9447,8 +9509,12 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                         : 'border-zinc-200/80'
                       }`}
                   >
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-zinc-100">
-                      <div className="flex items-center gap-3.5">
+                    <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all ${isOAuthCardOpen ? 'pb-4 border-b border-zinc-100' : ''}`}>
+                      <div
+                        onClick={() => setIsOAuthCardOpen(prev => !prev)}
+                        className="flex items-center gap-3.5 cursor-pointer select-none group"
+                        title={isOAuthCardOpen ? 'Klik untuk menciutkan setelan' : 'Klik untuk membuka detail setelan'}
+                      >
                         <div
                           className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${institution.google_oauth_enabled && institution.google_client_id
                               ? 'bg-blue-50/80 border border-blue-200/90 shadow-2xs ring-4 ring-blue-50/60'
@@ -9461,49 +9527,34 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                           />
                         </div>
                         <div>
-                          <div className="flex items-center gap-2">
-                            <h3 className="text-sm font-bold text-zinc-900">
-                              Google OAuth 2.0 & Workspace SSO
-                            </h3>
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200/60">
-                              Mode Produksi Resmi
-                            </span>
-                          </div>
+                          <h3 className="text-sm font-bold text-zinc-900 group-hover:text-blue-600 transition-colors">
+                            Google OAuth 2.0 & Workspace SSO
+                          </h3>
                           <p className="text-xs text-zinc-500 mt-0.5">
-                            Single Sign-On (SSO) akun Google resmi (<span className="font-mono text-zinc-600">@sekolah.sch.id</span>)
+                            Single Sign-On (SSO) akun Google resmi seperti (<span className="font-mono text-zinc-600">belajar.id</span>)
                           </p>
                         </div>
                       </div>
 
-                      {/* Status & Sakelar Cepat Google OAuth */}
-                      <div className="flex items-center gap-3 bg-zinc-50 border border-zinc-200 p-1.5 px-3 rounded-xl shrink-0">
-                        <span className="text-xs font-medium">
-                          {institution.google_oauth_verified && institution.google_oauth_enabled && institution.google_client_id ? (
-                            <span className="text-emerald-700 font-semibold flex items-center gap-1.5">
-                              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                              SSO: ON • {institution.google_oauth_verified_email}
-                            </span>
-                          ) : (
-                            <span className="text-zinc-500 flex items-center gap-1.5">
-                              <span className="w-2 h-2 rounded-full bg-zinc-400"></span>
-                              SSO: OFF • Belum Login Akun Gmail
-                            </span>
-                          )}
-                        </span>
+                      {/* Sakelar Cepat & Tombol Accordion Google OAuth */}
+                      <div className="flex items-center gap-2.5">
                         <button
                           type="button"
                           role="switch"
                           aria-checked={Boolean(institution.google_oauth_verified && institution.google_oauth_enabled && institution.google_client_id)}
-                          onClick={handleToggleGoogleOAuth}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleToggleGoogleOAuth();
+                          }}
                           className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
                             institution.google_oauth_verified && institution.google_oauth_enabled && institution.google_client_id
                               ? 'bg-emerald-600'
                               : 'bg-zinc-300 hover:bg-zinc-400'
                           }`}
                           title={
-                            institution.google_oauth_verified && institution.google_oauth_enabled
-                              ? 'Klik untuk reset/menonaktifkan Google OAuth'
-                              : 'Status SSO On WAJIB login ke akun Google terlebih dahulu'
+                            institution.google_oauth_verified && institution.google_oauth_enabled && institution.google_client_id
+                              ? `SSO: ON • Akun: ${institution.google_oauth_verified_email || 'Terverifikasi'}. Klik untuk nonaktifkan/reset.`
+                              : 'SSO: OFF • Belum Login Akun Google. Klik buka detail untuk verifikasi & aktifkan SSO.'
                           }
                         >
                           <span
@@ -9514,10 +9565,22 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                             }`}
                           />
                         </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setIsOAuthCardOpen(prev => !prev)}
+                          className="p-2 rounded-xl border border-zinc-200 bg-white hover:bg-zinc-100 active:bg-zinc-200 text-zinc-600 hover:text-zinc-900 shadow-2xs transition-all cursor-pointer flex items-center justify-center"
+                          title={isOAuthCardOpen ? 'Tutup Detail Setelan OAuth' : `Buka Detail Setelan OAuth (${institution.google_oauth_verified && institution.google_oauth_enabled && institution.google_client_id ? 'SSO ON: ' + institution.google_oauth_verified_email : 'SSO OFF'})`}
+                          aria-label={isOAuthCardOpen ? 'Tutup Detail Setelan OAuth' : 'Buka Detail Setelan OAuth'}
+                        >
+                          {isOAuthCardOpen ? <ChevronUp className="w-4 h-4 text-zinc-600" /> : <ChevronDown className="w-4 h-4 text-zinc-600" />}
+                        </button>
                       </div>
                     </div>
 
-                    {/* Banner status koneksi Google OAuth */}
+                    {isOAuthCardOpen && (
+                      <div className="pt-2 space-y-4 animate-in fade-in slide-in-from-top-2 duration-200">
+                        {/* Banner status koneksi Google OAuth */}
                     {!institution.google_oauth_enabled || !institution.google_client_id ? (
                       <div className="mt-4 p-3.5 rounded-xl bg-zinc-50 border border-zinc-200 text-xs text-zinc-600 flex items-start gap-2.5">
                         <AlertCircle className="w-4 h-4 text-zinc-400 shrink-0 mt-0.5" />
@@ -9665,12 +9728,14 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                           ) : (
                             <>
                               <GoogleBrandIcon className="w-3.5 h-3.5" active={true} />
-                              <span>Login Akun Google untuk Verifikasi & Aktifkan SSO (Wajib)</span>
+                              <span>Verifikasi & Aktifkan SSO</span>
                             </>
                           )}
                         </button>
                       </div>
                     </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* 2. KARTU GOOGLE RECAPTCHA V2 & V3 */}
@@ -9680,8 +9745,12 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                         : 'border-zinc-200/80'
                       }`}
                   >
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-zinc-100">
-                      <div className="flex items-center gap-3.5">
+                    <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all ${isRecaptchaCardOpen ? 'pb-4 border-b border-zinc-100' : ''}`}>
+                      <div
+                        onClick={() => setIsRecaptchaCardOpen(prev => !prev)}
+                        className="flex items-center gap-3.5 cursor-pointer select-none group"
+                        title={isRecaptchaCardOpen ? 'Klik untuk menciutkan setelan' : 'Klik untuk membuka detail setelan'}
+                      >
                         <div
                           className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${institution.recaptcha_enabled && institution.recaptcha_site_key
                               ? 'bg-emerald-50/80 border border-emerald-200/90 shadow-2xs ring-4 ring-emerald-50/60'
@@ -9694,46 +9763,31 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                           />
                         </div>
                         <div>
-                          <div className="flex items-center gap-2">
-                            <h3 className="text-sm font-bold text-zinc-900">
-                              Google reCAPTCHA (v2 & v3 Protection)
-                            </h3>
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/60">
-                              {institution.recaptcha_version === 'v3' ? 'Mode v3 Invisible' : 'Mode v2 Checkbox'}
-                            </span>
-                          </div>
+                          <h3 className="text-sm font-bold text-zinc-900 group-hover:text-emerald-600 transition-colors">
+                            Google reCAPTCHA (v2 & v3 Protection)
+                          </h3>
                           <p className="text-xs text-zinc-500 mt-0.5">
                             Proteksi verifikasi bot Google atau Captcha Mandiri Otomatis saat offline
                           </p>
                         </div>
                       </div>
 
-                      {/* Status & Sakelar Cepat reCAPTCHA */}
-                      <div className="flex items-center gap-3 bg-zinc-50 border border-zinc-200 p-1.5 px-3 rounded-xl shrink-0">
-                        <span className="text-xs font-medium">
-                          {institution.recaptcha_enabled && institution.recaptcha_site_key ? (
-                            <span className="text-emerald-700 font-semibold flex items-center gap-1.5">
-                              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                              Google reCAPTCHA: ON ({institution.recaptcha_version?.toUpperCase() || 'V2'})
-                            </span>
-                          ) : (
-                            <span className="text-zinc-600 flex items-center gap-1.5 font-medium">
-                              <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-                              Default Captcha Mandiri: AKTIF
-                            </span>
-                          )}
-                        </span>
+                      {/* Sakelar Cepat & Tombol Accordion reCAPTCHA */}
+                      <div className="flex items-center gap-2.5">
                         <button
                           type="button"
                           role="switch"
                           aria-checked={Boolean(institution.recaptcha_enabled && institution.recaptcha_site_key)}
-                          onClick={handleToggleRecaptcha}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleToggleRecaptcha();
+                          }}
                           className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${institution.recaptcha_enabled && institution.recaptcha_site_key ? 'bg-emerald-600' : 'bg-zinc-300 hover:bg-zinc-400'
                             }`}
                           title={
                             institution.recaptcha_enabled && institution.recaptcha_site_key
-                              ? 'Klik untuk reset/menonaktifkan Google reCAPTCHA'
-                              : 'Isi Site Key dan klik Test Koneksi untuk mengaktifkan'
+                              ? `Google reCAPTCHA: ON (${(institution.recaptcha_version || 'v2').toUpperCase()}). Klik untuk nonaktifkan/reset.`
+                              : 'Google reCAPTCHA: OFF • Default Captcha Mandiri: AKTIF. Klik buka detail untuk memasukkan Site Key.'
                           }
                         >
                           <span
@@ -9741,10 +9795,22 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                               }`}
                           />
                         </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setIsRecaptchaCardOpen(prev => !prev)}
+                          className="p-2 rounded-xl border border-zinc-200 bg-white hover:bg-zinc-100 active:bg-zinc-200 text-zinc-600 hover:text-zinc-900 shadow-2xs transition-all cursor-pointer flex items-center justify-center"
+                          title={isRecaptchaCardOpen ? 'Tutup Detail Setelan reCAPTCHA' : `Buka Detail Setelan reCAPTCHA (${institution.recaptcha_enabled && institution.recaptcha_site_key ? 'ON: ' + (institution.recaptcha_version || 'v2').toUpperCase() : 'Default Mandiri Aktif'})`}
+                          aria-label={isRecaptchaCardOpen ? 'Tutup Detail Setelan reCAPTCHA' : 'Buka Detail Setelan reCAPTCHA'}
+                        >
+                          {isRecaptchaCardOpen ? <ChevronUp className="w-4 h-4 text-zinc-600" /> : <ChevronDown className="w-4 h-4 text-zinc-600" />}
+                        </button>
                       </div>
                     </div>
 
-                    {/* Banner status reCAPTCHA */}
+                    {isRecaptchaCardOpen && (
+                      <div className="pt-2 space-y-4 animate-in fade-in slide-in-from-top-2 duration-200">
+                        {/* Banner status reCAPTCHA */}
                     {!institution.recaptcha_enabled || !institution.recaptcha_site_key ? (
                       <div className="mt-4 p-3.5 rounded-xl bg-amber-50/70 border border-amber-200 text-xs text-amber-900 flex items-start gap-2.5">
                         <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
@@ -9908,39 +9974,118 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                         </button>
                       </div>
                     </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
-                {/* FITUR 5: PANDUAN & STATUS DEPLOYMENT KE HOSTING CPANEL (KHUSUS SUPER ADMIN) */}
                 {/* FITUR 5: PENGATURAN CEKLIST IZIN PERAMBAN & DUKUNGAN PERANGKAT (PRE-FLIGHT CHECKS) */}
-                <div className="bg-white border border-zinc-200/80 rounded-2xl p-6 shadow-2xs space-y-5">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-zinc-100 gap-2">
-                    <div className="flex items-center gap-2.5">
-                      <div className="p-2 rounded-xl bg-purple-50 text-purple-700">
+                <div className={`bg-white border rounded-2xl p-6 shadow-2xs transition-all ${
+                  Object.values(institution.browser_permissions || {}).some(Boolean)
+                    ? 'border-purple-200/90 ring-1 ring-purple-100'
+                    : 'border-zinc-200/80'
+                }`}>
+                  <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all ${isPreflightCardOpen ? 'pb-4 border-b border-zinc-100' : ''}`}>
+                    <div
+                      onClick={() => setIsPreflightCardOpen(prev => !prev)}
+                      className="flex items-center gap-3.5 cursor-pointer select-none group"
+                      title={isPreflightCardOpen ? 'Klik untuk menciutkan ceklis izin' : 'Klik untuk membuka detail ceklis izin'}
+                    >
+                      <div
+                        className={`w-11 h-11 rounded-2xl flex items-center justify-center transition-all ${
+                          Object.values(institution.browser_permissions || {}).some(Boolean)
+                            ? 'bg-purple-50/80 border border-purple-200/90 shadow-2xs ring-4 ring-purple-50/60 text-purple-700'
+                            : 'bg-zinc-100 border border-zinc-200 text-zinc-500'
+                        }`}
+                      >
                         <ShieldCheck className="w-5 h-5" />
                       </div>
                       <div>
-                        <h3 className="text-sm font-semibold text-zinc-900">
+                        <h3 className="text-sm font-bold text-zinc-900 group-hover:text-purple-600 transition-colors">
                           Pengaturan Ceklis Izin Browser Peserta (Pre-Flight Checks)
                         </h3>
-                        <p className="text-xs text-zinc-500">
+                        <p className="text-xs text-zinc-500 mt-0.5">
                           Tentukan izin apa saja yang wajib diperiksa & dipenuhi peserta saat login dan sebelum soal ujian dibuka.
                         </p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 self-start sm:self-auto">
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-zinc-100 text-zinc-700 text-[10px] font-medium border border-zinc-200">
-                        <Smartphone className="w-3 h-3 text-zinc-600" />
-                        <span>HP / Ponsel</span>
-                      </span>
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-zinc-100 text-zinc-700 text-[10px] font-medium border border-zinc-200">
-                        <Laptop className="w-3 h-3 text-zinc-600" />
-                        <span>Laptop / PC</span>
-                      </span>
+
+                    {/* Sakelar Master & Tombol Accordion Pre-Flight */}
+                    <div className="flex items-center gap-2.5">
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={Object.values(institution.browser_permissions || {}).some(Boolean)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const currentPerms = institution.browser_permissions || {};
+                          const anyActive = Object.values(currentPerms).some(Boolean);
+                          const nextVal = !anyActive;
+                          const newPerms = { ...currentPerms };
+                          Object.keys(newPerms).forEach((key) => {
+                            if (key === 'google_sso' && nextVal) {
+                              newPerms[key] = Boolean(
+                                institution.google_oauth_verified &&
+                                institution.google_oauth_enabled &&
+                                institution.google_client_id?.trim()
+                              );
+                            } else {
+                              newPerms[key] = nextVal;
+                            }
+                          });
+                          const updated = {
+                            ...institution,
+                            browser_permissions: newPerms,
+                            ...(nextVal ? {} : { gps_enabled: false }),
+                          };
+                          setInstitution(updated);
+                          storageService.updateInstitution(updated);
+                          refreshData();
+                          showNotification(
+                            nextVal
+                              ? 'Seluruh ceklis izin browser diaktifkan (ON).'
+                              : 'Seluruh ceklis izin browser dinonaktifkan (OFF).'
+                          );
+                        }}
+                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                          Object.values(institution.browser_permissions || {}).some(Boolean)
+                            ? 'bg-purple-600'
+                            : 'bg-zinc-300 hover:bg-zinc-400'
+                        }`}
+                        title={
+                          Object.values(institution.browser_permissions || {}).some(Boolean)
+                            ? `Pre-Flight Checks: AKTIF (${Object.values(institution.browser_permissions || {}).filter(Boolean).length} izin diwajibkan). Klik untuk nonaktifkan semua izin.`
+                            : 'Pre-Flight Checks: NON-AKTIF (Semua izin dilewati). Klik untuk mengaktifkan seluruh izin.'
+                        }
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition duration-200 ease-in-out ${
+                            Object.values(institution.browser_permissions || {}).some(Boolean)
+                              ? 'translate-x-5'
+                              : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setIsPreflightCardOpen(prev => !prev)}
+                        className="p-2 rounded-xl border border-zinc-200 bg-white hover:bg-zinc-100 active:bg-zinc-200 text-zinc-600 hover:text-zinc-900 shadow-2xs transition-all cursor-pointer flex items-center justify-center"
+                        title={
+                          isPreflightCardOpen
+                            ? 'Tutup Detail Ceklis Izin'
+                            : `Buka Detail Ceklis Izin (${Object.values(institution.browser_permissions || {}).filter(Boolean).length} izin aktif)`
+                        }
+                        aria-label={isPreflightCardOpen ? 'Tutup Detail Ceklis Izin' : 'Buka Detail Ceklis Izin'}
+                      >
+                        {isPreflightCardOpen ? <ChevronUp className="w-4 h-4 text-zinc-600" /> : <ChevronDown className="w-4 h-4 text-zinc-600" />}
+                      </button>
                     </div>
                   </div>
 
-                  <p className="text-xs text-zinc-600 leading-relaxed">
+                  {isPreflightCardOpen && (
+                    <div className="pt-2 space-y-4 animate-in fade-in slide-in-from-top-2 duration-200">
+                      <p className="text-xs text-zinc-600 leading-relaxed">
                     Ceklis di bawah ini secara dinamis menentukan pemeriksaan pada halaman <strong>Pre-Flight Peserta</strong>. Izin yang dicentang (ON) akan menjadi syarat wajib sebelum peserta dapat masuk ke beranda atau membuka soal.
                   </p>
 
@@ -10236,17 +10381,23 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                       </button>
                     </div>
                   </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* FITUR 6: PANDUAN & STATUS DEPLOYMENT KE HOSTING CPANEL (KHUSUS SUPER ADMIN) */}
                 <div className="bg-white border border-zinc-200/80 rounded-2xl p-6 shadow-2xs space-y-5">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-zinc-100 gap-2">
-                    <div className="flex items-center gap-2.5">
+                  <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all ${isGuideCardOpen ? 'pb-4 border-b border-zinc-100' : ''}`}>
+                    <div
+                      onClick={() => setIsGuideCardOpen(prev => !prev)}
+                      className="flex items-center gap-3.5 cursor-pointer select-none group"
+                      title={isGuideCardOpen ? 'Klik untuk menciutkan panduan' : 'Klik untuk membuka panduan cPanel'}
+                    >
                       <div className="p-2 rounded-xl bg-blue-50 text-blue-700">
                         <Server className="w-5 h-5" />
                       </div>
                       <div>
-                        <h3 className="text-sm font-semibold text-zinc-900">
+                        <h3 className="text-sm font-semibold text-zinc-900 group-hover:text-blue-600 transition-colors">
                           Panduan & Pengaturan Pemasangan Aplikasi di cPanel
                         </h3>
                         <p className="text-xs text-zinc-500">
@@ -10254,12 +10405,21 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                         </p>
                       </div>
                     </div>
-                    <span className="text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200/80 px-2.5 py-1 rounded-full self-start sm:self-auto font-mono">
-                      Siap Deploy cPanel (.zip)
-                    </span>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsGuideCardOpen(prev => !prev)}
+                      className="p-2 rounded-xl border border-zinc-200 bg-white hover:bg-zinc-100 active:bg-zinc-200 text-zinc-600 hover:text-zinc-900 shadow-2xs transition-all cursor-pointer flex items-center justify-center self-start sm:self-auto"
+                      title={isGuideCardOpen ? 'Tutup Panduan Deployment cPanel' : 'Buka Panduan Deployment cPanel (Siap Deploy .zip)'}
+                      aria-label={isGuideCardOpen ? 'Tutup Panduan Deployment cPanel' : 'Buka Panduan Deployment cPanel'}
+                    >
+                      {isGuideCardOpen ? <ChevronUp className="w-4 h-4 text-zinc-600" /> : <ChevronDown className="w-4 h-4 text-zinc-600" />}
+                    </button>
                   </div>
 
-                  <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200/80 text-emerald-800">
+                  {isGuideCardOpen && (
+                    <div className="pt-2 space-y-4 animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200/80 text-emerald-800">
                     <p className="font-semibold text-xs mb-1 flex items-center gap-1.5">
                       <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                       Konfigurasi Vite & .htaccess Sudah 100% Sesuai Standar cPanel
@@ -10339,7 +10499,9 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                       </div>
                     </div>
                   </div>
-                </div>
+                  </div>
+                )}
+              </div>
 
                 {/* Tombol Simpan Konfigurasi */}
                 <div className="flex justify-end">
@@ -12307,6 +12469,25 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
           </div>
         </div>
       )}
+
+      {/* MODAL KARTU UJIAN & QR LOGIN PESERTA */}
+      <StudentQrCardModal
+        isOpen={Boolean(viewingStudentQr)}
+        onClose={() => setViewingStudentQr(null)}
+        student={viewingStudentQr}
+        institution={institution}
+        onTokenReset={(updatedUser) => {
+          setViewingStudentQr(updatedUser);
+          refreshMonitoringData();
+        }}
+      />
+
+      <StudentQrCardModal
+        isOpen={showPrintAllCardsModal}
+        onClose={() => setShowPrintAllCardsModal(false)}
+        allStudents={filteredUsers}
+        institution={institution}
+      />
 
       {/* Modal Dialog Konfirmasi Kustom Modern */}
       <ConfirmDialog

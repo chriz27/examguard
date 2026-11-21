@@ -21,6 +21,13 @@ export function cleanNomorUjian(raw, fallback = '') {
   return String(raw).trim().toUpperCase();
 }
 
+export function generateStudentLoginToken(seed = '') {
+  const s = String(seed).replace(/[^a-zA-Z0-9]/g, '').slice(-6).toUpperCase() || 'STD';
+  const r1 = Math.random().toString(36).substring(2, 10).toUpperCase();
+  const r2 = Math.random().toString(36).substring(2, 10).toUpperCase();
+  return `EGTOK-${s}-${r1}-${r2}`;
+}
+
 export function convertGoogleFormUrl(url) {
   if (!url) return '';
   let cleaned = String(url).trim();
@@ -459,7 +466,16 @@ export const storageService = {
     return (_cache.users || []).find(u =>
       (u.username && u.username.toLowerCase() === q) ||
       (u.nisn && u.nisn.toLowerCase() === q) ||
-      (u.nomor_ujian && u.nomor_ujian.toLowerCase() === q)
+      (u.nomor_ujian && u.nomor_ujian.toLowerCase() === q) ||
+      (u.login_token && u.login_token.toLowerCase() === q)
+    ) || null;
+  },
+
+  getUserByLoginToken(token) {
+    if (!token) return null;
+    const q = String(token).trim().toLowerCase();
+    return (_cache.users || []).find(u =>
+      u.login_token && u.login_token.toLowerCase() === q
     ) || null;
   },
 
@@ -474,7 +490,12 @@ export const storageService = {
 
   saveUser(user) {
     const existingIdx = (_cache.users || []).findIndex(u => u.id === user.id);
-    const updated = { ...user, updated_at: new Date().toISOString() };
+    const isStudent = user.role === 'student';
+    let token = user.login_token;
+    if (isStudent && !token) {
+      token = generateStudentLoginToken(user.nomor_ujian || user.nisn || user.id);
+    }
+    const updated = { ...user, ...(token ? { login_token: token } : {}), updated_at: new Date().toISOString() };
     if (existingIdx >= 0) {
       _cache.users[existingIdx] = updated;
     } else {
@@ -677,6 +698,20 @@ export const storageService = {
       try { localStorage.setItem('examguard_users', JSON.stringify(_cache.users)); } catch {}
       dbService.resetStudentSSO(studentId).catch(() => {});
       return { success: true, user: _cache.users[idx] };
+    }
+    return { success: false };
+  },
+
+  resetStudentLoginToken(studentId) {
+    const idx = (_cache.users || []).findIndex(u => u.id === studentId);
+    if (idx >= 0) {
+      const seed = _cache.users[idx].nomor_ujian || _cache.users[idx].nisn || _cache.users[idx].id;
+      const newToken = generateStudentLoginToken(seed);
+      _cache.users[idx].login_token = newToken;
+      _cache.users[idx].updated_at = new Date().toISOString();
+      try { localStorage.setItem('examguard_users', JSON.stringify(_cache.users)); } catch {}
+      dbService.resetStudentLoginToken(studentId).catch(() => {});
+      return { success: true, token: newToken, user: _cache.users[idx] };
     }
     return { success: false };
   },

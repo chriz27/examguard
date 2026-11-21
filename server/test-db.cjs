@@ -113,6 +113,23 @@ test('getUserByNisn menemukan peserta', () => {
   assertEqual(user.nama, 'Test Peserta Satu');
 });
 
+test('getUserByLoginToken dan auto-generate login_token untuk QR login', () => {
+  const user = dbApi.getUserByNisn('9999000001');
+  assert(user !== null, 'harus ditemukan');
+  assert(Boolean(user.login_token), 'login_token harus otomatis dibuat');
+  assert(user.login_token.startsWith('EGTOK-'), 'format login_token harus diawali EGTOK-');
+
+  // Cari lewat getUserByLoginToken
+  const byToken = dbApi.getUserByLoginToken(user.login_token);
+  assert(byToken !== null, 'harus ditemukan via getUserByLoginToken');
+  assertEqual(byToken.id, user.id);
+
+  // Cari lewat getUserByUsername (fleksibel identifier)
+  const byUsernameMethod = dbApi.getUserByUsername(user.login_token);
+  assert(byUsernameMethod !== null, 'harus ditemukan via getUserByUsername dengan parameter login_token');
+  assertEqual(byUsernameMethod.id, user.id);
+});
+
 test('updateStudent mengubah data peserta', () => {
   const user = dbApi.getUserByNisn('9999000001');
   const result = dbApi.updateStudent(user.id, { nama: 'Test Peserta Updated', kelas: 'XII IPS 2' });
@@ -138,6 +155,15 @@ test('resetStudentSSO memutus Google link', () => {
   const result = dbApi.resetStudentSSO(user.id);
   assert(!result.google_linked, 'google_linked harus false');
   assert(result.google_id === null, 'google_id harus null');
+});
+
+test('resetStudentLoginToken memperbarui token login unik', () => {
+  const user = dbApi.getUserByNisn('9999000001');
+  const oldToken = user.login_token;
+  const result = dbApi.resetStudentLoginToken(user.id);
+  assert(result.login_token, 'login_token baru harus ada');
+  assert(result.login_token.startsWith('EGTOK-'), 'token harus berawalan EGTOK-');
+  assert(result.login_token !== oldToken, 'token baru harus berbeda dengan token lama');
 });
 
 // ─── 3. Exam Sessions ─────────────────────────────────────────────────────────

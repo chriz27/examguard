@@ -405,6 +405,18 @@ export const dbService = {
     return result;
   },
 
+  async resetStudentLoginToken(id) {
+    const result = await _fetch(`/users/${encodeURIComponent(id)}/reset-token`, { method: 'PUT' });
+    if (result.success && _cache.users) {
+      const idx = _cache.users.findIndex(u => u.id === id);
+      if (idx >= 0 && result.user) {
+        _cache.users[idx] = result.user;
+        _notify('users', _cache.users);
+      }
+    }
+    return result;
+  },
+
   async updateAdminProfile(userId, data) {
     return _fetch(`/users/${encodeURIComponent(userId)}/update-admin`, { method: 'PUT', body: JSON.stringify(data) });
   },
