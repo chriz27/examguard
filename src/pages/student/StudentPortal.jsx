@@ -191,7 +191,7 @@ export default function StudentPortal({ currentUser: propCurrentUser, onLogout }
       setBatteryLevel(Math.round(b.level * 100));
       setIsCharging(Boolean(b.charging));
     };
-    if (typeof navigator !== 'undefined' && 'getBattery' in navigator) {
+    if (typeof navigator !== 'undefined' && typeof navigator.getBattery === 'function') {
       navigator.getBattery()
         .then((b) => {
           batteryObj = b;
@@ -472,6 +472,96 @@ export default function StudentPortal({ currentUser: propCurrentUser, onLogout }
     setShowGoogleLoginModal(true);
   };
 
+    // Otomatis picu Google One Tap saat preflight jika Google SSO belum terverifikasi
+  const triggerGoogleOneTapPreflight = async () => {
+    if (!institution?.google_client_id?.trim()) return;
+    try {
+      if (!window.google?.accounts?.id) {
+        await new Promise((resolve) => {
+          let s = document.getElementById('google-jssdk-portal');
+          if (s) {
+            if (window.google?.accounts?.id) return resolve(true);
+            s.addEventListener('load', () => resolve(true));
+            s.addEventListener('error', () => resolve(false));
+            return;
+          }
+          s = document.createElement('script');
+          s.id = 'google-jssdk-portal';
+          s.src = 'https://accounts.google.com/gsi/client';
+          s.async = true;
+          s.defer = true;
+          s.onload = () => resolve(true);
+          s.onerror = () => resolve(false);
+          document.head.appendChild(s);
+        });
+      }
+      if (!window.google?.accounts?.id) return;
+      window.google.accounts.id.initialize({
+        client_id: institution.google_client_id.trim(),
+        callback: (response) => {
+          if (response.credential) {
+            try {
+              const base64Url = response.credential.split('.')[1];
+              const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+              const jsonPayload = decodeURIComponent(
+                atob(base64)
+                  .split('')
+                  .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+                  .join('')
+              );
+              const payload = JSON.parse(jsonPayload);
+              const googleEmail = (payload.email || '').toLowerCase().trim();
+              const googleSub = payload.sub || ('gid_' + Date.now());
+
+              const updatedUser = {
+                ...currentUser,
+                google_linked: true,
+                google_id: googleSub,
+                google_email: googleEmail,
+                google_linked_at: new Date().toISOString(),
+                email: currentUser.email || googleEmail,
+              };
+
+              storageService.saveUser(updatedUser);
+              storageService.setCurrentUser(updatedUser);
+              setCurrentUser(updatedUser);
+              try {
+                sessionStorage.setItem(`examguard_google_sso_verified_${currentUser.id}`, 'true');
+              } catch {}
+
+              setPreflightStatus((prev) => ({
+                ...prev,
+                google_sso: {
+                  checking: false,
+                  passed: true,
+                  message: `Akun Google SSO terverifikasi: ${googleEmail}`,
+                },
+              }));
+              showNotification(`Google One Tap berhasil! Akun ${googleEmail} telah tertaut.`, 'success');
+              setRecheckTrigger((prev) => prev + 1);
+            } catch (e) {
+              console.warn('[OneTap Preflight] Parse error:', e);
+            }
+          }
+        },
+        auto_select: false,
+        cancel_on_tap_outside: false,
+      });
+      window.google.accounts.id.prompt();
+    } catch (err) {
+      console.warn('[OneTap Preflight] Error:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (currentStage === 'preflight' && isGoogleSsoRequired && !preflightStatus.google_sso.passed && institution?.google_client_id?.trim()) {
+      const timer = setTimeout(() => {
+        triggerGoogleOneTapPreflight();
+      }, 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [currentStage, isGoogleSsoRequired, preflightStatus.google_sso.passed, institution?.google_client_id]);
+
   const handleDirectGoogleSso = async () => {
     setGoogleLoginError('');
     if (!institution?.google_client_id?.trim()) {
@@ -556,6 +646,9 @@ export default function StudentPortal({ currentUser: propCurrentUser, onLogout }
               storageService.saveUser(updatedUser);
               storageService.setCurrentUser(updatedUser);
               setCurrentUser(updatedUser);
+              try {
+                sessionStorage.setItem(`examguard_google_sso_verified_${currentUser.id}`, 'true');
+              } catch {}
 
               setPreflightStatus((prev) => ({
                 ...prev,
@@ -770,6 +863,8 @@ export default function StudentPortal({ currentUser: propCurrentUser, onLogout }
   const [lockReason, setLockReason] = useState('');
   const [copiedToken, setCopiedToken] = useState(false);
   const [showFinishConfirmModal, setShowFinishConfirmModal] = useState(false);
+  const [showRefreshConfirmModal, setShowRefreshConfirmModal] = useState(false);
+  const [isTimeExpired, setIsTimeExpired] = useState(false);
   const [gformKey, setGformKey] = useState(0);
   const [isGformLoading, setIsGformLoading] = useState(false);
 
@@ -1211,7 +1306,8 @@ export default function StudentPortal({ currentUser: propCurrentUser, onLogout }
         },
       }));
     } else {
-      const isGoogleLinked = Boolean(currentUser?.google_linked && currentUser?.google_id);
+      const isSessionSsoVerified = typeof window !== 'undefined' && sessionStorage.getItem(`examguard_google_sso_verified_${currentUser?.id}`) === 'true';
+      const isGoogleLinked = Boolean((currentUser?.google_linked && (currentUser?.google_email || currentUser?.google_id)) || isSessionSsoVerified);
       setPreflightStatus((prev) => ({
         ...prev,
         google_sso: {
@@ -1573,6 +1669,20 @@ export default function StudentPortal({ currentUser: propCurrentUser, onLogout }
   const warningAlarmLoopRef = useRef(null);
   const lockAlarmTimerRef = useRef(null);
 
+  // Listener sentuhan layar (touchstart) khusus iOS Safari untuk membuka kunci AudioContext
+  useEffect(() => {
+    const unlockIosAudio = () => {
+      try {
+        const ctx = getOrCreateAudioContext();
+        if (ctx && ctx.state === 'suspended') {
+          ctx.resume().catch(() => {});
+        }
+      } catch {}
+    };
+    window.addEventListener('touchstart', unlockIosAudio, { passive: true, once: true });
+    return () => window.removeEventListener('touchstart', unlockIosAudio);
+  }, []);
+
   const getOrCreateAudioContext = () => {
     try {
       if (!audioContextRef.current) {
@@ -1631,7 +1741,7 @@ export default function StudentPortal({ currentUser: propCurrentUser, onLogout }
         osc.type = 'triangle';
         osc.frequency.setValueAtTime(880, now);
         osc.frequency.setValueAtTime(1174, now + 0.15); // A5 -> D6
-        gain.gain.setValueAtTime(0.75, now);
+        gain.gain.setValueAtTime(1.0, now); // Volume Full 100% Sesuai Arahan Pengujian
         gain.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
         osc.connect(gain);
         gain.connect(ctx.destination);
@@ -2439,7 +2549,7 @@ useEffect(() => {
     const currentAttempt = storageService.getAttempt(currentUser.id, activeExam.id);
     const newViolationCount = (currentAttempt?.violation_count || 0) + 1;
 
-    if (newViolationCount < MAX_VIOLATIONS) {
+    if (isUnlimitedViolations || newViolationCount < MAX_VIOLATIONS) {
       // Masih dalam batas toleransi (Pelanggaran ke-1 & ke-2): Tampilkan dialog peringatan & Bunyikan Alarm Keras Berulang
       startContinuousWarningAlarm();
 
@@ -2705,8 +2815,9 @@ useEffect(() => {
     secondsPassed += 1;
     setRemainingSeconds((prev) => {
       if (prev <= 1) {
-        clearInterval(timer);
-        handleFinishExam(true);
+        // PERBAIKAN: Jika waktu habis, pertahankan peserta di halaman soal (jangan lempar ke lobby)
+        // Bekukan waktu di 00:00 dan tampilkan banner merah peringatan submit GForm
+        setIsTimeExpired(true);
         return 0;
       }
       return prev - 1;
@@ -4749,7 +4860,7 @@ const renderLocationDetailModal = () => {
         </main>
 
                                                               <footer className="border-t border-zinc-200/80 bg-white py-4 px-6 text-center text-xs text-zinc-400">
-                                                                ExampGuard v1.0 &copy; {new Date().getFullYear()} &bull; Sistem Pengawasan Ujian Aman Google Form &bull; Oleh Fandi dari Jawa tech
+                                                                ExampGuard v1.1 &copy; {new Date().getFullYear()} &bull; Sistem Pengawasan Ujian Aman Google Form &bull; Oleh Fandi dari Jawa tech
                                                               </footer>
 
                                                               {/* MODAL: HIMBAUAN MENGISI IDENTITAS & TOKEN DENGAN BENAR */}
@@ -5400,44 +5511,56 @@ const renderLocationDetailModal = () => {
                                                               onCut={(e) => e.preventDefault()}
                                                               onPaste={(e) => e.preventDefault()}
                                                             >
-                                                              {/* 1. STICKY HEADER (RESPONSIF MOBILE & DESKTOP) */}
-                                                              <header className="bg-white border-b border-zinc-200/90 px-2.5 sm:px-4 py-2 sm:py-2.5 flex items-center justify-between gap-1.5 sm:gap-3 shrink-0 shadow-xs z-30 w-full max-w-full relative">
-                                                                {/* Sisi Kiri: Nama Lengkap di atas, Rombel & Ruang di bawah */}
-                                                                <div className="flex flex-col min-w-0 shrink-0 max-w-[105px] xs:max-w-[135px] sm:max-w-[240px]">
-                                                                  <div className="font-bold text-xs sm:text-sm text-zinc-900 truncate leading-tight" title={currentUser.nama}>
-                                                                    {currentUser.nama}
+                                                              {/* 1. 2-TIER NAVBAR */}
+                                                              {/* NAVBAR ATAS: Logo, Wifi Ping, Baterai, Token, Timer, Tombol Selesai */}
+                                                              <header className="bg-zinc-900 border-b border-zinc-800 px-2.5 sm:px-4 py-1.5 flex items-center justify-between gap-1.5 sm:gap-3 shrink-0 shadow-md z-30 w-full relative">
+                                                                {/* Sisi Kiri: Logo Instansi, Ping, Baterai */}
+                                                                <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                                                                  {institution?.logo_url ? (
+                                                                    <img
+                                                                      src={institution.logo_url}
+                                                                      alt="Logo Sekolah"
+                                                                      className="w-6 h-6 sm:w-7 sm:h-7 rounded-md object-contain bg-white p-0.5 border border-zinc-700 shrink-0"
+                                                                    />
+                                                                  ) : (
+                                                                    <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-md bg-zinc-800 text-white flex items-center justify-center border border-zinc-700 shrink-0">
+                                                                      <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                                                                    </div>
+                                                                  )}
+
+                                                                  {/* Indikator Ping (Responsif Layar HP & Laptop) */}
+                                                                  <div
+                                                                    className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-zinc-800/90 text-zinc-200 text-[11px] font-mono border border-zinc-700/80"
+                                                                    title={`Latensi Ping Server: ${pingMs !== null ? pingMs + ' ms' : 'Mengukur...'}`}
+                                                                  >
+                                                                    <Wifi className={`w-3 h-3 sm:w-3.5 sm:h-3.5 ${
+                                                                      pingStatus === 'good'
+                                                                        ? 'text-emerald-400'
+                                                                        : pingStatus === 'fair'
+                                                                        ? 'text-amber-400'
+                                                                        : 'text-rose-400'
+                                                                    }`} />
+                                                                    <span className="font-bold">{pingMs !== null ? `${pingMs}ms` : '...'}</span>
                                                                   </div>
-                                                                  <div className="text-[10px] sm:text-[11px] text-zinc-500 font-medium truncate leading-tight mt-0.5">
-                                                                    {currentUser.kelas || getGradeLabel(currentUser.tingkat)} &bull; {currentUser.ruang || 'Ruang 01'}
+
+                                                                  {/* Indikator Daya Baterai (Responsif & Aman Fallback iOS) */}
+                                                                  <div
+                                                                    className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-zinc-800/90 text-zinc-200 text-[11px] font-mono border border-zinc-700/80"
+                                                                    title={`Daya Baterai: ${batteryLevel !== null ? batteryLevel + '%' : '100% (Fallback iOS)'}`}
+                                                                  >
+                                                                    {isCharging ? (
+                                                                      <Zap className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-400 animate-pulse" />
+                                                                    ) : batteryLevel <= 20 ? (
+                                                                      <BatteryWarning className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-rose-400 animate-pulse" />
+                                                                    ) : (
+                                                                      <BatteryMedium className={`w-3 h-3 sm:w-3.5 sm:h-3.5 ${batteryLevel >= 50 ? 'text-emerald-400' : 'text-amber-400'}`} />
+                                                                    )}
+                                                                    <span className="font-bold">{batteryLevel !== null ? `${batteryLevel}%` : '100%'}</span>
                                                                   </div>
                                                                 </div>
 
-                                                                {/* Sisi Kanan: Token Adaptif, Timer, dan Tombol Keluar Merah */}
+                                                                {/* Sisi Kanan: Token Adaptif, Timer, dan Tombol Selesai Merah */}
                                                                 <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
-                                                                  {/* Indikator Ping & Baterai (Disembunyikan di HP agar tidak sesak) */}
-                                                                  <div className="hidden md:flex items-center gap-2 px-2.5 py-1 rounded-lg bg-zinc-100 text-zinc-700 text-xs font-mono font-medium border border-zinc-200">
-                                                                    <div className="flex items-center gap-1.5" title={`Latensi Ping: ${pingMs} ms`}>
-                                                                      <Wifi className={`w-3.5 h-3.5 ${
-                                                                        pingStatus === 'good'
-                                                                          ? 'text-emerald-600'
-                                                                          : pingStatus === 'fair'
-                                                                          ? 'text-amber-500'
-                                                                          : 'text-rose-500'
-                                                                      }`} />
-                                                                      <span className="text-[11px] font-bold">{pingMs !== null ? `${pingMs}ms` : '...'}</span>
-                                                                    </div>
-                                                                    <span className="text-zinc-300">|</span>
-                                                                    <div className="flex items-center gap-1" title={`Daya Baterai: ${batteryLevel}%`}>
-                                                                      {isCharging ? (
-                                                                        <Zap className="w-3.5 h-3.5 text-amber-500 animate-pulse" />
-                                                                      ) : batteryLevel <= 20 ? (
-                                                                        <BatteryWarning className="w-3.5 h-3.5 text-rose-500" />
-                                                                      ) : (
-                                                                        <BatteryMedium className={`w-3.5 h-3.5 ${batteryLevel >= 50 ? 'text-emerald-600' : 'text-amber-500'}`} />
-                                                                      )}
-                                                                      <span className="text-[11px] font-bold">{batteryLevel}%</span>
-                                                                    </div>
-                                                                  </div>
 
                                                                   {/* Tombol Ringkas TOKEN [icon mata] dengan Balon Panduan Interaktif */}
                                                                   <div className="relative">
@@ -5503,13 +5626,14 @@ const renderLocationDetailModal = () => {
                                                                   {/* Sticky Countdown Timer */}
                                                                   <div
                                                                     className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg border text-xs sm:text-sm font-mono-num font-bold tracking-tight shadow-2xs shrink-0 ${
-                                                                      remainingSeconds < 300
-                                                                        ? 'bg-rose-50 text-rose-700 border-rose-300 animate-pulse'
-                                                                        : 'bg-zinc-900 text-white border-zinc-800'
+                                                                      isTimeExpired || remainingSeconds < 300
+                                                                        ? 'bg-rose-950/90 text-rose-300 border-rose-600 animate-pulse ring-1 ring-rose-500/50'
+                                                                        : 'bg-zinc-800 text-zinc-100 border-zinc-700'
                                                                     }`}
+                                                                    title={isTimeExpired ? 'Waktu ujian telah habis (00:00)' : 'Sisa waktu pengerjaan'}
                                                                   >
-                                                                    <Clock className="w-3.5 h-3.5 shrink-0 text-zinc-400" />
-                                                                    <span className="tabular-nums font-mono">{formatDuration(remainingSeconds)}</span>
+                                                                    <Clock className={`w-3.5 h-3.5 shrink-0 ${isTimeExpired || remainingSeconds < 300 ? 'text-rose-400' : 'text-zinc-400'}`} />
+                                                                    <span className="tabular-nums font-mono">{isTimeExpired ? '00:00' : formatDuration(remainingSeconds)}</span>
                                                                   </div>
 
                                                                   {/* Icon Keluar Warna Merah (Selesaikan Ujian) */}
@@ -5520,10 +5644,63 @@ const renderLocationDetailModal = () => {
                                                                     className="inline-flex items-center gap-1 sm:gap-1.5 p-1.5 sm:px-3 sm:py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold shadow-2xs transition-all active:scale-[0.98] cursor-pointer shrink-0"
                                                                   >
                                                                     <LogOut className="w-4 h-4 shrink-0" />
-                                                                    <span className="hidden sm:inline">Keluar</span>
+                                                                    <span className="hidden sm:inline">Selesai</span>
                                                                   </button>
                                                                 </div>
                                                               </header>
+
+                                                              {/* NAVBAR BAWAH: Nama, Rombel, Ruang, dan Tombol Refresh Soal Kontras */}
+                                                              <div className="bg-zinc-100 border-b border-zinc-200/90 px-3 sm:px-4 py-1 sm:py-1.5 flex items-center justify-between gap-2 shrink-0 z-20 w-full shadow-2xs">
+                                                                {/* Sisi Kiri: Nama Peserta, Rombel, Ruang */}
+                                                                <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0">
+                                                                  <span className="font-bold text-xs sm:text-sm text-zinc-900 truncate" title={currentUser.nama}>
+                                                                    {currentUser.nama}
+                                                                  </span>
+                                                                  <span className="text-zinc-400 hidden xs:inline">&bull;</span>
+                                                                  <span className="text-[11px] sm:text-xs text-zinc-600 font-medium truncate">
+                                                                    {currentUser.kelas || getGradeLabel(currentUser.tingkat)} &bull; {currentUser.ruang || 'Ruang 01'}
+                                                                  </span>
+                                                                </div>
+
+                                                                {/* Sisi Kanan: Tombol Segarkan Soal Warna Biru Kontras + Balon Keterangan Tooltip */}
+                                                                <div className="relative group shrink-0">
+                                                                  <button
+                                                                    type="button"
+                                                                    onClick={() => setShowRefreshConfirmModal(true)}
+                                                                    disabled={isGformLoading}
+                                                                    className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 active:scale-95 text-white text-xs font-semibold shadow-xs transition-all cursor-pointer disabled:opacity-50"
+                                                                    title="Tombol Muat Ulang Lembar Soal (GForm)"
+                                                                  >
+                                                                    <RefreshCw className={`w-3.5 h-3.5 text-white ${isGformLoading ? 'animate-spin' : ''}`} />
+                                                                    <span className="text-[11px] sm:text-xs font-semibold">Segarkan Soal</span>
+                                                                  </button>
+                                                                  {/* Balon Keterangan / Tooltip Mengambang */}
+                                                                  <div className="absolute right-0 top-full mt-1.5 hidden group-hover:flex flex-col items-end pointer-events-none z-50 animate-in fade-in duration-150">
+                                                                    <div className="bg-zinc-900 text-white text-[11px] font-medium px-2.5 py-1 rounded-lg shadow-lg whitespace-nowrap border border-zinc-700">
+                                                                      Muat ulang lembar soal jika terjadi kendala jaringan (GForm)
+                                                                    </div>
+                                                                  </div>
+                                                                </div>
+                                                              </div>
+
+                                                              {/* BANNER MERAH MELEKAT JIKA WAKTU HABIS */}
+                                                              {(isTimeExpired || remainingSeconds <= 0) && (
+                                                                <div className="bg-rose-600 text-white px-3 sm:px-4 py-2 flex items-center justify-between gap-3 shadow-md z-20 animate-in slide-in-from-top duration-300 shrink-0">
+                                                                  <div className="flex items-center gap-2 min-w-0 text-xs sm:text-sm font-bold">
+                                                                    <AlertTriangle className="w-4 h-4 text-white shrink-0 animate-bounce" />
+                                                                    <span className="truncate">
+                                                                      WAKTU TELAH HABIS! Pastikan Anda menekan tombol "Kirim" / "Submit" pada Google Formulir di bawah ini sebelum keluar.
+                                                                    </span>
+                                                                  </div>
+                                                                  <button
+                                                                    type="button"
+                                                                    onClick={() => setShowFinishConfirmModal(true)}
+                                                                    className="px-3 py-1 bg-white text-rose-700 hover:bg-rose-50 rounded-lg text-xs font-bold shrink-0 shadow-xs cursor-pointer active:scale-95 transition-all"
+                                                                  >
+                                                                    Selesaikan Ujian & Keluar
+                                                                  </button>
+                                                                </div>
+                                                              )}
 
                                                               {/* 2. IFRAME GOOGLE FORM */}
                                                               <div className="flex-1 bg-zinc-100 relative w-full h-full overflow-hidden">
@@ -5600,23 +5777,42 @@ const renderLocationDetailModal = () => {
                                                                   </div>
                                                                 )}
 
-                                                                {/* Tombol Icon Refresh Bulat Kecil Mengambang di Pojok Kanan Bawah */}
-                                                                <div className="fixed bottom-5 right-5 z-20">
-                                                                  <button
-                                                                    type="button"
-                                                                    onClick={handleRefreshGform}
-                                                                    disabled={isGformLoading}
-                                                                    title="Segarkan Lembar Soal Google Form"
-                                                                    className="w-10 h-10 rounded-full bg-white hover:bg-zinc-50 active:scale-90 border border-zinc-200/90 shadow-lg text-zinc-700 hover:text-zinc-900 flex items-center justify-center transition-all cursor-pointer group disabled:opacity-50"
-                                                                  >
-                                                                    <RefreshCw
-                                                                      className={`w-4 h-4 transition-transform duration-300 ${
-                                                                        isGformLoading ? 'animate-spin text-emerald-600' : 'group-hover:rotate-180'
-                                                                      }`}
-                                                                    />
-                                                                  </button>
-                                                                </div>
+
                                                               </div>
+
+                                                              {/* MODAL KONFIRMASI SEGARKAN LEMBAR SOAL */}
+                                                              {showRefreshConfirmModal && (
+                                                                <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+                                                                  <div className="bg-white rounded-2xl max-w-sm w-full p-5 text-center shadow-2xl border border-zinc-200 animate-in zoom-in-95 space-y-3">
+                                                                    <div className="w-11 h-11 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center mx-auto">
+                                                                      <RefreshCw className="w-5 h-5" />
+                                                                    </div>
+                                                                    <h3 className="text-sm font-bold text-zinc-900">Segarkan Lembar Soal?</h3>
+                                                                    <p className="text-xs text-zinc-600 leading-relaxed">
+                                                                      Gunakan opsi ini jika lembar Google Form mengalami kendala tampilan atau jaringan lambat. Lembar soal akan dimuat ulang.
+                                                                    </p>
+                                                                    <div className="flex gap-2 pt-2 border-t border-zinc-100">
+                                                                      <button
+                                                                        type="button"
+                                                                        onClick={() => setShowRefreshConfirmModal(false)}
+                                                                        className="flex-1 py-2 rounded-xl border border-zinc-300 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 cursor-pointer"
+                                                                      >
+                                                                        Batal
+                                                                      </button>
+                                                                      <button
+                                                                        type="button"
+                                                                        onClick={() => {
+                                                                          setShowRefreshConfirmModal(false);
+                                                                          handleRefreshGform();
+                                                                        }}
+                                                                        className="flex-1 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs cursor-pointer active:scale-95 transition-all"
+                                                                      >
+                                                                        Ya, Segarkan
+                                                                      </button>
+                                                                    </div>
+                                                                  </div>
+                                                                </div>
+                                                              )}
 
                                                               {/* 2b. DIALOG PERINGATAN PELANGGARAN RINGAN (TOLERANSI 1 & 2 DARI 3) */}
                                                               {showViolationWarningModal && !isLocked && (
@@ -5655,7 +5851,7 @@ const renderLocationDetailModal = () => {
 
                                                               {/* 3. AUTO-LOCK OVERLAY SCREEN JIKA TERJADI PELANGGARAN MAKSIMAL */}
                                                               {isLocked && (
-                                                                <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
+                                                                <div className="fixed inset-0 z-[99999] bg-rose-600/95 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-300">
                                                                   <div className="bg-white rounded-2xl max-w-md w-full p-6 sm:p-7 text-center shadow-2xl border border-rose-200 animate-in zoom-in-95">
                                                                     <div className="w-14 h-14 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto mb-3">
                                                                       <Lock className="w-7 h-7" />

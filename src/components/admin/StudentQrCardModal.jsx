@@ -184,8 +184,143 @@ export default function StudentQrCardModal({
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // Isolated Hidden Iframe Print Engine: Mencegah Blank Putih pada Cetak Kartu A4 (Tunggal & Massal)
   const handlePrint = () => {
-    window.print();
+    try {
+      let iframe = document.getElementById('examguard-print-iframe');
+      if (iframe) {
+        try { document.body.removeChild(iframe); } catch {}
+      }
+      iframe = document.createElement('iframe');
+      iframe.id = 'examguard-print-iframe';
+      iframe.style.position = 'fixed';
+      iframe.style.top = '-9999px';
+      iframe.style.left = '-9999px';
+      iframe.style.width = '210mm';
+      iframe.style.height = '297mm';
+      iframe.style.border = 'none';
+      iframe.style.opacity = '0';
+      iframe.style.pointerEvents = 'none';
+      document.body.appendChild(iframe);
+
+      const doc = iframe.contentWindow.document;
+
+      let sheetsContentHtml = '';
+      if (!isBatch && currentStudent) {
+        const singleElem = document.getElementById(`batch-card-${currentStudent.id}`) || document.getElementById('single-card-render-area');
+        const cardHtml = singleElem ? singleElem.outerHTML : '';
+        sheetsContentHtml = `
+          <div class="a4-sheet" style="display: flex; align-items: center; justify-content: center; height: 280mm;">
+            <div style="width: 100mm; max-width: 100mm;">
+              ${cardHtml}
+            </div>
+          </div>
+        `;
+      } else if (isBatch && sheets.length > 0) {
+        sheets.forEach((sheetStudents, sheetIdx) => {
+          let sheetCardsHtml = '';
+          sheetStudents.forEach((stu) => {
+            const cardElem = document.getElementById(`batch-card-${stu.id}`);
+            if (cardElem) {
+              sheetCardsHtml += cardElem.outerHTML;
+            }
+          });
+
+          const gridRows = config.cardsPerPage === 4 ? 'grid-template-rows: repeat(2, minmax(0, 1fr)); height: 100%;' : 'grid-template-rows: repeat(3, minmax(0, 1fr));';
+          sheetsContentHtml += `
+            <div class="a4-sheet">
+              <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4mm; ${gridRows}">
+                ${sheetCardsHtml}
+              </div>
+              <div style="padding-top: 8px; border-top: 1px solid #e4e4e7; display: flex; align-items: center; justify-content: space-between; font-size: 8px; color: #71717a; font-family: monospace;">
+                <span>${schoolName} &bull; ${config.examName}</span>
+                <span>Halaman ${sheetIdx + 1} dari ${sheets.length}</span>
+              </div>
+            </div>
+          `;
+        });
+      }
+
+      // Copy all parent stylesheets into iframe
+      let styleTags = '';
+      document.querySelectorAll('link[rel="stylesheet"], style').forEach((node) => {
+        styleTags += node.outerHTML;
+      });
+
+      doc.open();
+      doc.write(`
+        <!DOCTYPE html>
+        <html lang="id">
+          <head>
+            <meta charset="utf-8" />
+            <title>Cetak Kartu Peserta Ujian - ${schoolName}</title>
+            ${styleTags}
+            <style>
+              @page {
+                size: A4 portrait;
+                margin: 8mm 7mm;
+              }
+              * {
+                box-sizing: border-box;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+              }
+              html, body {
+                margin: 0 !important;
+                padding: 0 !important;
+                background: #ffffff !important;
+                font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+                color: #18181b;
+              }
+              .a4-sheet {
+                width: 196mm;
+                height: 280mm;
+                max-height: 280mm;
+                page-break-after: always;
+                break-after: page;
+                margin: 0 auto;
+                padding: 6mm;
+                box-sizing: border-box;
+                display: flex;
+                flex-direction: column;
+                justify-content: space-between;
+                overflow: hidden;
+                background: #fff;
+              }
+              .a4-sheet:last-child {
+                page-break-after: avoid;
+                break-after: avoid;
+              }
+              .exam-card {
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
+                box-shadow: none !important;
+              }
+              .print\\:hidden {
+                display: none !important;
+              }
+            </style>
+          </head>
+          <body>
+            ${sheetsContentHtml}
+          </body>
+        </html>
+      `);
+      doc.close();
+
+      setTimeout(() => {
+        try {
+          iframe.contentWindow.focus();
+          iframe.contentWindow.print();
+        } catch (e) {
+          console.warn('Iframe print error fallback:', e);
+          window.print();
+        }
+      }, 450);
+    } catch (err) {
+      console.error('Fatal print error:', err);
+      window.print();
+    }
   };
 
   const schoolName = institution?.name || 'KLLSA NEGERI 1 NUSANTARA';
@@ -203,6 +338,7 @@ export default function StudentQrCardModal({
     return (
       <div
         key={stu.id}
+        id={`batch-card-${stu.id}`}
         className={`exam-card border-2 border-zinc-900 rounded-xl bg-white text-zinc-900 flex flex-col justify-between overflow-hidden relative shadow-xs print:shadow-none print:border-zinc-950 ${
           isCompact ? 'p-2.5 h-[87mm] max-h-[88mm]' : 'p-3.5'
         }`}
@@ -588,7 +724,9 @@ export default function StudentQrCardModal({
           {/* ================= MODE KARTU TUNGGAL ================= */}
           {!isBatch && currentStudent && (
             <div id="print-area" className="max-w-md mx-auto space-y-4">
-              {renderCard(currentStudent, qrDataUrl, false)}
+              <div id="single-card-render-area">
+                {renderCard(currentStudent, qrDataUrl, false)}
+              </div>
 
               {/* Box Aksi Tambahan: Token Asli (Hanya di layar monitor) */}
               <div className="p-4 rounded-xl bg-white border border-zinc-200 text-xs space-y-2.5 shadow-xs print:hidden">

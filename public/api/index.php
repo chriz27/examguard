@@ -261,7 +261,19 @@ function initDatabaseSchema(PDO $pdo) {
     if ($userCount == 0) {
         $stmt = $pdo->prepare("INSERT INTO users (id, username, password, nama, email, role, is_active, is_verified) VALUES (?, ?, ?, ?, ?, ?, 1, 1)");
         $stmt->execute(['admin-1', 'admin', 'admin123', 'Super Admin ExamGuard', 'admin@examguard.local', 'admin']);
-        $stmt->execute(['proktor-1', 'proktor', 'proktor123', 'Proktor Utama', 'proktor@examguard.local', 'proktor']);
+        $stmt->execute(['proktor-1', 'proktor', 'proktor', 'Proktor Utama', 'proktor@examguard.local', 'proctor']);
+    }
+
+    // Auto-repair proktor role & account jika belum ada atau role salah ('proktor' -> 'proctor')
+    try {
+        $pUser = $pdo->query("SELECT id, role FROM users WHERE username = 'proktor'")->fetch();
+        if (!$pUser) {
+            $pStmt = $pdo->prepare("INSERT INTO users (id, username, password, nama, email, role, is_active, is_verified) VALUES (?, ?, ?, ?, ?, ?, 1, 1)");
+            $pStmt->execute(['proktor-1', 'proktor', 'proktor', 'Proktor Utama', 'proktor@examguard.local', 'proctor']);
+        } else if ($pUser['role'] !== 'proctor') {
+            $pdo->exec("UPDATE users SET role = 'proctor' WHERE username = 'proktor'");
+        }
+    } catch (Exception $e) {
     }
 }
 
@@ -479,6 +491,9 @@ try {
             sendJson(rowToInstitution($row));
         }
         if ($method === 'POST' || $method === 'PUT') {
+            if ($callerRole === 'proctor' || ($callerRole !== null && $callerRole !== 'admin')) {
+                sendJson(['error' => 'Akses Ditolak: Hanya Super Admin yang diizinkan mengubah konfigurasi instansi.'], 403);
+            }
             $allowedGrades = isset($body['allowed_grades']) ? (is_array($body['allowed_grades']) ? json_encode($body['allowed_grades']) : $body['allowed_grades']) : '[10,11,12]';
             $browserPerms = isset($body['browser_permissions']) ? (is_array($body['browser_permissions']) ? json_encode($body['browser_permissions']) : $body['browser_permissions']) : '{}';
 
@@ -588,6 +603,9 @@ try {
 
     // /users/delete-all-students
     if ($endpoint === 'users/delete-all-students' && $method === 'DELETE') {
+        if ($callerRole === 'proctor' || ($callerRole !== null && $callerRole !== 'admin')) {
+            sendJson(['error' => 'Akses Ditolak: Hanya Super Admin yang dapat menghapus seluruh data peserta.'], 403);
+        }
         $pdo->exec("DELETE FROM users WHERE role = 'student'");
         sendJson(['success' => true]);
     }
@@ -719,6 +737,9 @@ try {
             }
 
             if ($sub === 'update-admin') {
+                if ($callerRole === 'proctor' || ($callerRole !== null && $callerRole !== 'admin')) {
+                    sendJson(['error' => 'Akses Ditolak: Proktor tidak diizinkan mengubah akun administrator.'], 403);
+                }
                 $sql = "UPDATE users SET nama = COALESCE(:nama, nama), username = COALESCE(:username, username), updated_at = datetime('now')";
                 if (!empty($body['password'])) {
                     $sql .= ", password = :password";
@@ -755,6 +776,7 @@ try {
                     active_device_id = :active_device_id,
                     login_token = COALESCE(:login_token, login_token),
                     google_linked = COALESCE(:google_linked, google_linked),
+                    google_id = COALESCE(:google_id, google_id),
                     google_email = COALESCE(:google_email, google_email),
                     google_linked_at = COALESCE(:google_linked_at, google_linked_at),
                     updated_at = datetime('now')
@@ -776,6 +798,7 @@ try {
                     ':active_device_id' => array_key_exists('active_device_id', $body) ? $body['active_device_id'] : null,
                     ':login_token' => $body['login_token'] ?? null,
                     ':google_linked' => isset($body['google_linked']) ? ($body['google_linked'] ? 1 : 0) : null,
+                    ':google_id' => $body['google_id'] ?? null,
                     ':google_email' => $body['google_email'] ?? null,
                     ':google_linked_at' => $body['google_linked_at'] ?? null,
                 ]);
@@ -1220,6 +1243,9 @@ try {
 
     // ── /backup & /restore ─────────────────────────────────────
     if ($endpoint === 'backup' && $method === 'GET') {
+        if ($callerRole === 'proctor' || ($callerRole !== null && $callerRole !== 'admin')) {
+            sendJson(['error' => 'Akses Ditolak: Fitur Backup hanya dapat diakses oleh Super Admin.'], 403);
+        }
         $inst = rowToInstitution($pdo->query("SELECT * FROM institution WHERE id = 'singleton'")->fetch());
         $users = array_map('rowToUser', $pdo->query("SELECT * FROM users ORDER BY nama ASC")->fetchAll());
         $exams = array_map('rowToExamSession', $pdo->query("SELECT * FROM exam_sessions ORDER BY created_at DESC")->fetchAll());

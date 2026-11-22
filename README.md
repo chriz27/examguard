@@ -1,8 +1,8 @@
-# 🛡️ ExamGuard v1.0 - Enterprise Exam Browser & Geofencing System
+# 🛡️ ExamGuard v1.1 - Enterprise Exam Browser & Geofencing System
 
 <div align="center">
 
-[![Versi](https://img.shields.io/badge/Versi-1.0_Production_Ready-emerald?style=for-the-badge&logo=shield)](https://github.com/chriz27/examguard)
+[![Versi](https://img.shields.io/badge/Versi-1.1_Production_Ready-emerald?style=for-the-badge&logo=shield)](https://github.com/chriz27/examguard)
 [![Pengembang](https://img.shields.io/badge/Pengembang-Fandi_dari_Jawa_tech-blue?style=for-the-badge&logo=code)](https://github.com/chriz27/examguard)
 [![React](https://img.shields.io/badge/React-19.0-61dafb?style=for-the-badge&logo=react&logoColor=black)](https://react.dev)
 [![Vite](https://img.shields.io/badge/Vite-6.2-646cff?style=for-the-badge&logo=vite&logoColor=white)](https://vitejs.dev)
@@ -24,7 +24,7 @@
 
 ## 📋 Daftar Isi
 
-1. [Tentang ExamGuard v1.0](#-tentang-examguard-v10)
+1. [Tentang ExamGuard v1.1](#-tentang-examguard-v10)
 2. [Fitur Utama](#-fitur-utama)
 3. [Keamanan & Cybersecurity Level Enterprise](#-keamanan--cybersecurity-level-enterprise)
 4. [Arsitektur Sistem & Dual Deployment cPanel](#-arsitektur-sistem--dual-deployment-cpanel)
@@ -42,7 +42,7 @@
 
 ---
 
-## 💡 Tentang ExamGuard v1.0
+## 💡 Tentang ExamGuard v1.1
 
 **ExamGuard** adalah sistem peramban ujian (*exam browser & proctoring webapp*) kelas enterprise yang dirancang khusus untuk memproteksi pelaksanaan ujian digital menggunakan **Google Forms**. 
 
@@ -94,7 +94,7 @@ ExamGuard Versi 1.0 dirancang dengan pendekatan **Dual-Backend Architecture**:
 
 ## 🛡️ Keamanan & Cybersecurity Level Enterprise
 
-ExamGuard v1.0 menerapkan prinsip keamanan berlapis (*Defense in Depth*) berstandar industri:
+ExamGuard v1.1 menerapkan prinsip keamanan berlapis (*Defense in Depth*) berstandar industri:
 
 | Vektor Keamanan | Mekanisme Proteksi ExamGuard |
 | :--- | :--- |
@@ -112,7 +112,7 @@ ExamGuard v1.0 menerapkan prinsip keamanan berlapis (*Defense in Depth*) berstan
 
 ## 🏗️ Arsitektur Sistem & Dual Deployment cPanel
 
-ExamGuard v1.0 mendukung dua model implementasi di hosting cPanel:
+ExamGuard v1.1 mendukung dua model implementasi di hosting cPanel:
 
 ```mermaid
 flowchart TD
@@ -351,7 +351,7 @@ examguard/
 
 ## 👨‍💻 Kredit & Lisensi
 
-- **Produk:** ExamGuard v1.0 (Production Release)
+- **Produk:** ExamGuard v1.1 (Production Release)
 - **Tim Pengembang:** **Fandi dari Jawa tech**
 - **Lisensi:** Open-Source under the [MIT License](LICENSE)
 

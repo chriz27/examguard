@@ -111,13 +111,13 @@ export default function AdminSidebar({
                 src={institutionLogo}
                 alt="Logo Instansi"
                 className="w-9 h-9 rounded-xl object-contain bg-white border border-zinc-200/80 p-0.5 shadow-2xs shrink-0 cursor-pointer"
-                title={institutionName || 'ExampGuard v1.0'}
+                title={institutionName || 'ExampGuard v1.1'}
                 onClick={onToggleCollapse}
               />
             ) : (
               <div
                 className="w-9 h-9 rounded-xl bg-zinc-900 text-white flex items-center justify-center shadow-xs shrink-0 cursor-pointer"
-                title="ExampGuard v1.0 Proctoring"
+                title="ExampGuard v1.1 Proctoring"
                 onClick={onToggleCollapse}
               >
                 <Shield className="w-4 h-4 text-zinc-100" />

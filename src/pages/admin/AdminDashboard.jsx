@@ -480,6 +480,9 @@ export default function AdminDashboard({ currentUser, onLogout }) {
 
   // State Intip Token Selesai (Klik Tahan untuk Mengintip Token Asli)
   const [isHoldingFinishToken, setIsHoldingFinishToken] = useState(false);
+    // Form Draft Lock: Mencegah snapshot polling background menimpa perubahan input instansi sebelum tombol Simpan ditekan
+  const isInstitutionDirtyRef = useRef(false);
+
   const [gmapsInput, setGmapsInput] = useState(
     () => institution?.gmaps_url || (institution?.center_lat ? `https://maps.google.com/?q=${institution.center_lat},${institution.center_lng}` : '')
   );
@@ -958,7 +961,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
           status: 'up_to_date',
           latestVersion: CURRENT_APP_VERSION,
           currentVersion: CURRENT_APP_VERSION,
-          releaseName: 'ExampGuard v1.0 Production Release',
+          releaseName: 'ExampGuard v1.1 Production Release',
           releaseNotes: 'Sistem Anda saat ini menggunakan versi produksi stabil (v1.0.0). Terhubung aktif ke repositori GitHub resmi.',
           commitSha,
           publishedAt: latestCommitDate
@@ -1499,10 +1502,13 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     const handleSyncTrigger = (event) => {
       // Jika event snapshot atau pembaruan instansi, perbarui konfigurasi institusi secara real-time
       if (event === 'institution_updated' || event === 'snapshot') {
-        const freshInst = storageService.getInstitution();
-        setInstitution(freshInst);
-        if (freshInst?.gmaps_url) {
-          setGmapsInput(freshInst.gmaps_url);
+        // Form Draft Lock: Jangan timpa state instansi jika sedang di tab 'institution' atau sedang ada draft perubahan
+        if (activeTabRef.current !== 'institution' && !isInstitutionDirtyRef.current) {
+          const freshInst = storageService.getInstitution();
+          setInstitution(freshInst);
+          if (freshInst?.gmaps_url) {
+            setGmapsInput(freshInst.gmaps_url);
+          }
         }
       } else if (event === 'berita_acara_updated') {
         setBeritaAcaraConfig(storageService.getBeritaAcaraConfig());
@@ -1520,10 +1526,12 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     // 2. CustomEvent lokal di tab yang sama
     const handleStorageChange = (e) => {
       if (e?.detail?.event === 'institution_updated' || e?.detail?.event === 'snapshot') {
-        const freshInst = storageService.getInstitution();
-        setInstitution(freshInst);
-        if (freshInst?.gmaps_url) {
-          setGmapsInput(freshInst.gmaps_url);
+        if (activeTabRef.current !== 'institution' && !isInstitutionDirtyRef.current) {
+          const freshInst = storageService.getInstitution();
+          setInstitution(freshInst);
+          if (freshInst?.gmaps_url) {
+            setGmapsInput(freshInst.gmaps_url);
+          }
         }
       }
       refreshMonitoringData();
@@ -1549,10 +1557,12 @@ export default function AdminDashboard({ currentUser, onLogout }) {
 
     // 6. Muat snapshot data terbaru dari backend SQLite saat awal mount
     storageService.syncWithServer().then(() => {
-      const freshInst = storageService.getInstitution();
-      setInstitution(freshInst);
-      if (freshInst?.gmaps_url) {
-        setGmapsInput(freshInst.gmaps_url);
+      if (activeTabRef.current !== 'institution' && !isInstitutionDirtyRef.current) {
+        const freshInst = storageService.getInstitution();
+        setInstitution(freshInst);
+        if (freshInst?.gmaps_url) {
+          setGmapsInput(freshInst.gmaps_url);
+        }
       }
       refreshMonitoringData();
     }).catch(() => {});
@@ -1649,11 +1659,13 @@ export default function AdminDashboard({ currentUser, onLogout }) {
       showNotification('NPSN harus berupa kombinasi huruf dan angka (alfanumerik 4-16 karakter tanpa spasi atau simbol).', 'error');
       return;
     }
+    isInstitutionDirtyRef.current = false;
     const updated = {
       ...institution,
       gmaps_url: gmapsInput?.trim() || institution.gmaps_url,
     };
     storageService.updateInstitution(updated);
+    dbService.updateInstitution(updated).catch(() => {});
     setInstitution(updated);
     showNotification('Pengaturan konfigurasi instansi & kebijakan perangkat berhasil disimpan.');
   };
@@ -4210,7 +4222,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                 </span>
               </div>
               <p className="text-xs text-zinc-500 truncate">
-                ExampGuard v1.0 &bull; {institution.name} {institution.npsn ? `(NPSN: ${institution.npsn})` : ''} &bull; Terhubung ke Mode Penyimpanan Terpusat cPanel
+                ExampGuard v1.1 &bull; {institution.name} {institution.npsn ? `(NPSN: ${institution.npsn})` : ''} &bull; Terhubung ke Mode Penyimpanan Terpusat cPanel
               </p>
             </div>
           </div>
@@ -4729,8 +4741,43 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                             </td>
 
                             <td className="py-3.5 px-4 text-zinc-500 text-[11px]">
-                              <div>{exam.start_time ? exam.start_time.replace('T', ' ') : 'Fleksibel'}</div>
-                              <div>s/d {exam.end_time ? exam.end_time.replace('T', ' ') : '-'}</div>
+                              {(() => {
+                                const nowMs = currentLiveTime ? currentLiveTime.getTime() : Date.now();
+                                let statusBadge = null;
+                                if (exam.start_time && exam.end_time) {
+                                  const sMs = new Date(exam.start_time).getTime();
+                                  const eMs = new Date(exam.end_time).getTime();
+                                  if (nowMs < sMs) {
+                                    statusBadge = (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 mb-1">
+                                        <Clock className="w-2.5 h-2.5 text-blue-500" />
+                                        Terjadwal
+                                      </span>
+                                    );
+                                  } else if (nowMs >= sMs && nowMs <= eMs) {
+                                    statusBadge = (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-300 mb-1">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                        Sedang Berlangsung
+                                      </span>
+                                    );
+                                  } else {
+                                    statusBadge = (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-zinc-100 text-zinc-600 border border-zinc-200 mb-1">
+                                        <CheckCircle2 className="w-2.5 h-2.5 text-zinc-400" />
+                                        Selesai
+                                      </span>
+                                    );
+                                  }
+                                }
+                                return (
+                                  <div>
+                                    {statusBadge && <div>{statusBadge}</div>}
+                                    <div className="font-mono">{exam.start_time ? exam.start_time.replace('T', ' ') : 'Fleksibel'}</div>
+                                    <div className="font-mono">s/d {exam.end_time ? exam.end_time.replace('T', ' ') : '-'}</div>
+                                  </div>
+                                );
+                              })()}
                             </td>
 
                             <td className="py-3.5 px-4">
@@ -5790,35 +5837,104 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                               );
                             })()}
 
-                            {/* 4. Tanggal & Waktu */}
-                            <div className="p-3.5 bg-zinc-50/70 border border-zinc-200/70 rounded-xl space-y-1">
-                              <div className="flex items-center gap-1.5 text-zinc-500 text-[11px] font-medium uppercase tracking-wider">
-                                <Clock className="w-3.5 h-3.5 text-emerald-600" />
-                                <span>Waktu & Durasi Ujian</span>
-                              </div>
-                              <div className="font-bold text-zinc-900 text-sm">
-                                {currentExam.start_time
-                                  ? new Date(currentExam.start_time).toLocaleDateString('id-ID', {
-                                      weekday: 'short',
-                                      day: 'numeric',
-                                      month: 'short',
-                                      year: 'numeric',
-                                    })
-                                  : '-'}
-                              </div>
-                              <div className="text-xs text-zinc-600 font-mono">
-                                {currentExam.start_time
-                                  ? new Date(currentExam.start_time).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
-                                  : '-'}{' '}
-                                &ndash;{' '}
-                                {currentExam.end_time
-                                  ? new Date(currentExam.end_time).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
-                                  : '-'}
-                              </div>
-                              <div className="pt-0.5 text-[11px] text-zinc-500 font-medium">
-                                Durasi Pengerjaan: <strong className="text-zinc-800">{currentExam.duration_minutes || 90} Menit</strong>
-                              </div>
-                            </div>
+                            {/* 4. Tanggal, Waktu & Countdown Akses Soal */}
+                            {(() => {
+                              const nowMs = currentLiveTime ? currentLiveTime.getTime() : Date.now();
+                              let examStatus = 'not_started';
+                              let diffSec = 0;
+                              let startMs = null;
+                              let endMs = null;
+
+                              if (currentExam.start_time) {
+                                startMs = new Date(currentExam.start_time).getTime();
+                              }
+                              if (currentExam.end_time) {
+                                endMs = new Date(currentExam.end_time).getTime();
+                              }
+
+                              if (startMs && nowMs < startMs) {
+                                examStatus = 'not_started';
+                                diffSec = Math.max(0, Math.floor((startMs - nowMs) / 1000));
+                              } else if (endMs && nowMs > endMs) {
+                                examStatus = 'finished';
+                              } else if (startMs) {
+                                examStatus = 'ongoing';
+                                if (endMs) {
+                                  diffSec = Math.max(0, Math.floor((endMs - nowMs) / 1000));
+                                }
+                              }
+
+                              return (
+                                <div className="p-3.5 bg-zinc-50/70 border border-zinc-200/70 rounded-xl space-y-1.5">
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-1.5 text-zinc-500 text-[11px] font-medium uppercase tracking-wider">
+                                      <Clock className="w-3.5 h-3.5 text-emerald-600" />
+                                      <span>Waktu & Durasi Ujian</span>
+                                    </div>
+                                    {/* Status Jadwal Akses Soal */}
+                                    {examStatus === 'ongoing' ? (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
+                                        Sedang Berlangsung
+                                      </span>
+                                    ) : examStatus === 'not_started' ? (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                                        Belum Dimulai
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-zinc-100 text-zinc-600 border border-zinc-200">
+                                        Selesai
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <div className="font-bold text-zinc-900 text-sm">
+                                    {currentExam.start_time
+                                      ? new Date(currentExam.start_time).toLocaleDateString('id-ID', {
+                                          weekday: 'short',
+                                          day: 'numeric',
+                                          month: 'short',
+                                          year: 'numeric',
+                                        })
+                                      : '-'}
+                                  </div>
+                                  <div className="text-xs text-zinc-600 font-mono">
+                                    {currentExam.start_time
+                                      ? new Date(currentExam.start_time).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+                                      : '-'}{' '}
+                                    &ndash;{' '}
+                                    {currentExam.end_time
+                                      ? new Date(currentExam.end_time).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+                                      : '-'}
+                                  </div>
+
+                                  {/* Countdown Waktu Akses Soal */}
+                                  <div className="pt-1 border-t border-zinc-200/80 flex items-center justify-between text-[11px]">
+                                    <span className="text-zinc-600 font-medium">
+                                      {examStatus === 'not_started' ? 'Mulai dlm:' : examStatus === 'ongoing' ? 'Sisa Waktu:' : 'Status:'}
+                                    </span>
+                                    {examStatus === 'not_started' && diffSec > 0 ? (
+                                      <span className="font-mono font-bold text-xs text-blue-900 bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-200">
+                                        {formatDigitalCountdown(diffSec)}
+                                      </span>
+                                    ) : examStatus === 'ongoing' && diffSec > 0 ? (
+                                      <span className="font-mono font-bold text-xs text-emerald-900 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-300 flex items-center gap-1">
+                                        <span>{formatDigitalCountdown(diffSec)}</span>
+                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                      </span>
+                                    ) : examStatus === 'finished' ? (
+                                      <span className="font-mono text-xs text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded-lg border border-zinc-200">
+                                        Waktu Selesai
+                                      </span>
+                                    ) : (
+                                      <span className="font-mono text-xs text-zinc-600">
+                                        {currentExam.duration_minutes || 90} Menit
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })()}
                           </div>
                         ) : (
                           <div className="p-6 text-center text-zinc-500 text-xs">
@@ -9682,7 +9798,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                         type="text"
                         required
                         value={institution.name}
-                        onChange={(e) => setInstitution({ ...institution, name: e.target.value })}
+                        onChange={(e) => { isInstitutionDirtyRef.current = true; setInstitution({ ...institution, name: e.target.value }); }}
                         className="w-full px-3.5 py-2.5 border border-zinc-300 rounded-xl text-sm focus:ring-2 focus:ring-zinc-900 focus:outline-none"
                       />
                     </div>
@@ -11163,6 +11279,52 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                     </div>
                   </div>
 
+                                    {/* Pengaturan Batas Toleransi Pelanggaran (0 = Unlimited / Mode Bebas) */}
+                  <div className="p-4 rounded-xl border border-zinc-200/90 bg-zinc-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <ShieldAlert className="w-4 h-4 text-rose-600" />
+                        <span className="text-xs font-semibold text-zinc-900">
+                          Batas Toleransi Pelanggaran (Terkunci Otomatis)
+                        </span>
+                        {Number(institution.browser_permissions?.max_violations ?? 3) === 0 ? (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold border border-emerald-200">
+                            Mode Bebas / Unlimited
+                          </span>
+                        ) : (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 font-bold border border-rose-200">
+                            Kunci Setelah {institution.browser_permissions?.max_violations ?? 3}x
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-zinc-500 mt-1 leading-relaxed">
+                        Jumlah pelanggaran (keluar fullscreen, beralih tab, minimize) sebelum sistem mengunci total layar siswa. 
+                        <strong> Ketik 0 jika ingin Mode Bebas (Unlimited / Tanpa Batas Kunci)</strong>, sistem hanya akan mencatat log tanpa pernah mengunci layar ujian.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <input
+                        type="number"
+                        min="0"
+                        max="99"
+                        value={institution.browser_permissions?.max_violations ?? 3}
+                        onChange={(e) => {
+                          isInstitutionDirtyRef.current = true;
+                          const val = Math.max(0, parseInt(e.target.value, 10) || 0);
+                          setInstitution({
+                            ...institution,
+                            browser_permissions: {
+                              ...(institution.browser_permissions || {}),
+                              max_violations: val,
+                            },
+                          });
+                        }}
+                        className="w-20 px-3 py-1.5 text-xs font-mono font-bold text-center border border-zinc-300 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-zinc-900"
+                      />
+                      <span className="text-xs text-zinc-600 font-medium">Kali</span>
+                    </div>
+                  </div>
+
                   {/* Tombol Simpan Ceklis Izin Browser */}
                   <div className="flex justify-end pt-4 border-t border-zinc-100">
                     <button
@@ -11214,7 +11376,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                       <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200/80 text-emerald-800">
                         <p className="font-semibold text-xs mb-1 flex items-center gap-1.5">
                           <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                          ExampGuard v1.0 Siap 100% untuk Shared Hosting & Subdomain cPanel
+                          ExampGuard v1.1 Siap 100% untuk Shared Hosting & Subdomain cPanel
                         </p>
                         <p className="text-[11px] leading-relaxed text-emerald-700">
                           Sistem telah dilengkapi berkas paket <code className="font-mono bg-emerald-100/80 px-1 rounded font-semibold">ExampGuard-v1.0.zip</code> yang memuat jembatan <strong>PHP PDO SQLite REST API</strong> (<code className="font-mono">api/index.php</code>) dan proteksi <strong>.htaccess Enterprise</strong> (mencegah akses unduh database, auto-redirect HTTPS, dan SPA routing anti-error 404).
@@ -11664,7 +11826,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                 <div>
                   <div className="inline-flex items-center gap-2 mb-1.5">
                     <h2 className="text-xl sm:text-2xl font-bold text-zinc-900 tracking-tight">
-                      ExampGuard v1.0
+                      ExampGuard v1.1
                     </h2>
                     <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-mono font-semibold">
                       v1.0.0 Stable
@@ -11833,7 +11995,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                     <h3 className="text-sm font-semibold text-zinc-900">Arsitektur & Tujuan Aplikasi</h3>
                   </div>
                   <p className="text-xs text-zinc-600 leading-relaxed">
-                    ExampGuard v1.0 dirancang khusus untuk memecahkan kelemahan pelaksanaan ujian Google Form standar dengan mengisolasi lingkungan peramban peserta:
+                    ExampGuard v1.1 dirancang khusus untuk memecahkan kelemahan pelaksanaan ujian Google Form standar dengan mengisolasi lingkungan peramban peserta:
                   </p>
                   <ul className="text-xs text-zinc-600 space-y-2 list-disc list-inside">
                     <li><strong>Auto-Lock Screen:</strong> Penguncian seketika jika peserta beralih tab browser atau keluar dari mode Fullscreen.</li>
@@ -11853,7 +12015,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                   <div className="divide-y divide-zinc-100 text-xs">
                     <div className="py-2 flex justify-between items-center">
                       <span className="text-zinc-500">Versi Rilis</span>
-                      <span className="font-semibold text-zinc-900 font-mono">ExampGuard v1.0.0</span>
+                      <span className="font-semibold text-zinc-900 font-mono">ExampGuard v1.1.0</span>
                     </div>
                     <div className="py-2 flex justify-between items-center">
                       <span className="text-zinc-500">Frontend Engine</span>
