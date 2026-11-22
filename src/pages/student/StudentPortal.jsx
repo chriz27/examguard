@@ -59,6 +59,7 @@ import {
 } from '../../constants/educationConfig';
 import ConfirmDialog from '../../components/common/ConfirmDialog';
 import GeofenceMapPreview from '../../components/common/GeofenceMapPreview';
+import BroadcastRibbon from '../../components/common/BroadcastRibbon';
 
 // Icon Google OAuth Resmi (Multi-warna)
 function GoogleBrandIcon({ className = 'w-4 h-4' }) {
@@ -81,6 +82,83 @@ function GoogleBrandIcon({ className = 'w-4 h-4' }) {
         d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.26 6.58l4.02 3.13c.95-2.83 3.6-4.96 6.72-4.96z"
       />
     </svg>
+  );
+}
+
+// Komponen Header Nama Sekolah & Tingkat untuk Tampilan HP (Responsive Marquee jika Terpotong)
+function MobileSchoolHeader({ schoolName, gradeLabel }) {
+  const containerRef = useRef(null);
+  const textRef = useRef(null);
+  const [isOverflowing, setIsOverflowing] = useState(false);
+
+  const displayName = schoolName || 'ExamGuard Portal Peserta';
+
+  useEffect(() => {
+    const checkOverflow = () => {
+      if (containerRef.current && textRef.current) {
+        // Bandingkan lebar teks asli dengan lebar container yang tersedia di layar HP
+        const hasOverflow = textRef.current.scrollWidth > containerRef.current.clientWidth + 1;
+        setIsOverflowing(hasOverflow);
+      }
+    };
+
+    checkOverflow();
+    const timer = setTimeout(checkOverflow, 250);
+    window.addEventListener('resize', checkOverflow);
+
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('resize', checkOverflow);
+    };
+  }, [displayName]);
+
+  // Kecepatan membaca looping yang nyaman di ponsel (minimal 7s, maksimal 22s tergantung panjang teks)
+  const animDuration = Math.max(7, Math.min(22, Math.round(displayName.length * 0.35)));
+
+  return (
+    <div className="sm:hidden min-w-0 flex-1 overflow-hidden pr-1">
+      {/* Hidden element untuk mengukur panjang teks secara akurat tanpa terpengaruh animasi */}
+      <span
+        ref={textRef}
+        aria-hidden="true"
+        className="absolute opacity-0 pointer-events-none whitespace-nowrap text-xs font-semibold"
+        style={{ visibility: 'hidden', top: -9999, left: -9999 }}
+      >
+        {displayName}
+      </span>
+
+      {/* Baris 1: Nama Sekolah (Animasi Marquee Berjalan jika Terpotong) */}
+      <div ref={containerRef} className="overflow-hidden w-full relative">
+        {isOverflowing ? (
+          <div className="overflow-hidden whitespace-nowrap w-full">
+            <div
+              className="inline-flex will-change-transform"
+              style={{
+                animation: `egSchoolNameMarquee ${animDuration}s linear infinite`,
+              }}
+            >
+              <span className="font-semibold text-zinc-900 text-xs pr-8 shrink-0 flex items-center gap-2">
+                <span>{displayName}</span>
+                <span className="text-zinc-300 text-[10px]">&bull;</span>
+              </span>
+              <span className="font-semibold text-zinc-900 text-xs pr-8 shrink-0 flex items-center gap-2">
+                <span>{displayName}</span>
+                <span className="text-zinc-300 text-[10px]">&bull;</span>
+              </span>
+            </div>
+          </div>
+        ) : (
+          <div className="font-semibold text-zinc-900 text-xs truncate">
+            {displayName}
+          </div>
+        )}
+      </div>
+
+      {/* Baris 2: Tingkat */}
+      <div className="text-[10px] text-zinc-500 font-medium leading-tight truncate">
+        {gradeLabel}
+      </div>
+    </div>
   );
 }
 
@@ -441,6 +519,28 @@ export default function StudentPortal({ currentUser: propCurrentUser, onLogout }
   const [audioTested, setAudioTested] = useState(false);
   const [recheckTrigger, setRecheckTrigger] = useState(0);
 
+  // Konfigurasi Mode Aplikasi (Produksi Resmi vs Simulasi/Dev) dengan Zero-Trust Hardening
+  const [appModeConfig, setAppModeConfig] = useState(() => storageService.getAppModeConfig());
+  const isProduction = appModeConfig?.app_mode === 'production';
+  const isSimMode = !isProduction;
+  const effectiveGpsOverride = isSimMode && (gpsSimulatedOverride || Boolean(appModeConfig?.bypass_gps));
+
+  // Izin Peramban Institusi & Status Evaluasi
+  const browserPerms = typeof institution?.browser_permissions === 'string'
+    ? (() => { try { return JSON.parse(institution.browser_permissions); } catch { return {}; } })()
+    : (institution?.browser_permissions || {});
+  const isGoogleSsoRequired = browserPerms?.google_sso === true;
+  const isGoogleSsoBypassed = isSimMode && Boolean(appModeConfig?.bypass_google_sso);
+
+  const isGpsDisabled =
+    browserPerms.location_gps === false ||
+    browserPerms.location_gps === 0 ||
+    browserPerms.location_gps === '0' ||
+    institution?.gps_enabled === false ||
+    institution?.gps_enabled === 0 ||
+    institution?.gps_enabled === '0';
+  const isGpsRequired = !isGpsDisabled;
+
   // Popup Animasi Pemeriksaan Izin Sistem Berulang (Checklist Loading Popup)
   const [showVerificationPopup, setShowVerificationPopup] = useState(true);
   const [verificationCurrentStep, setVerificationCurrentStep] = useState(0);
@@ -691,23 +791,10 @@ export default function StudentPortal({ currentUser: propCurrentUser, onLogout }
 
   // Definisi 8 Komponen Izin Sistem yang Diverifikasi
   const getVerificationItems = () => {
-    const browserPerms = institution?.browser_permissions || {};
-    const isGoogleSsoRequired = browserPerms.google_sso === true;
-
-    const isGpsDisabled =
-      browserPerms.location_gps === false ||
-      browserPerms.location_gps === 0 ||
-      browserPerms.location_gps === '0' ||
-      institution?.gps_enabled === false ||
-      institution?.gps_enabled === 0 ||
-      institution?.gps_enabled === '0';
-
-    const isGpsRequired = !isGpsDisabled;
     const isGpsBypassed = isSimMode && Boolean(appModeConfig?.bypass_gps);
     const isNotifBypassed = isSimMode && Boolean(appModeConfig?.bypass_notifications);
     const isAudioBypassed = isSimMode && Boolean(appModeConfig?.bypass_audio);
     const isFullscreenBypassed = isSimMode && Boolean(appModeConfig?.bypass_fullscreen);
-    const isGoogleSsoBypassed = isSimMode && Boolean(appModeConfig?.bypass_google_sso);
     const isMediaBypassed = isSimMode && Boolean(appModeConfig?.bypass_media);
     const isCookiesBypassed = isSimMode && Boolean(appModeConfig?.bypass_cookies_check);
 
@@ -817,11 +904,7 @@ export default function StudentPortal({ currentUser: propCurrentUser, onLogout }
     ];
   };
 
-  // Konfigurasi Mode Aplikasi (Produksi Resmi vs Simulasi/Dev) dengan Zero-Trust Hardening
-  const [appModeConfig, setAppModeConfig] = useState(() => storageService.getAppModeConfig());
-  const isProduction = appModeConfig?.app_mode === 'production';
-  const isSimMode = !isProduction;
-  const effectiveGpsOverride = isSimMode && (gpsSimulatedOverride || Boolean(appModeConfig?.bypass_gps));
+  // (appModeConfig, isProduction, isSimMode, effectiveGpsOverride telah dideklarasikan di level atas komponen)
 
   // Deteksi Perangkat Seluler (HP / Tablet), Safari iOS & Konteks Jaringan
   const isMobileDevice = typeof navigator !== 'undefined' && (
@@ -873,7 +956,33 @@ export default function StudentPortal({ currentUser: propCurrentUser, onLogout }
   const [hasOpenedStartTokenHint, setHasOpenedStartTokenHint] = useState(false);
   const [hasOpenedFinishTokenHint, setHasOpenedFinishTokenHint] = useState(false);
 
+  // Auto-dismiss balon panduan token setelah 20 detik agar tidak menghalangi jika diabaikan peserta
+  useEffect(() => {
+    if (currentStage === 'exam' && !hasOpenedStartTokenHint) {
+      const timer = setTimeout(() => {
+        setHasOpenedStartTokenHint(true);
+      }, 20000);
+      return () => clearTimeout(timer);
+    }
+  }, [currentStage, hasOpenedStartTokenHint]);
+
+  useEffect(() => {
+    if (currentStage === 'exam' && !hasOpenedFinishTokenHint) {
+      const leadMinutes = Number(institution?.finish_token_lead_minutes || 10);
+      const isFinishTokenActive = Boolean(activeExam?.finish_token) && remainingSeconds <= leadMinutes * 60;
+      if (isFinishTokenActive) {
+        const timer = setTimeout(() => {
+          setHasOpenedFinishTokenHint(true);
+        }, 20000);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [currentStage, hasOpenedFinishTokenHint, remainingSeconds, activeExam, institution]);
+
   // Proctoring Violation & Lockout States
+  const [isDomFullscreen, setIsDomFullscreen] = useState(
+    typeof document !== 'undefined' ? Boolean(document.fullscreenElement || document.webkitFullscreenElement) : true
+  );
   const [showViolationWarningModal, setShowViolationWarningModal] = useState(false);
   const [violationWarningReason, setViolationWarningReason] = useState('');
   const [violationWarningCount, setViolationWarningCount] = useState(1);
@@ -1970,18 +2079,7 @@ export default function StudentPortal({ currentUser: propCurrentUser, onLogout }
     }));
   };
 
-// Evaluasi Kelayakan Pre-flight Dinamis (Hanya mengecek izin yang aktif di institusi)
-const browserPerms = institution?.browser_permissions || {};
-const isGoogleSsoRequired = browserPerms.google_sso === true;
-
-const isGpsDisabled =
-  browserPerms.location_gps === false ||
-  browserPerms.location_gps === 0 ||
-  browserPerms.location_gps === '0' ||
-  institution?.gps_enabled === false ||
-  institution?.gps_enabled === 0 ||
-  institution?.gps_enabled === '0';
-const isGpsRequired = !isGpsDisabled;
+// (browserPerms, isGoogleSsoRequired, isGpsDisabled, isGpsRequired telah dideklarasikan di level atas komponen)
 
 // 1. Evaluasi apakah seluruh izin wajib yang aktif di setelan admin sudah lolos
 const allPreflightPassed =
@@ -2294,36 +2392,54 @@ const handleStartExam = (exam) => {
   setSelectedExam(exam);
   setShowWarningModal(true);
   setAgreedToRules(false);
+  // Pemicu awal Fullscreen pada user gesture pertama
+  try {
+    if (!document.fullscreenElement && hasNativeFullscreen && !isIOS) {
+      const el = document.documentElement;
+      if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
+      else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen().catch(() => {});
+    }
+  } catch {}
 };
 
 const handleConfirmStartExam = async () => {
   if (!agreedToRules) return;
 
-  // Aktifkan izin AudioContext pada user gesture pertama
+  // 1. UTAMAKAN LANGSUNG MASUK FULLSCREEN SECARA SINKRON PADA USER GESTURE (PERTAMA KALI)
+  // Tidak boleh didahului await async lain agar token user activation peramban tidak kedaluwarsa
   try {
-    const ctx = getOrCreateAudioContext();
-    if (ctx && ctx.state === 'suspended') {
-      await ctx.resume();
-    }
-  } catch (e) {
-    console.warn('AudioContext user gesture unlock:', e);
-  }
-
-  // Minta Fullscreen
-  try {
-    if (document.documentElement.requestFullscreen) {
-      await document.documentElement.requestFullscreen();
+    const el = document.documentElement;
+    if (el.requestFullscreen) {
+      await el.requestFullscreen();
+    } else if (el.webkitRequestFullscreen) {
+      await el.webkitRequestFullscreen();
+    } else if (el.mozRequestFullScreen) {
+      await el.mozRequestFullScreen();
+    } else if (el.msRequestFullscreen) {
+      await el.msRequestFullscreen();
     }
   } catch (err) {
     console.warn('Layar penuh tidak diizinkan atau diblokir:', err);
   }
 
-  // Bersihkan clipboard saat masuk ujian
+  // Fallback perangkat iOS Safari
+  if (isIOS || !hasNativeFullscreen) {
+    document.body.classList.add('ios-viewport-fullscreen');
+    window.scrollTo(0, 1);
+  }
+
+  // 2. Aktifkan audio context secara non-blocking (tanpa await agar tidak memblokir render ujian)
   try {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText('');
+    const ctx = getOrCreateAudioContext();
+    if (ctx && ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
     }
-  } catch { }
+  } catch (e) {
+    console.warn('AudioContext user gesture unlock:', e);
+  }
+
+  // 3. PENTING: DILARANG MEMANGGIL navigator.clipboard.writeText('') KARENA MEMICU POPUP IZIN PERAMBAN!
+  // Proteksi copy/paste/cut ditangani penuh oleh event blocker native (onCopy, onCut, onPaste, onContextMenu).
 
   // Dapatkan atau buat attempt
   const existingAttempt = storageService.getAttempt(currentUser.id, selectedExam.id);
@@ -2549,7 +2665,8 @@ useEffect(() => {
     const currentAttempt = storageService.getAttempt(currentUser.id, activeExam.id);
     const newViolationCount = (currentAttempt?.violation_count || 0) + 1;
 
-    if (isUnlimitedViolations || newViolationCount < MAX_VIOLATIONS) {
+    const maxLimit = Number(institution?.max_violations || 3);
+    if (newViolationCount < maxLimit) {
       // Masih dalam batas toleransi (Pelanggaran ke-1 & ke-2): Tampilkan dialog peringatan & Bunyikan Alarm Keras Berulang
       startContinuousWarningAlarm();
 
@@ -2580,7 +2697,7 @@ useEffect(() => {
       if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
         try {
           new Notification('PERINGATAN PELANGGARAN UJIAN!', {
-            body: `Pelanggaran ${newViolationCount}/${MAX_VIOLATIONS}: ${reason}`,
+            body: `Pelanggaran ${newViolationCount}/${maxLimit}: ${reason}`,
             tag: 'exam-warning',
           });
         } catch {}
@@ -2684,20 +2801,20 @@ useEffect(() => {
   };
 
   const handleFullscreenChange = () => {
-    const appMode = storageService.getAppModeConfig();
-    if (appMode.app_mode === 'simulation' && appMode.bypass_fullscreen) return;
-    if (Date.now() - examEnterTimestampRef.current < 5000) return;
+    if (Date.now() - examEnterTimestampRef.current < 4000) return;
 
     if (isIOS || !hasNativeFullscreen) {
       return;
     }
 
     const isFullscreen = Boolean(document.fullscreenElement || document.webkitFullscreenElement);
+    setIsDomFullscreen(isFullscreen);
+
     if (!isFullscreen) {
+      // Selalu picu peringatan pelanggaran ringan & banner saat peramban keluar dari Fullscreen
       handleViolation('Keluar dari mode Layar Penuh (Fullscreen).');
     } else {
-      // Peserta kembali masuk ke mode Layar Penuh (Fullscreen):
-      // Hentikan alarm peringatan seketika & tutup dialog peringatan jika tidak terkunci
+      // Peserta kembali masuk ke mode Layar Penuh (Fullscreen)
       if (!isLocked) {
         stopContinuousWarningAlarm();
         setShowViolationWarningModal(false);
@@ -2730,11 +2847,6 @@ useEffect(() => {
 
     if (isScreenshotAttempt) {
       e.preventDefault();
-      try {
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText('');
-        }
-      } catch {}
       handleViolation('Mencoba melakukan tangkapan layar (Screenshot / PrintScreen).');
       return;
     }
@@ -2760,11 +2872,6 @@ useEffect(() => {
     if (appMode.app_mode === 'simulation' && appMode.bypass_fullscreen) return;
 
     if (e.key === 'PrintScreen' || e.code === 'PrintScreen') {
-      try {
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText('');
-        }
-      } catch {}
       handleViolation('Mencoba melakukan tangkapan layar (Screenshot / PrintScreen).');
     }
   };
@@ -2778,6 +2885,7 @@ useEffect(() => {
   window.addEventListener('blur', handleWindowBlur);
   window.addEventListener('beforeunload', handleBeforeUnload);
   document.addEventListener('fullscreenchange', handleFullscreenChange);
+  document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
   window.addEventListener('keydown', handleKeyDown);
   window.addEventListener('keyup', handleKeyUp);
   window.addEventListener('contextmenu', handleContextMenu);
@@ -2792,6 +2900,7 @@ useEffect(() => {
     window.removeEventListener('blur', handleWindowBlur);
     window.removeEventListener('beforeunload', handleBeforeUnload);
     document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
     window.removeEventListener('keydown', handleKeyDown);
     window.removeEventListener('keyup', handleKeyUp);
     window.removeEventListener('contextmenu', handleContextMenu);
@@ -2967,9 +3076,34 @@ const handleFinishExam = async (isAutoTimeOut = false) => {
 };
 
 const copyToken = (token) => {
-  navigator.clipboard.writeText(token);
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(token).catch(() => {
+        fallbackCopyText(token);
+      });
+    } else {
+      fallbackCopyText(token);
+    }
+  } catch {
+    fallbackCopyText(token);
+  }
   setCopiedToken(true);
   setTimeout(() => setCopiedToken(false), 2000);
+};
+
+const fallbackCopyText = (text) => {
+  try {
+    const textArea = document.createElement('textarea');
+    textArea.value = text;
+    textArea.style.position = 'fixed';
+    textArea.style.left = '-9999px';
+    textArea.style.top = '-9999px';
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    document.execCommand('copy');
+    document.body.removeChild(textArea);
+  } catch {}
 };
 
 // Render Dialog Ubah Password Mandiri Peserta (Popup Blur Modern & 5 Tingkat Validasi)
@@ -3617,6 +3751,8 @@ const renderLocationDetailModal = () => {
   if (currentStage === 'preflight') {
     return (
       <div className="min-h-screen bg-zinc-50 flex flex-col justify-between items-center p-4 sm:p-6 selection:bg-zinc-900 selection:text-white">
+        {/* Banner Pita Berjalan Pengumuman Pusat */}
+        <BroadcastRibbon />
         <header className="w-full max-w-lg pt-6 pb-2 text-center">
           <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-zinc-900 text-white shadow-xs mb-3 overflow-hidden">
             {institution?.logo_url && !logoError ? (
@@ -4324,9 +4460,12 @@ const renderLocationDetailModal = () => {
   if (currentStage === 'home') {
     return (
       <div className="min-h-screen bg-zinc-50 selection:bg-zinc-900 selection:text-white flex flex-col justify-between">
+        {/* Banner Pita Berjalan Pengumuman Pusat di Beranda Peserta */}
+        <BroadcastRibbon />
+
         {/* Top Navbar */}
         <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-zinc-200/80 px-3 sm:px-6 py-2.5 sm:py-3.5 flex items-center justify-between w-full max-w-full overflow-hidden">
-          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 mr-2">
             <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-zinc-900 text-white flex items-center justify-center shadow-2xs overflow-hidden shrink-0">
               {institution?.logo_url && !headerLogoError ? (
                 <img
@@ -4339,7 +4478,18 @@ const renderLocationDetailModal = () => {
                 <Shield className="w-5 h-5 text-zinc-100" />
               )}
             </div>
-            {/* Pada mode HP (sm ke bawah), sembunyikan teks identitas dan hanya tampilkan Logo saja */}
+
+            {/* Tampilan HP (< sm): Baris 1 Nama Sekolah (Animasi Marquee Berjalan jika terpotong), Baris 2 Tingkat */}
+            <MobileSchoolHeader
+              schoolName={institution?.name || 'ExamGuard Portal Peserta'}
+              gradeLabel={
+                currentUser?.tingkat
+                  ? getGradeLabel(currentUser.tingkat)
+                  : (currentUser?.kelas ? `Tingkat ${currentUser.kelas}` : 'Tingkat Umum')
+              }
+            />
+
+            {/* Tampilan Desktop & Tablet (>= sm) */}
             <div className="hidden sm:block min-w-0">
               <div className="font-semibold text-zinc-900 text-sm tracking-tight truncate">
                 {institution?.name || 'ExamGuard Portal Peserta'}
@@ -4860,7 +5010,7 @@ const renderLocationDetailModal = () => {
         </main>
 
                                                               <footer className="border-t border-zinc-200/80 bg-white py-4 px-6 text-center text-xs text-zinc-400">
-                                                                ExampGuard v1.1 &copy; {new Date().getFullYear()} &bull; Sistem Pengawasan Ujian Aman Google Form &bull; Oleh Fandi dari Jawa tech
+                                                                ExamGuard v1.2 &copy; {new Date().getFullYear()} &bull; Sistem Pengawasan Ujian Aman Google Form &bull; Oleh Fandi dari Jawa tech
                                                               </footer>
 
                                                               {/* MODAL: HIMBAUAN MENGISI IDENTITAS & TOKEN DENGAN BENAR */}
@@ -5506,16 +5656,25 @@ const renderLocationDetailModal = () => {
                                                             return (
                                                             <div
                                                               className="fixed inset-0 z-50 bg-zinc-900 flex flex-col select-none overflow-hidden"
+                                                              onClick={() => {
+                                                                if (!document.fullscreenElement && hasNativeFullscreen && !isIOS) {
+                                                                  const el = document.documentElement;
+                                                                  if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
+                                                                  else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen().catch(() => {});
+                                                                }
+                                                              }}
                                                               onContextMenu={(e) => e.preventDefault()}
                                                               onCopy={(e) => e.preventDefault()}
                                                               onCut={(e) => e.preventDefault()}
                                                               onPaste={(e) => e.preventDefault()}
                                                             >
-                                                              {/* 1. 2-TIER NAVBAR */}
-                                                              {/* NAVBAR ATAS: Logo, Wifi Ping, Baterai, Token, Timer, Tombol Selesai */}
-                                                              <header className="bg-zinc-900 border-b border-zinc-800 px-2.5 sm:px-4 py-1.5 flex items-center justify-between gap-1.5 sm:gap-3 shrink-0 shadow-md z-30 w-full relative">
+                                                              {/* Banner Pita Berjalan Pengumuman Pusat di Lembar Pengerjaan Soal Ujian */}
+                                                              <BroadcastRibbon />
+
+                                                              {/* 1. NAVBAR TINGKAT 1 (ATAS): Logo, Wifi Ping, Baterai, Timer, Tombol Selesai */}
+                                                              <header className="bg-zinc-900 border-b border-zinc-800 px-2.5 sm:px-4 py-1.5 flex items-center justify-between gap-2 shrink-0 shadow-md z-30 w-full relative">
                                                                 {/* Sisi Kiri: Logo Instansi, Ping, Baterai */}
-                                                                <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                                                                <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
                                                                   {institution?.logo_url ? (
                                                                     <img
                                                                       src={institution.logo_url}
@@ -5528,9 +5687,9 @@ const renderLocationDetailModal = () => {
                                                                     </div>
                                                                   )}
 
-                                                                  {/* Indikator Ping (Responsif Layar HP & Laptop) */}
+                                                                  {/* Indikator Ping */}
                                                                   <div
-                                                                    className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-zinc-800/90 text-zinc-200 text-[11px] font-mono border border-zinc-700/80"
+                                                                    className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-zinc-800/90 text-zinc-200 text-[11px] font-mono border border-zinc-700/80 shrink-0"
                                                                     title={`Latensi Ping Server: ${pingMs !== null ? pingMs + ' ms' : 'Mengukur...'}`}
                                                                   >
                                                                     <Wifi className={`w-3 h-3 sm:w-3.5 sm:h-3.5 ${
@@ -5543,9 +5702,9 @@ const renderLocationDetailModal = () => {
                                                                     <span className="font-bold">{pingMs !== null ? `${pingMs}ms` : '...'}</span>
                                                                   </div>
 
-                                                                  {/* Indikator Daya Baterai (Responsif & Aman Fallback iOS) */}
+                                                                  {/* Indikator Daya Baterai */}
                                                                   <div
-                                                                    className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-zinc-800/90 text-zinc-200 text-[11px] font-mono border border-zinc-700/80"
+                                                                    className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-zinc-800/90 text-zinc-200 text-[11px] font-mono border border-zinc-700/80 shrink-0"
                                                                     title={`Daya Baterai: ${batteryLevel !== null ? batteryLevel + '%' : '100% (Fallback iOS)'}`}
                                                                   >
                                                                     {isCharging ? (
@@ -5559,70 +5718,8 @@ const renderLocationDetailModal = () => {
                                                                   </div>
                                                                 </div>
 
-                                                                {/* Sisi Kanan: Token Adaptif, Timer, dan Tombol Selesai Merah */}
+                                                                {/* Sisi Kanan: Timer dan Tombol Selesai */}
                                                                 <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
-
-                                                                  {/* Tombol Ringkas TOKEN [icon mata] dengan Balon Panduan Interaktif */}
-                                                                  <div className="relative">
-                                                                    {(() => {
-                                                                      const leadMinutes = Number(institution?.finish_token_lead_minutes || 10);
-                                                                      const isFinishTokenActive = Boolean(activeExam?.finish_token) && remainingSeconds <= leadMinutes * 60;
-
-                                                                      return (
-                                                                        <>
-                                                                          <button
-                                                                            type="button"
-                                                                            onClick={() => {
-                                                                              setShowTokenPopup((prev) => !prev);
-                                                                              setHasOpenedStartTokenHint(true);
-                                                                              if (isFinishTokenActive) {
-                                                                                setHasOpenedFinishTokenHint(true);
-                                                                              }
-                                                                            }}
-                                                                            title="Buka Kode Token Ujian"
-                                                                            className={`inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg text-xs font-bold transition-all shadow-2xs cursor-pointer shrink-0 border ${
-                                                                              isFinishTokenActive
-                                                                                ? 'bg-rose-50 text-rose-700 border-rose-300 animate-pulse'
-                                                                                : 'bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100'
-                                                                            }`}
-                                                                          >
-                                                                            <Eye className="w-3.5 h-3.5 shrink-0" />
-                                                                            <span>TOKEN</span>
-                                                                            {isFinishTokenActive && (
-                                                                              <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping shrink-0" />
-                                                                            )}
-                                                                          </button>
-
-                                                                          {/* Balon Panduan 1 (Hijau): Muncul saat pertama kali masuk mode soal */}
-                                                                          {!hasOpenedStartTokenHint && !showTokenPopup && (
-                                                                            <div onClick={() => { setShowTokenPopup(true); setHasOpenedStartTokenHint(true); }} className="absolute top-full right-0 mt-2.5 z-50 w-56 sm:w-60 bg-emerald-600 hover:bg-emerald-700 text-white p-2.5 rounded-xl shadow-2xl text-xs animate-bounce cursor-pointer border border-emerald-400 select-none">
-                                                                              <div className="absolute -top-1.5 right-6 w-3 h-3 bg-emerald-600 rotate-45 border-t border-l border-emerald-500" />
-                                                                              <div className="relative flex items-center gap-2">
-                                                                                <KeyRound className="w-4 h-4 text-emerald-200 shrink-0" />
-                                                                                <span className="font-semibold text-[11px] leading-snug">
-                                                                                  Buka TOKEN ini untuk melihat token mulai
-                                                                                </span>
-                                                                              </div>
-                                                                            </div>
-                                                                          )}
-
-                                                                          {/* Balon Panduan 2 (Merah): Muncul saat token selesai sudah terbit */}
-                                                                          {hasOpenedStartTokenHint && isFinishTokenActive && !hasOpenedFinishTokenHint && !showTokenPopup && (
-                                                                            <div onClick={() => { setShowTokenPopup(true); setHasOpenedFinishTokenHint(true); }} className="absolute top-full right-0 mt-2.5 z-50 w-60 sm:w-64 bg-rose-600 hover:bg-rose-700 text-white p-2.5 rounded-xl shadow-2xl text-xs animate-bounce cursor-pointer border border-rose-400 select-none">
-                                                                              <div className="absolute -top-1.5 right-6 w-3 h-3 bg-rose-600 rotate-45 border-t border-l border-rose-500" />
-                                                                              <div className="relative flex items-center gap-2">
-                                                                                <KeyRound className="w-4 h-4 text-rose-200 shrink-0" />
-                                                                                <span className="font-bold text-[11px] leading-snug">
-                                                                                  Token selesai telah terbit! Buka di sini untuk melihat
-                                                                                </span>
-                                                                              </div>
-                                                                            </div>
-                                                                          )}
-                                                                        </>
-                                                                      );
-                                                                    })()}
-                                                                  </div>
-
                                                                   {/* Sticky Countdown Timer */}
                                                                   <div
                                                                     className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg border text-xs sm:text-sm font-mono-num font-bold tracking-tight shadow-2xs shrink-0 ${
@@ -5649,39 +5746,124 @@ const renderLocationDetailModal = () => {
                                                                 </div>
                                                               </header>
 
-                                                              {/* NAVBAR BAWAH: Nama, Rombel, Ruang, dan Tombol Refresh Soal Kontras */}
-                                                              <div className="bg-zinc-100 border-b border-zinc-200/90 px-3 sm:px-4 py-1 sm:py-1.5 flex items-center justify-between gap-2 shrink-0 z-20 w-full shadow-2xs">
-                                                                {/* Sisi Kiri: Nama Peserta, Rombel, Ruang */}
-                                                                <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0">
-                                                                  <span className="font-bold text-xs sm:text-sm text-zinc-900 truncate" title={currentUser.nama}>
-                                                                    {currentUser.nama}
-                                                                  </span>
-                                                                  <span className="text-zinc-400 hidden xs:inline">&bull;</span>
-                                                                  <span className="text-[11px] sm:text-xs text-zinc-600 font-medium truncate">
-                                                                    {currentUser.kelas || getGradeLabel(currentUser.tingkat)} &bull; {currentUser.ruang || 'Ruang 01'}
-                                                                  </span>
-                                                                </div>
+                                                              {/* 2. NAVBAR TINGKAT 2 (SUB-NAVBAR): Tombol TOKEN di Samping Kiri Nama, Rombel, Ruang */}
+                                                              <div className="bg-zinc-100 border-b border-zinc-200/90 px-2.5 sm:px-4 py-1 sm:py-1.5 flex items-center justify-between gap-2 shrink-0 z-35 w-full shadow-2xs relative">
+                                                                {/* Sisi Kiri: Tombol TOKEN + Separator + Identitas Siswa */}
+                                                                <div className="flex items-center gap-2 min-w-0">
+                                                                  {/* Tombol Ringkas TOKEN [icon mata] dengan Balon Panduan Mengarah ke Bawah dari tombol */}
+                                                                  <div className="relative shrink-0">
+                                                                    {(() => {
+                                                                      const leadMinutes = Number(institution?.finish_token_lead_minutes || 10);
+                                                                      const isFinishTokenActive = Boolean(activeExam?.finish_token) && remainingSeconds <= leadMinutes * 60;
 
-                                                                {/* Sisi Kanan: Tombol Segarkan Soal Warna Biru Kontras + Balon Keterangan Tooltip */}
-                                                                <div className="relative group shrink-0">
-                                                                  <button
-                                                                    type="button"
-                                                                    onClick={() => setShowRefreshConfirmModal(true)}
-                                                                    disabled={isGformLoading}
-                                                                    className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 active:scale-95 text-white text-xs font-semibold shadow-xs transition-all cursor-pointer disabled:opacity-50"
-                                                                    title="Tombol Muat Ulang Lembar Soal (GForm)"
-                                                                  >
-                                                                    <RefreshCw className={`w-3.5 h-3.5 text-white ${isGformLoading ? 'animate-spin' : ''}`} />
-                                                                    <span className="text-[11px] sm:text-xs font-semibold">Segarkan Soal</span>
-                                                                  </button>
-                                                                  {/* Balon Keterangan / Tooltip Mengambang */}
-                                                                  <div className="absolute right-0 top-full mt-1.5 hidden group-hover:flex flex-col items-end pointer-events-none z-50 animate-in fade-in duration-150">
-                                                                    <div className="bg-zinc-900 text-white text-[11px] font-medium px-2.5 py-1 rounded-lg shadow-lg whitespace-nowrap border border-zinc-700">
-                                                                      Muat ulang lembar soal jika terjadi kendala jaringan (GForm)
-                                                                    </div>
+                                                                      return (
+                                                                        <>
+                                                                          <button
+                                                                            type="button"
+                                                                            onClick={() => {
+                                                                              setShowTokenPopup((prev) => !prev);
+                                                                              setHasOpenedStartTokenHint(true);
+                                                                              if (isFinishTokenActive) {
+                                                                                setHasOpenedFinishTokenHint(true);
+                                                                              }
+                                                                            }}
+                                                                            title="Buka Kode Token Ujian"
+                                                                            className={`inline-flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-lg text-xs font-bold transition-all shadow-2xs cursor-pointer shrink-0 border ${
+                                                                              isFinishTokenActive
+                                                                                ? 'bg-rose-50 text-rose-700 border-rose-300 animate-pulse'
+                                                                                : 'bg-emerald-100 text-emerald-900 border border-emerald-300 hover:bg-emerald-200'
+                                                                            }`}
+                                                                          >
+                                                                            <Eye className="w-3.5 h-3.5 shrink-0" />
+                                                                            <span>TOKEN</span>
+                                                                            {isFinishTokenActive && (
+                                                                              <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping shrink-0" />
+                                                                            )}
+                                                                          </button>
+
+                                                                          {/* Balon Panduan 1 (Hijau): Muncul di bawah tombol TOKEN */}
+                                                                          {!hasOpenedStartTokenHint && !isFinishTokenActive && !showTokenPopup && (
+                                                                            <div
+                                                                              onClick={() => { setShowTokenPopup(true); setHasOpenedStartTokenHint(true); }}
+                                                                              className="absolute top-full left-0 mt-2 z-50 w-60 sm:w-68 bg-emerald-600 hover:bg-emerald-700 text-white p-2 sm:p-2.5 rounded-xl shadow-2xl text-xs animate-bounce cursor-pointer border border-emerald-400 select-none flex items-center justify-between gap-1.5"
+                                                                            >
+                                                                              {/* Panah balon menunjuk ke ATAS mengarah ke tombol TOKEN */}
+                                                                              <div className="absolute -top-1.5 left-5 w-3 h-3 bg-emerald-600 rotate-45 border-t border-l border-emerald-400" />
+                                                                              <div className="flex items-center gap-2 min-w-0">
+                                                                                <KeyRound className="w-4 h-4 text-emerald-200 shrink-0" />
+                                                                                <span className="font-semibold text-[11px] leading-snug">
+                                                                                  Buka TOKEN ini untuk melihat token mulai
+                                                                                </span>
+                                                                              </div>
+                                                                              <button
+                                                                                type="button"
+                                                                                onClick={(e) => {
+                                                                                  e.stopPropagation();
+                                                                                  setHasOpenedStartTokenHint(true);
+                                                                                }}
+                                                                                className="p-1 rounded-md hover:bg-emerald-800 text-emerald-100 shrink-0 transition-colors"
+                                                                                title="Tutup Petunjuk"
+                                                                              >
+                                                                                <X className="w-3.5 h-3.5" />
+                                                                              </button>
+                                                                            </div>
+                                                                          )}
+
+                                                                          {/* Balon Panduan 2 (Merah): Muncul saat token selesai terbit */}
+                                                                          {isFinishTokenActive && !hasOpenedFinishTokenHint && !showTokenPopup && (
+                                                                            <div
+                                                                              onClick={() => { setShowTokenPopup(true); setHasOpenedFinishTokenHint(true); }}
+                                                                              className="absolute top-full left-0 mt-2 z-50 w-64 sm:w-72 bg-rose-600 hover:bg-rose-700 text-white p-2 sm:p-2.5 rounded-xl shadow-2xl text-xs animate-bounce cursor-pointer border border-rose-400 select-none flex items-center justify-between gap-1.5"
+                                                                            >
+                                                                              {/* Panah balon menunjuk ke ATAS mengarah ke tombol TOKEN */}
+                                                                              <div className="absolute -top-1.5 left-5 w-3 h-3 bg-rose-600 rotate-45 border-t border-l border-rose-400" />
+                                                                              <div className="flex items-center gap-2 min-w-0">
+                                                                                <KeyRound className="w-4 h-4 text-rose-200 shrink-0" />
+                                                                                <span className="font-bold text-[11px] leading-snug">
+                                                                                  Token selesai telah terbit! Buka di sini
+                                                                                </span>
+                                                                              </div>
+                                                                              <button
+                                                                                type="button"
+                                                                                onClick={(e) => {
+                                                                                  e.stopPropagation();
+                                                                                  setHasOpenedFinishTokenHint(true);
+                                                                                }}
+                                                                                className="p-1 rounded-md hover:bg-rose-800 text-rose-100 shrink-0 transition-colors"
+                                                                                title="Tutup Petunjuk"
+                                                                              >
+                                                                                <X className="w-3.5 h-3.5" />
+                                                                              </button>
+                                                                            </div>
+                                                                          )}
+                                                                        </>
+                                                                      );
+                                                                    })()}
+                                                                  </div>
+
+                                                                  <span className="text-zinc-300">|</span>
+
+                                                                  {/* Identitas Siswa: Nama, Rombel, Ruang */}
+                                                                  <div className="flex items-center gap-1 sm:gap-2 min-w-0">
+                                                                    <span className="font-bold text-xs sm:text-sm text-zinc-900 truncate" title={currentUser.nama}>
+                                                                      {currentUser.nama}
+                                                                    </span>
+                                                                    <span className="text-zinc-400">&bull;</span>
+                                                                    <span className="text-[11px] sm:text-xs text-zinc-600 font-medium truncate">
+                                                                      {currentUser.kelas || getGradeLabel(currentUser.tingkat)} &bull; {currentUser.ruang || 'Ruang 01'}
+                                                                    </span>
                                                                   </div>
                                                                 </div>
+
+                                                                {/* Sisi Kanan: Badge Sesi Ujian Aktif */}
+                                                                <div className="hidden xs:flex items-center gap-1.5 shrink-0">
+                                                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                                                    Sesi Aktif
+                                                                  </span>
+                                                                </div>
                                                               </div>
+
+                                                              
 
                                                               {/* BANNER MERAH MELEKAT JIKA WAKTU HABIS */}
                                                               {(isTimeExpired || remainingSeconds <= 0) && (
@@ -5780,6 +5962,24 @@ const renderLocationDetailModal = () => {
 
                                                               </div>
 
+                                                              {/* TOMBOL ICON BULAT SEGARKAN SOAL MENGAMBANG DI KANAN BAWAH (FLOATING ACTION BUTTON) */}
+                                                              <div className="fixed bottom-6 right-5 z-40 flex items-center group">
+                                                                <div className="mr-2.5 hidden sm:group-hover:flex items-center pointer-events-none animate-in fade-in duration-150">
+                                                                  <div className="bg-zinc-950/95 text-white text-xs font-semibold px-2.5 py-1.5 rounded-xl shadow-xl whitespace-nowrap border border-zinc-700 backdrop-blur-xs">
+                                                                    Segarkan Soal (GForm)
+                                                                  </div>
+                                                                </div>
+                                                                <button
+                                                                  type="button"
+                                                                  onClick={() => setShowRefreshConfirmModal(true)}
+                                                                  disabled={isGformLoading}
+                                                                  title="Segarkan Lembar Soal Ujian (GForm)"
+                                                                  className="w-12 h-12 sm:w-13 sm:h-13 rounded-full bg-blue-600 hover:bg-blue-700 active:scale-90 text-white shadow-xl shadow-blue-600/40 border-2 border-white flex items-center justify-center transition-all cursor-pointer disabled:opacity-50"
+                                                                >
+                                                                  <RefreshCw className={`w-5 h-5 sm:w-6 sm:h-6 text-white ${isGformLoading ? 'animate-spin' : ''}`} />
+                                                                </button>
+                                                              </div>
+
                                                               {/* MODAL KONFIRMASI SEGARKAN LEMBAR SOAL */}
                                                               {showRefreshConfirmModal && (
                                                                 <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
@@ -5826,14 +6026,14 @@ const renderLocationDetailModal = () => {
                                                                       PERINGATAN PELANGGARAN UJIAN
                                                                     </h3>
                                                                     <p className="text-xs font-semibold text-amber-600 mt-0.5 mb-3">
-                                                                      Pelanggaran Ke-{violationWarningCount} dari 3 Kali Batas Toleransi
+                                                                      Pelanggaran Ke-{violationWarningCount} dari {Number(institution?.max_violations || 3)} Kali Batas Toleransi
                                                                     </p>
 
                                                                     <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 mb-4 text-left space-y-1">
                                                                       <div className="font-bold">Penyebab Terdeteksi:</div>
                                                                       <p className="text-amber-800">{violationWarningReason || 'Fokus atau kursor meninggalkan layar ujian.'}</p>
                                                                       <p className="text-[11px] text-amber-700 italic pt-1 border-t border-amber-200/60 mt-1.5">
-                                                                        Perhatian: Jika Anda melanggar sebanyak 3 kali, layar ujian Anda akan <strong>TERKUNCI TOTAL</strong> dan wajib dibuka oleh Pengawas!
+                                                                        Perhatian: Jika Anda melanggar sebanyak {Number(institution?.max_violations || 3)} kali, layar ujian Anda akan <strong>TERKUNCI TOTAL</strong> dan wajib dibuka oleh Pengawas!
                                                                       </p>
                                                                     </div>
 

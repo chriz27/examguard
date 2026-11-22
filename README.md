@@ -1,251 +1,372 @@
-# 🛡️ ExampGuard v1.1 - Enterprise Exam Browser & Proctoring System
+# 🛡️ ExamGuard v1.2 - Enterprise Exam Browser & Proctoring System
 
 <div align="center">
 
-[![Versi](https://img.shields.io/badge/Versi-1.1.0_Production_Ready-emerald?style=for-the-badge&logo=shield)](https://github.com/chriz27/examguard)
-[![PHP](https://img.shields.io/badge/PHP-8.0+-blue?style=for-the-badge&logo=php)](https://php.net)
-[![NodeJS](https://img.shields.io/badge/Node.js-18+-green?style=for-the-badge&logo=node.js)](https://nodejs.org)
-[![Database](https://img.shields.io/badge/SQLite-Zero_Config-003B57?style=for-the-badge&logo=sqlite)](https://sqlite.org)
+[![Versi](https://img.shields.io/badge/Versi-1.2.0_Production_Ready-emerald?style=for-the-badge&logo=shield)](https://github.com/chriz27/examguard)
+[![React](https://img.shields.io/badge/React-19.0-61DAFB?style=for-the-badge&logo=react)](https://react.dev)
+[![Vite](https://img.shields.io/badge/Vite-6.0-646CFF?style=for-the-badge&logo=vite)](https://vitejs.dev)
+[![TailwindCSS](https://img.shields.io/badge/Tailwind-v4_HEX_Safe-38B2AC?style=for-the-badge&logo=tailwind-css)](https://tailwindcss.com)
+[![PHP](https://img.shields.io/badge/PHP-8.0+_PDO_SQLite-777BB4?style=for-the-badge&logo=php)](https://php.net)
+[![NodeJS](https://img.shields.io/badge/Node.js-18+_LTS-339933?style=for-the-badge&logo=node.js)](https://nodejs.org)
+[![Database](https://img.shields.io/badge/SQLite-Zero_Config_WAL-003B57?style=for-the-badge&logo=sqlite)](https://sqlite.org)
 [![License](https://img.shields.io/badge/License-MIT-purple?style=for-the-badge)](LICENSE)
 
-**Sistem Pengawasan & Pengamanan Ujian Berbasis Web Mandiri untuk Google Forms.**
+**Sistem Pengawasan & Pengamanan Asesmen Digital Modern Terstandar untuk Google Forms.**
 
-*Tanpa perlu instal aplikasi di Play Store atau App Store — langsung berjalan aman di seluruh browser.*</br>
-*(✅ Chrome Android, ✅ Chrome Dekstop, ⚠ iOS)*
+*Tanpa perlu unduh instal aplikasi dari Play Store atau App Store — langsung berjalan aman, responsif, dan terkunci di seluruh peramban.*  
+*(✅ Chrome Android, ✅ Chrome / Edge Desktop, ⚠ Safari iOS)*
 
 ---
 
 ### 👨‍💻 Tim Pengembang
 Dikembangkan dengan penuh dedikasi oleh **Fandi dari Jawa tech**  
-Untuk kemajuan sistem asesmen digital sekolah, madrasah, dan instansi pendidikan di Indonesia.
+Untuk kemajuan ekosistem asesmen digital sekolah, madrasah, dan instansi pendidikan di seluruh Indonesia.
+
+<div align="center" style="margin-top: 10px;">
+
+[![Dukung Developer via Saweria](https://img.shields.io/badge/☕_Dukung_Developer-Saweria-FFA500?style=for-the-badge&logo=kofi&logoColor=white)](https://saweria.co/chriz27)
+
+</div>
 
 </div>
 
 ---
 
-## 💡 Apa Itu ExampGuard?
+## 💡 Apa Itu ExamGuard & Tujuan Aplikasi
 
-**ExampGuard** adalah platform *Exam Browser* berbasis web modern yang dirancang untuk mengamankan jalannya asesmen atau ujian daring (seperti Google Formulir). Siswa mengerjakan soal di dalam lingkungan peramban terkunci (*Kiosk Mode*) yang mencegah kecurangan seperti membuka tab lain, menyalin jawaban, mencari contekan di peramban (tab baru), maupun berpindah aplikasi.
+**ExamGuard for Google Forms** adalah platform *Exam Browser* berbasis web modern yang dirancang untuk mengamankan jalannya asesmen atau ujian daring dengan Google Formulir. Siswa mengerjakan soal di dalam lingkungan peramban terkunci (*Kiosk Mode*) yang steril dari berbagai potensi kecurangan.
 
-Aplikasi ini dapat dihosting dengan sangat hemat dan mudah di **cPanel Shared Hosting biasa** tanpa perlu konfigurasi server yang rumit dan pengaturan database karena menggunakan SQLite.
+### 🎯 Tujuan & Latar Belakang Aplikasi
+Banyak sekolah dan lembaga pendidikan di Indonesia menyelenggarakan asesmen digital (Ulangan Harian, Asesmen Sumatif/Formatif, Penilaian Akhir Semester, hingga Ujian Sekolah) menggunakan **Google Formulir (Google Forms)** karena kemudahan pembuatan soal dan pengoreksian otomatis. Namun, pelaksanaan ujian melalui Google Form standar memiliki celah kecurangan yang sangat tinggi:
+* Peserta dapat dengan mudah membuka tab baru, mencari kunci jawaban di Google atau ChatGPT.
+* Soal dan jawaban dapat disalin (*copy-paste*) ke grup perpesanan (WhatsApp/Telegram).
+* Terjadi praktik joki ujian di mana akun siswa dikerjakan oleh orang lain dari luar sekolah atau rumah.
+* Aplikasi *Exam Browser* berbasis Play Store/App Store sering membebani siswa (memori HP penuh, kendala tipe Android lawas, perizinan rumit, atau butuh biaya lisensi server tinggi).
+
+### 🚀 Visi & Solusi ExamGuard
+ExamGuard hadir untuk **mendekatkan teknologi asesmen aman kepada seluruh sekolah tanpa biaya lisensi mahal dan tanpa konfigurasi server yang rumit**. ExamGuard membungkus lembar soal Google Form di dalam lingkungan **Kiosk Sandbox Terkunci** berbasis peramban web modern yang menjamin integritas ujian:
+
+1. **Fullscreen Lock:** Penguncian layar penuh seketika saat ujian dimulai; mendeteksi pergantian tab, split screen, dan shortcut terlarang.
+2. **GPS Geofencing Presisi Tinggi:** Validasi radius koordinat berbasis sensor perangkat (hanya bisa login & mengerjakan di area sekolah tertentu).
+3. **One-Device Lock:** Kunci satu akun hanya untuk satu perangkat fisik untuk mencegah perjokian atau login ganda.
+4. **Penjadwalan Soal:** Buka dan tutup akses ujian secara otomatis sesuai jadwal waktu mulai dan selesai yang telah ditentukan proktor.
+5. **Alarm Peringatan Pelanggaran:** Sirine otomatis berbunyi saat terjadi kecurangan ringan, serta layar merah penuh (*Red Screen*) saat akun dikunci.
+6. **Token Auto-Rilis:** Rilis token soal dinamis dengan sistem hitung mundur (*countdown*) agar ujian dapat dimulai serentak.
+7. **Google SSO & One Tap:** Otentikasi praktis akun Google Workspace sekolah yang aktif sejak halaman login hingga verifikasi kelayakan sistem.
+8. **Google reCAPTCHA:** Perlindungan gerbang login dari serangan bot otomatis dan percobaan tebak password (*brute force*).
+9. **Login Scan Kartu:** Kemudahan login peserta dengan memindai kode QR pada kartu ujian cetak mandiri atau massal.
+10. **Multi-Device:** Berjalan mulus di berbagai perangkat siswa (Android, Laptop/PC Desktop, dan iOS Safari) tanpa perlu instal aplikasi tambahan.
+
+> [!TIP]
+> **Hosting Hemat & Bebas Rumit:** Aplikasi ini dapat dihosting dengan sangat hemat dan mudah di cPanel Shared Hosting biasa tanpa perlu konfigurasi server yang rumit maupun pengaturan database server karena ditenagai oleh SQLite bawaan.
+
+---
+
+## 🏛️ Arsitektur Sistem & Filosofi Desain
+
+ExamGuard dirancang dengan prinsip **Client-First Resilient Architecture** yang mengutamakan kelancaran pengerjaan siswa di lapangan meskipun koneksi jaringan sekolah mengalami fluktuasi (*jitter*):
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                           ARSITEKTUR HYBRID EXAMGUARD                           │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│  [SISWA / CLIENT BROWSER]                                                       │
+│  React 19 + PWA Engine (Local State, Offline Safeguard, Hardware Sensors)       │
+│      │                                                                          │
+│      ├──► Fullscreen & Visibility Guard (Deteksi Tab & Layar Penuh)             │
+│      ├──► Physical GPS Geofencing (Haversine Formula Radius Meter)              │
+│      ├──► Device Fingerprint Engine (Penguncian 1 Akun = 1 HP)                  │
+│      └──► Web Audio Alarm Context (Sirine Pelanggaran & Alarm Darurat)          │
+│                                                                                 │
+│  [BACKEND & STORAGE ENGINE]                                                     │
+│  • cPanel Mode: PHP 8.0+ Single Entry API (api/index.php) + SQLite PDO (WAL)    │
+│  • Local/VPS Mode: Node.js 18+ Express API + SQLite3 + WebSocket Push           │
+│  • Database: api/examguard.db (Zero-Config, Atomic Transactions, Self-Contained)│
+│                                                                                 │
+│  [PROCTOR & ADMIN DASHBOARD]                                                    │
+│  • Real-time Live Monitoring Hub (Heartbeat, Baterai, Ping Latensi ms)          │
+│  • Remote Proctor Controls (Buka Kunci, Reset Pekerjaan, Reset Perangkat)       │
+│  • Broadcast Engine (Pita Berjalan Marquee Running Text Real-time)              │
+│  • Auto-OTA Updater (Pembaruan 1-Klik dari GitHub & Unggah ZIP Offline)         │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 1. Zero-Config Database (SQLite PDO & WAL Mode)
+Tidak memerlukan pembuatan database MySQL terpisah, tanpa repot konfigurasi `DB_HOST`, `DB_USER`, atau `DB_PASSWORD`. Berkas database SQLite (`api/examguard.db`) terisolasi aman dengan proteksi file level dan transaksi atomik, siap menampung ribuan data siswa dan rekaman log pelanggaran.
+
+### 2. Dual-Engine Backend (cPanel PHP & Node.js WebSocket)
+* **cPanel Shared Hosting:** Berjalan mulus di hosting hemat dengan PHP 8.0+ via `api/index.php` REST endpoint.
+* **VPS / Local Server:** Mendukung engine Node.js + WebSocket untuk sinkronisasi sub-detik yang sangat responsif.
+
+### 3. Anti-Terkunci Permanen & Toleransi Aman
+Sistem proctoring ExamGuard membedakan antara pelanggaran sementara (*warning banner/popup*) dan pelanggaran kumulatif berat (*lockout*). Siswa tidak akan kehilangan data formulir yang telah diisi saat layar terkunci karena Google Form berjalan di dalam iframe terisolasi yang terlindungi.
+
+---
+
+## ⚙️ Spesifikasi Teknologi & Status Server
+
+| Komponen / Lapisan | Spesifikasi Teknologi | Keterangan & Peran |
+| :--- | :--- | :--- |
+| **Versi Rilis** | **ExamGuard v1.2.0 Stable** | Rilis stabil produksi dengan sistem OTA Updater terintegrasi |
+| **Frontend Engine** | **React 19 & Vite 6** | Framework Single Page Application (SPA) modern, rendering reaktif, dan HMR ultra-cepat |
+| **Styling Framework** | **Tailwind CSS v4.0 (HEX-Safe)** | Desain modern dengan palet standar sRGB HEX untuk kompatibilitas 100% pada Chrome & OS lawas |
+| **Backend Runtime** | **cPanel Host (PHP 8.0+ PDO) & Node.js 18+** | Endpoint REST `api/index.php` atau runtime Express + WebSocket untuk LAN/VPS |
+| **Database Engine** | **SQLite 3 (WAL Mode & ACID)** | Database berkas mandiri (0ms latensi lokal, zero-setup, atomic commit, dan konkurensi tinggi) |
+| **Peta & Geofencing** | **Leaflet & OpenStreetMap** | Validasi radius jarak koordinat presisi tinggi menggunakan rumus Haversine |
+| **Dukungan Web Server** | **Apache / LiteSpeed / Nginx / Node.js** | Kompatibel dengan berbagai lingkungan server hosting maupun server mandiri |
+| **Protokol Jaringan** | **HTTPS (SSL/TLS Mandatory)** | Mewajibkan enkripsi HTTPS untuk akses sensor GPS, Kamera QR, dan Fullscreen API |
+| **Autentikasi & Bot Guard** | **Google GIS (SSO) & reCAPTCHA v2/v3** | Login resmi Google Workspace, One Tap, reCAPTCHA, disertai **Captcha Mandiri Offline** |
+| **Sensor Perangkat** | **HTML5 Web APIs** | Geolocation API (GPS), Fullscreen API, Page Visibility API, Battery Status, dan Web Audio API |
+| **Sinkronisasi Data** | **Real-time Snapshot &bull; Mode WAL** | Penulisan data simultan dan sinkronisasi berkala tanpa konflik read-write |
+| **Status Lisensi** | **The MIT License (Open Community)** | Bebas digunakan, dimodifikasi, dan didistribusikan untuk institusi pendidikan secara permanen |
 
 ---
 
 ## ✨ Fitur-Fitur Unggulan
 
 ```
-┌────────────────────────────────────────────────────────────────────────┐
-│                        FITUR UTAMA EXAMPGUARD                         │
-├────────────────────┬────────────────────┬──────────────────────────────┤
-│  🔒 Kiosk Lock     │  📍 Geofence GPS   │  📱 One-Device Lock          │
-│  Anti buka tab,    │  Kunci posisi riil │  1 akun hanya bisa dipakai   │
-│  anti screenshot & │  koordinat sekolah │  di 1 perangkat (anti joki)  │
-│  anti copy-paste   │  radius meter      │                              │
-├────────────────────┼────────────────────┼──────────────────────────────┤
-│  🔑 Google SSO     │  🖨️ Cetak Kartu QR │  📊 Proctor Live Hub         │
-│  Login akun resmi  │  Format hemat A4   │  Pantau peserta real-time &  │
-│  Google Workspace  │  (6 kartu/lembar)  │  fitur reset buka kunci      │
-└────────────────────┴────────────────────┴──────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────────┐
+│                        FITUR UTAMA EXAMGUARD                                   │
+├────────────────────┬────────────────────┬──────────────────────────────────────┤
+│  🔒 Kiosk Lockdown │  📍 Geofence GPS   │  📱 One-Device Policy                │
+│  Anti buka tab,    │  Kunci posisi riil │  1 akun hanya bisa dipakai           │
+│  anti screenshot & │  koordinat sekolah │  di 1 perangkat (anti joki)          │
+│  anti copy-paste   │  radius meter      │                                      │
+├────────────────────┼────────────────────┼──────────────────────────────────────┤
+│  📢 Broadcast Teks │  📊 Smart Proctor  │  🖨️ Cetak Kartu QR                   │
+│  Pita pesan running│  Live monitor,     │  Format hemat A4 (6 kartu/lembar)    │
+│  text real-time 3x │  status soal cerdas│  dengan QR Code scan masuk instan    │
+├────────────────────┼────────────────────┼──────────────────────────────────────┤
+│  ⚡ OTA Updater     │  🔑 Google SSO     │  ⏱️ 2-Tier Navbar                    │
+│  Pembaruan 1-klik  │  Login akun resmi  │  Token mengarah ke bawah &           │
+│  bebas hilang data │  Google Workspace  │  tombol segarkan soal mengambang     │
+└────────────────────┴────────────────────┴──────────────────────────────────────┘
 ```
 
 ### 1. 🔒 Penguncian Peramban (*Kiosk Mode & Anti-Cheat*)
-* **Fullscreen Lock:** Mewajibkan layar penuh. Keluar dari fullscreen memicu peringatan **sirine kontinu**.
-* **Clipboard Blocker:** Pembersihan otomatis papan klip (*clipboard*) mencegah trik *copy-paste* soal/jawaban.
-* **Developer Tools & Shortcut Blocker:** Memblokir tombol F12, Ctrl+U, Ctrl+Shift+I, Alt+Tab, tombol kembali, dan klik kanan.
+* **Fullscreen Strict Mode:** Mewajibkan layar penuh selama ujian berlangsung. Keluar dari fullscreen memicu peringatan seketika.
+* **Clipboard Blocker:** Pembersihan otomatis papan klip (*clipboard*) mencegah trik salin-tempel kunci jawaban.
+* **Shortcut & Context Menu Blocker:** Memblokir tombol F12, Ctrl+U, Ctrl+Shift+I, Alt+Tab, tombol kembali (*back button*), dan klik kanan.
 
 ### 2. 📍 GPS Geofencing Presisi Tinggi
 * Koordinat diambil langsung dari sensor GPS fisik perangkat siswa (tidak dapat dimanipulasi manual).
-* Admin dapat menentukan titik tengah Sekolah via OpenStreetMap/Google Maps dan jarak toleransi radius (misal: 100 meter dari gedung sekolah).
+* Admin dapat menentukan titik tengah Sekolah via OpenStreetMap/Google Maps dan radius toleransi jarak (misal: 100 meter dari gedung sekolah).
 
 ### 3. 🆔 Kebijakan Satu Perangkat (*One-Device Lock*)
 * Perangkat siswa diikat dengan tanda pengenal digital unik (*Device Fingerprint*) saat pertama kali login.
 * Mencegah akun siswa digunakan oleh orang lain di luar ruangan ujian. Tersedia tombol *Reset Perangkat* di dashboard pengawas jika HP siswa rusak/kehabisan baterai.
 
-### 4. 🖨️ Cetak Kartu Peserta Ujian QR Code
+### 4. 📢 Fitur Broadcast Pengumuman Admin Real-time
+* Tombol megaphone bulat mengambang di pojok kanan bawah dashboard Admin/Pengawas.
+* Mendukung siaran langsung ("Kirim Sekarang") maupun terjadwal ("Jadwalkan Jam Tayang") dengan batas 100 karakter dan penghitung karakter riil (`57/100`).
+* Pesan muncul sebagai pita berjalan (*marquee running text*) berwarna kuning-amber kontras di bagian paling atas portal admin dan seluruh peserta (baik di beranda maupun saat sedang mengerjakan soal).
+* Berjalan tepat 3 kali putaran lalu hilang otomatis, dan hanya tayang 1 kali per sesi peranti.
+
+### 5. 📊 Panel Pengawas Cerdas (*Smart Proctoring Hub*)
+* Pantau status pengerjaan seluruh peserta (Sedang Mengerjakan, Belum Masuk, Terkunci, atau Selesai).
+* **Status Jadwal Soal Cerdas:** Menampilkan badge *Berlangsung* (hijau), *Akan Datang* (biru), dan *Berakhir* (abu-abu/merah) di atas jam ujian.
+* **Smart Sorting:** Tabel aktif otomatis menyortir soal yang sedang berlangsung di posisi teratas.
+* **Reset Pekerjaan Teruji:** Tombol konfirmasi reset pekerjaan yang membersihkan riwayat pengerjaan, menghapus log pelanggaran, dan membuka kunci peranti seketika.
+
+### 6. 🖨️ Cetak Kartu Peserta Ujian QR Code
 * Cetak kartu peserta mandiri (perorangan) atau massal per kelas/tingkat.
 * Format A4 hemat kertas (3 baris × 2 kolom = 6 kartu per lembar).
 * Dilengkapi QR Code login cepat: siswa cukup mengarahkan kartu ke kamera untuk masuk secara instan tanpa mengetik NISN/kata sandi.
 
-### 5. 📊 Panel Pengawas Real-Time (*Proctoring Live Hub*)
-* Pantau status pengerjaan seluruh peserta (Sedang Mengerjakan, Belum Masuk, Terkunci, atau Selesai).
-* Pantau sinyal detak jantung (*heartbeat*), ping koneksi internet (ms), dan daya baterai siswa.
-* Kontrol token masuk dan token keluar mandiri.
+---
+
+## 📸 Galeri Antarmuka & Tangkapan Layar (Screenshots)
+
+Berikut adalah beberapa tangkapan layar antarmuka sistem ExamGuard v1.2 baik pada layar laptop/komputer (Desktop) maupun peramban ponsel pintar siswa (Mobile/HP):
+
+### 🖥️ 1. Panel Admin & Pusat Kontrol Pengawas (Desktop View)
+
+<div align="center">
+
+#### 📊 Pusat Kontrol Pengawas (Live Proctoring Hub) & Hitung Mundur Token
+![Proctor Live Hub](screenshot/desktop-proctor-live.png)
+*Pemantauan live peserta per tingkat/rombel, status pengerjaan, kontrol token masuk & selesai dengan countdown, tombol buka kunci/reset, live clock WIB, dan tombol broadcast.*
+
+<br/>
+
+#### 📋 Bank Sesi Ujian Google Form & Badge Status Soal
+![Bank Sesi Ujian](screenshot/desktop-exam-sessions.png)
+*Manajemen sesi ujian Google Form, status aktif "Sedang Berlangsung", rilis token dinamis, durasi waktu, dan tombol cetak kartu QR Code.*
+
+<br/>
+
+#### 🛡️ Konfigurasi Instansi & Ceklis Izin Browser (Pre-Flight Checks)
+![Pengaturan Instansi & Ceklis Izin](screenshot/desktop-institution-settings.png)
+*Pengaturan keamanan Kiosk Mode: GPS geofencing, deteksi layar penuh, notifikasi, alarm audio, Google SSO, dan toleransi pelanggaran.*
+
+<br/>
+
+#### ⚡ Pusat Pembaruan Sistem (OTA Update Hub) & Informasi Rilis
+![Pusat Pembaruan Sistem](screenshot/desktop-about-updater.png)
+*Pusat pembaruan Over-The-Air (OTA) 1-klik dari GitHub atau unggah berkas ZIP offline dengan proteksi isolasi database SQLite.*
+
+</div>
 
 ---
 
-## 🌐 Panduan Cepat Pasang ke cPanel (3 Langkah Mudah)
+### 📱 2. Portal Peserta Ujian (Mobile / Smartphone View)
 
-ExampGuard menggunakan arsitektur **Zero-Config Database (SQLite PDO)**. Anda **TIDAK PERLU** membuat database MySQL, tidak perlu setup nama database, username, maupun password database!
+<div align="center">
+
+| 1. Login Peserta Bersih | 2. Verifikasi Kelayakan (Pre-Flight) | 3. Beranda Peserta Ujian |
+| :---: | :---: | :---: |
+| <img src="screenshot/mobile-login.jpeg" width="240" alt="Login Peserta" /> | <img src="screenshot/mobile-preflight.jpeg" width="240" alt="Pemeriksaan Kelayakan" /> | <img src="screenshot/mobile-home.jpeg" width="240" alt="Beranda Peserta" /> |
+| *Login bersih dengan Scan QR Kartu, Google SSO, dan Google reCAPTCHA* | *Validasi 8 sensor & izin peramban otomatis sebelum membuka soal* | *Navbar nama sekolah & tingkat (marquee looping), identitas, dan jadwal* |
+
+| 4. Peta Geofence Radius GPS | 5. Peringatan Pelanggaran Ujian | 6. Konfirmasi Selesai Ujian |
+| :---: | :---: | :---: |
+| <img src="screenshot/mobile-geofence.jpeg" width="240" alt="Area Geofence GPS" /> | <img src="screenshot/mobile-violation-warning.jpeg" width="240" alt="Peringatan Pelanggaran" /> | <img src="screenshot/mobile-finish-confirm.jpeg" width="240" alt="Konfirmasi Selesai" /> |
+| *Peta interaktif Leaflet OSM, pin live GPS, dan garis jarak Haversine* | *Popup peringatan pelanggaran (keluar fullscreen) & hitungan toleransi* | *Pengingat submit Google Form sebelum keluar & validasi token selesai* |
+
+</div>
+
+---
+
+## 🚀 Resume Rilis: Pembaruan Versi 1.2 (Changelog Lengkap)
+
+Pembaruan **ExamGuard v1.2** merupakan rilis stabilitas dan penyempurnaan fitur terbesar yang menghadirkan peningkatan antarmuka, keamanan proctoring, dan keandalan sistem:
+
+| Fitur / Perbaikan | Status | Penjelasan & Rincian di Versi 1.2 |
+| :--- | :---: | :--- |
+| **⚡ Sistem Pembaruan Otomatis (OTA)** | **BARU** | Super Admin dapat memperbarui aplikasi langsung dari panel admin melalui **1-Klik Otomatis dari GitHub** atau **Unggah Berkas ZIP Offline**. Berkas database `api/examguard.db` **terproteksi 100% dan tidak pernah tertimpa**. |
+| **🧹 Pembersihan Tampilan Login** | **UPDATE** | Antarmuka halaman masuk disederhanakan agar lebih bersih, modern, dan tidak membingungkan peserta. Tombol QR Code scanner dan Google SSO ditata proporsional dan elegan. |
+| **🔄 Perbaikan Tombol Reset Pekerjaan** | **FIXED** | Perbaikan total pada alur konfirmasi reset pekerjaan di panel pengawas. Klik "Ya, Reset Pekerjaan" kini seketika menghapus attempt, mereset pelanggaran, melepaskan kunci peranti, dan memungkinkan siswa masuk kembali dari awal tanpa macet. |
+| **🚨 Sistem Pelanggaran Ringan vs Berat** | **ENHANCED**| **Pelanggaran Ringan:** Keluar fullscreen / berpindah aplikasi memunculkan popup peringatan dengan penjelasan kesalahan dan hitungan pelanggaran real-time; alarm kontinu otomatis mati saat siswa kembali masuk fullscreen.<br>**Pelanggaran Berat:** Jika pelanggaran melebihi batas toleransi, lembar ujian seketika terkunci (*LOCKED*), alarm 3 detik berbunyi, dan memerlukan buka kunci dari proktor. |
+| **⏱️ Status Soal & Auto-Sort Pengawas** | **BARU** | Kolom waktu pada tabel kontrol pengawas kini menampilkan badge status **"Berlangsung"** (hijau), **"Akan Datang"** (biru), dan **"Berakhir"** (abu-abu). Tabel otomatis menyortir soal yang sedang berlangsung di urutan teratas. |
+| **📢 Fitur Broadcast Pesan Admin** | **BARU** | Tombol megaphone mengambang di pojok kanan bawah panel pengawas. Admin dapat mengirim teks pengumuman max 100 karakter (dilengkapi counter `xx/100`) secara langsung atau terjadwal. Pengumuman muncul sebagai pita berjalan (*marquee running text*) kontras di bagian atas beranda dan lembar soal peserta sebanyak 3x putaran. |
+| **📱 Identitas Sekolah & Marquee Navbar HP** | **BARU** | Pada navbar beranda peserta khusus layar HP, di samping logo kini terdapat nama sekolah (baris 1) dan tingkat peserta (baris 2). Jika nama sekolah panjang dan terpotong layar, teks otomatis bergulir (*continuous marquee loop*) ke kiri secara halus agar terbaca penuh. |
+| **🎈 Balon Petunjuk Token Ujian** | **FIXED** | Penataan ulang posisi balon panduan token ujian (`Token Mulai` hijau & `Token Selesai` merah) agar menggantung rapi di bawah tombol `[TOKEN]`, tidak tertutup oleh header hitam, dan tidak menutupi lembar soal Google Form. |
+
+---
+
+## 🔄 Panduan Pembaruan Aplikasi di cPanel (Dari v1.0 / v1.1 ke v1.2)
+
+Jika Anda saat ini telah memiliki instalasi ExamGuard yang aktif di subdomain cPanel, Anda dapat memperbarui ke **v1.2** secara instan tanpa kehilangan data peserta maupun nilai ujian:
+
+### 💡 Metode A: Pembaruan Melalui Panel Admin ExamGuard (1-Klik & Upload ZIP)
+1. Masuk ke **Panel Admin ExamGuard** Anda menggunakan akun Super Admin (`admin`).
+2. Buka menu **"Tentang Aplikasi"** di bilah menu samping.
+3. Di bagian **Pemeriksaan Pembaruan Sistem**, pilih salah satu opsi:
+   * **Opsi 1 (1-Klik Otomatis dari GitHub):** Klik **"Periksa Pembaruan Sekarang"**. Jika terdeteksi rilis v1.2, klik tombol hijau **"⚡ Pasang Pembaruan 1-Klik Otomatis"**. Sistem cPanel Anda akan mengunduh paket resmi dan memperbarui berkas secara instan.
+   * **Opsi 2 (Unggah Berkas ZIP Offline):** Pada kartu opsi 2, klik **"Pilih Berkas ZIP..."**, pilih berkas **`ExamGuard-v1.2.zip`**, lalu klik **"🚀 Verifikasi & Pasang Pembaruan"**.
+4. Setelah muncul jendela dialog **"Pembaruan Berhasil Dipasang!"**, klik tombol **"🔄 Muat Ulang Halaman Sekarang"**.
+
+---
+
+### 🛠️ Metode B: Pembaruan Manual via File Manager cPanel
+Jika server hosting Anda berada di balik firewall tertutup (*offline*):
+1. **Langkah 1 (Pencegahan): Cadangkan Database SQLite**
+   * Masuk ke folder `api/` di File Manager cPanel, unduh berkas **`examguard.db`** ke laptop Anda.
+2. **Langkah 2: Unggah Berkas `ExamGuard-v1.2.zip`**
+   * Unggah berkas `ExamGuard-v1.2.zip` ke folder utama subdomain ujian Anda.
+3. **Langkah 3: Ekstrak Berkas Pembaruan**
+   * Klik kanan pada berkas zip, pilih **Extract** (timpa file kode frontend `index.html`, `assets/`, dan `api/index.php`).
+   * *Catatan: Berkas rilis resmi bebas dari file database, sehingga berkas `api/examguard.db` Anda tetap aman 100%!*
+4. **Langkah 4: Selesai**
+   * Hapus file zip dan buka website ujian dengan menekan **Ctrl + F5** (Hard Refresh).
+
+---
+
+## 🌐 Panduan Pasang Baru di cPanel (Zero-Config SQLite)
+
+ExamGuard tidak memerlukan pembuatan database MySQL. Ikuti 3 langkah praktis berikut:
 
 ### Langkah 1: Siapkan Subdomain di cPanel
-1. Masuk ke dashboard cPanel hosting sekolah Anda.
-2. Cari menu **Domains** atau **Subdomains**.
-3. Buat subdomain baru, misalnya: `ujian.sekolah.sch.id`.
-4. Catat folder tujuannya (*Document Root*), biasanya otomatis di `public_html/ujian`.
+1. Masuk ke cPanel hosting sekolah Anda &rarr; Buka menu **Domains** atau **Subdomains**.
+2. Buat subdomain baru (contoh: `ujian.sekolah.sch.id`).
+3. Catat folder tujuannya (*Document Root*), biasanya otomatis di `public_html/ujian`.
 
-### Langkah 2: Unggah Berkas `ExampGuard-v1.1.zip`
-1. Buka **File Manager** di cPanel.
-2. Masuk ke folder document root subdomain Anda (`public_html/ujian`).
-3. Klik tombol **Upload**, lalu pilih berkas **`ExampGuard-v1.1.zip`**.
-4. Setelah selesai, klik kanan file zip tersebut lalu pilih **Extract**.
-5. Pastikan isi file (seperti `index.html`, `api/`, `assets/`, `.htaccess`) berada langsung di dalam folder subdomain.
+### Langkah 2: Unggah & Ekstrak Berkas Rilis
+1. Masuk ke **File Manager** cPanel &rarr; Buka folder `public_html/ujian`.
+2. Klik tombol **Upload**, unggah berkas **`ExamGuard-v1.2.zip`**.
+3. Ekstrak berkas tersebut langsung di dalam folder subdomain.
 
-### Langkah 3: Aktifkan SSL (HTTPS Wajib untuk GPS & Kamera)
-1. Di cPanel, buka menu **SSL/TLS Status**.
-2. Pilih subdomain ujian Anda lalu klik tombol **Run AutoSSL**.
+### Langkah 3: Aktifkan Sertifikat SSL (HTTPS)
+1. Buka menu **SSL/TLS Status** di cPanel.
+2. Centang subdomain ujian Anda, lalu klik **Run AutoSSL**.
 3. Selesai! Buka subdomain Anda di peramban: `https://ujian.sekolah.sch.id`.
 
 > [!IMPORTANT]
-> **Wajib HTTPS:** Sensor GPS dan izin Layar Penuh modern memerlukan protokol aman HTTPS. Pastikan SSL AutoSSL cPanel sudah berstatus hijau.
+> **Wajib Protokol HTTPS:** Sensor GPS dan izin Kiosk Layar Penuh modern memerlukan protokol aman HTTPS. Pastikan SSL AutoSSL cPanel sudah berstatus hijau aktif.
 
 ---
 
 ## 🔑 Kredensial Akun Default
 
-Setelah instalasi selesai, sistem sudah langsung terisi akun default berikut:
+Setelah instalasi selesai, sistem telah terisi akun bawaan:
 
 | Peran Akun | Username | Password Default | Hak Akses |
 | :--- | :--- | :--- | :--- |
-| **Super Admin** | `admin` | `admin123` | Akses penuh: Pengaturan Instansi, Bank Soal, Akun, Import Siswa, Backup & Restore |
-| **Proktor Ujian** | `proktor` | `proktor` *(atau `proktor123`)* | Khusus pengawasan: Pantau peserta, rilis token, reset perangkat, dan berita acara |
+| **Super Admin** | `admin` | `admin123` | Akses penuh: Pengaturan Instansi, Bank Soal, Akun, Import Siswa, Backup & Restore, OTA Updater |
+| **Proktor Ujian** | `proktor` | `proktor` *(atau `proktor123`)* | Khusus pengawasan: Pantau peserta, rilis token, reset pekerjaan, reset perangkat, dan cetak berita acara |
 | **Contoh Siswa** | `0068291033` | `23101` *(Nomor NIS)* | Portal peserta untuk mengerjakan ujian |
 
 > [!TIP]
-> Demi keamanan, segera ganti kata sandi Super Admin melalui menu **Akun Administrator** setelah instalasi pertama kali.
+> Demi keamanan, segera perbarui kata sandi Super Admin melalui menu **Akun Administrator** setelah instalasi pertama kali.
 
 ---
 
-## 🔐 Konfigurasi Google OAuth 2.0 (SSO) & Google reCAPTCHA
+## 🔐 Integrasi Google OAuth 2.0 (SSO) & reCAPTCHA
 
-ExampGuard mendukung integrasi resmi layanan keamanan Google untuk memvalidasi identitas akun siswa dan mengamankan portal dari serangan *bot*. Pengaturannya dapat dikelola langsung melalui menu **Pengaturan Instansi** (Khusus Super Admin).
+Pengaturan integrasi Google dapat dikelola langsung melalui menu **Pengaturan Instansi** (Khusus Super Admin):
 
----
+### 1. 🔑 Google OAuth 2.0 Client ID (Login Akun Google Siswa)
+* Memungkinkan instansi mewajibkan siswa masuk menggunakan akun resmi Google Workspace sekolah (misal `@sekolah.sch.id` atau `@belajar.id`).
+* Dapatkan **Client ID** tipe *Web application* melalui [Google Cloud Console](https://console.cloud.google.com/).
+* Masukkan URL domain Anda (misal `https://ujian.sekolah.sch.id`) pada kolom **Authorized JavaScript origins**.
+* Tempelkan Client ID pada menu Pengaturan Instansi ExamGuard dan aktifkan ceklis izin Google SSO.
 
-### 1. 🔑 Google OAuth 2.0 Client ID (Untuk Login Google SSO & One Tap)
-
-Fitur ini memungkinkan sekolah mewajibkan siswa masuk menggunakan akun resmi Google Workspace sekolah (misal `@sekolah.sch.id` atau akun `@belajar.id`).
-
-#### A. Cara Mendapatkan Client ID dari Google Cloud Console:
-1. Buka konsol [Google Cloud Console](https://console.cloud.google.com/) dan masuk menggunakan akun Google Anda.
-2. Buat proyek baru di pojok kiri atas (contoh nama: `ExampGuard Ujian Sekolah`).
-3. Masuk ke menu **APIs & Services** &rarr; **OAuth consent screen**:
-   * Pilih **External** (atau *Internal* jika instansi Anda memiliki Google Workspace berbayar).
-   * Isi **App name** (misal: `ExampGuard CBT`) dan **User support email**.
-   * Klik **Save and Continue** hingga selesai.
-4. Masuk ke menu **Credentials** &rarr; Klik **+ CREATE CREDENTIALS** &rarr; Pilih **OAuth client ID**:
-   * **Application type:** Pilih **Web application**.
-   * **Name:** `ExampGuard Web Client`.
-   * **Authorized JavaScript origins (WAJIB):** Masukkan alamat domain/subdomain tempat aplikasi dipasang dengan awalan `https://` (contoh: `https://ujian.sekolah.sch.id`). Jika sedang menguji di komputer lokal, tambahkan `http://localhost:5173`.
-   * Kolom *Authorized redirect URIs* dapat dikosongkan.
-5. Klik **Create**, lalu salin kode **Client ID** yang berakhiran `.apps.googleusercontent.com`.
-
-#### B. Memasukkan Client ID ke ExampGuard:
-1. Masuk ke dashboard ExampGuard sebagai **Super Admin**.
-2. Buka menu **Pengaturan Instansi** &rarr; Gulir ke bagian **Integrasi Google Workspace OAuth 2.0**.
-3. Tempelkan Client ID pada kolom input yang tersedia.
-4. Klik tombol **Login Akun Google (Verifikasi OAuth)** untuk melakukan uji coba verifikasi ke Google.
-5. Setelah status terverifikasi hijau, aktifkan sakelar **5. Login Akun Google (Wajib SSO)** pada daftar ceklis izin.
-6. Siswa kini dapat masuk menggunakan tombol **Masuk dengan Akun Google** atau melalui prompt otomatis **Google One Tap**.
-
----
-
-### 2. 🛡️ Google reCAPTCHA (Anti-Bot & Brute Force Protection)
-
-ExampGuard menyediakan proteksi Captcha ganda untuk melindungi formulir login dari serangan tebak kata sandi (*brute-force*).
-
-#### A. Cara Mendapatkan Site Key dari Google reCAPTCHA:
-1. Kunjungi konsol [Google reCAPTCHA Admin](https://www.google.com/recaptcha/admin).
-2. Klik tombol **+ (Create)** di pojok kanan atas untuk mendaftarkan situs.
-3. Isi formulir pendaftaran:
-   * **Label:** Tulis nama sekolah/ujian (misal: `ExampGuard SMPN 1`).
-   * **reCAPTCHA type:** 
-     * Pilih **reCAPTCHA v2 ("I'm not a robot" Checkbox)** untuk verifikasi kotak centang mandiri.
-     * Atau pilih **reCAPTCHA v3 (Score-based)** untuk proteksi transparan otomatis di latar belakang tanpa mengharuskan siswa mencentang.
-   * **Domains:** Masukkan domain situs tanpa `https://` (contoh: `ujian.sekolah.sch.id` atau `localhost`).
-4. Setujui ketentuan layanan dan klik **Submit**.
-5. Salin **Site Key (Kunci Situs)**. *(Secret Key tidak wajib diisi karena validasi klien dijalankan langsung oleh library resmi Google GIS)*.
-
-#### B. Memasukkan reCAPTCHA Key ke ExampGuard:
-1. Buka menu **Pengaturan Instansi** &rarr; Gulir ke kartu **Keamanan Google reCAPTCHA**.
-2. Pilih versi yang Anda gunakan (**reCAPTCHA v2** atau **reCAPTCHA v3**).
-3. Tempelkan **Site Key** Anda pada kolom yang disediakan.
-4. Klik tombol **Simpan Perubahan Konfigurasi Instansi** di bagian bawah.
-
-#### 💡 Alternatif Offline: Captcha Keamanan Mandiri (Bawaan)
-Jika sekolah Anda tidak ingin membuat akun Google Cloud atau menjalankan ujian di jaringan intranet/LAN semi-offline:
-* Kosongkan kolom Google reCAPTCHA Site Key.
-* Sistem ExampGuard akan **secara otomatis mengaktifkan Captcha Mandiri Bawaan** (5 kode angka/huruf acak yang di-generate langsung oleh sistem lokal tanpa memerlukan koneksi internet ke server Google).
+### 2. 🛡️ Google reCAPTCHA & Captcha Mandiri Offline
+* Dukungan **reCAPTCHA v2 (Checkbox)** dan **reCAPTCHA v3 (Background Score)** untuk mencegah serangan bot.
+* **Captcha Mandiri Bawaan:** Jika sekolah tidak ingin menggunakan Google reCAPTCHA atau mengadakan ujian di jaringan intranet/LAN offline, cukup kosongkan kolom Site Key. ExamGuard akan mengaktifkan Captcha 5-karakter lokal secara otomatis tanpa butuh akses internet ke Google.
 
 ---
 
 ## 💻 Panduan Menjalankan di Komputer Lokal (Pengembang)
 
-Jika Anda ingin menjalankan atau memodifikasi aplikasi ini di komputer sendiri:
-
-### 1. Kloning Repositori & Pasang Dependensi
 ```bash
+# 1. Kloning repositori & masuk ke direktori proyek
 git clone https://github.com/chriz27/examguard.git
 cd examguard
+
+# 2. Pasang dependensi Node.js
 npm install
-```
 
-### 2. Jalankan Server Pembangunan (Development Server)
-```bash
+# 3. Jalankan server pengembangan Vite
 npm run dev
-```
-Buka peramban pada alamat: `http://localhost:5173`.
+# Buka di peramban: http://localhost:5173
 
-### 3. Jalankan Pengujian Database (Integration Tests)
-```bash
+# 4. Jalankan pengujian integrasi database & keamanan
 npm run test:db
-```
-Pengujian bawaan akan mengecek 40 skenario keamanan, relasi database, integritas token, dan sistem proktor secara otomatis.
 
-### 4. Build Proyek untuk Distribusi
-```bash
+# 5. Kompilasi siap rilis (Production Build)
 npm run build
+# Berkas siap saji akan tersedia di direktori dist/
 ```
-Hasil kompilasi siap produksi akan tersedia di dalam direktori `dist/`.
-
----
-## 🚀 Catatan Rilis: Pembaruan dari v1.0 ke v1.1
-
-Pembaruan **ExampGuard v1.1** menghadirkan penyempurnaan besar berdasarkan umpan balik pengujian lapangan:
-
-| Fitur / Perbaikan | Versi 1.0 (Sebelumnya) | Versi 1.1 (Terbaru) |
-| :--- | :--- | :--- |
-| **⏱️ Waktu Ujian Habis** | Siswa langsung dilempar keluar ke lobby | **Tetap di halaman soal**; waktu membeku di `00:00` + muncul banner merah peringatan agar siswa menekan tombol **"Kirim / Submit"** di Google Form sebelum keluar |
-| **🔊 Alarm Pelanggaran** | Suara alarm standar statis | **Pelanggaran Ringan:** Sirine berulang kontinu sampai siswa kembali ke layar penuh.<br>**Pelanggaran Berat:** Layar merah penuh (*Full Red Screen*) + bunyi sirine 3 detik lalu hening otomatis |
-| **📶 Bilah Navigasi Ujian** | Header 1 baris, tombol refresh mengambang di kanan bawah menutupi soal | **2-Tier Navbar:**<br>• *Atas:* Logo, Wifi Ping ms responsif, Indikator Baterai, Chip Token, Timer, Tombol Selesai.<br>• *Bawah:* Nama Siswa, Rombel, Ruang, dan **Tombol Segarkan Soal Biru Kontras** (tidak menutupi soal + ada konfirmasi) |
-| **🔒 Identitas Instansi** | Form sering ter-reset saat admin sedang mengetik karena background polling | **Form Draft Lock:** Pembaruan memori diabaikan selama admin sedang mengetik input hingga tombol Simpan ditekan |
-| **🛡️ Toleransi Pelanggaran** | Nilai batas pelanggaran statis (3 kali) | **Fleksibel & Ada Mode Unlimited:** Admin dapat mengatur batas pelanggaran. Jika diisi `0`, sistem masuk ke **Mode Bebas / Unlimited** (hanya mencatat log tanpa pernah mengunci layar) |
-| **👥 Kredensial Proktor** | Akun proktor mengalami kendala login di cPanel | **Role & Kredensial Stabil:** SQLite seed diperbaiki ke `role = 'proctor'`, menerima kata sandi `proktor` atau `proktor123`, dan diproteksi ketat dari menu sensitif admin |
-| **🖨️ Cetak Kartu Peserta** | Cetak kartu mandiri/massal terkadang muncul blank putih | **Isolated Hidden Iframe Printing:** Mesin cetak mandiri A4 (grid 3x2) bebas dari blank putih di seluruh browser |
-| **📱 Kompatibilitas iOS** | Suara alarm terkadang tertahan di Safari iPhone | Dukungan penuh gestur *touchstart AudioContext*, CSS `100dvh`, dan deteksi baterai tanpa galat |
-| **⏱️ Panel Pengawas** | Countdown token dan durasi soal tertukar | **Dual Card Countdown:** Card Token menampilkan sisa waktu rilis token selesai, Card Waktu menampilkan status jadwal (*Belum Dimulai, Berlangsung, Selesai*) |
-| **✨ Google SSO & One Tap** | Status hijau SSO terkadang berubah kuning sendiri | **Auto SSO & One Tap:** Prompt Google One Tap otomatis aktif dari halaman login hingga pre-flight, serta tersimpan atomik di database |
 
 ---
 
 ## 🛠️ Tanya Jawab & Pemecahan Masalah (FAQ)
 
-### Q: Mengapa siswa tidak bisa mengakses GPS atau muncul peringatan "Geolocation Denied"?
-> **Solusi:** Fitur GPS pada peramban modern (Google Chrome, Safari) **hanya aktif jika website menggunakan HTTPS (SSL)**. Pastikan website Anda diakses menggunakan awalan `https://`, bukan `http://`. Pada mode pengujian tanpa internet, admin dapat mengaktifkan **Mode Simulasi (Bypass GPS)** di menu Akun Administrator.
+### Q: Mengapa siswa mendapat pesan "Geolocation Denied" saat login?
+> **Solusi:** Sensor GPS pada peramban Chrome dan Safari **hanya diizinkan aktif jika website menggunakan protokol aman HTTPS**. Pastikan website dibuka dengan `https://`. Jika sedang simulasi atau di ruangan tanpa sinyal GPS, admin dapat mengaktifkan **Mode Simulasi (Bypass GPS)** di menu pengaturan.
 
-### Q: Mengapa setelah refresh halaman di cPanel muncul error 404 Not Found?
-> **Solusi:** Pastikan berkas **`.htaccess`** yang disertakan dalam paket zip sudah terunggah di folder utama subdomain Anda. File `.htaccess` berfungsi mengarahkan rute Single Page Application (SPA) ke `index.html`.
+### Q: Mengapa muncul halaman 404 Not Found saat menekan tombol refresh di browser?
+> **Solusi:** Pastikan berkas **`.htaccess`** yang disertakan pada paket rilis sudah terunggah di folder root subdomain cPanel Anda untuk merutekan Single Page Application ke `index.html`.
 
-### Q: Apakah data siswa akan hilang jika saya memperbarui aplikasi ke versi baru di cPanel?
-> **Solusi:** **Tidak akan hilang.** Database disimpan secara terpusat pada berkas `api/examguard.db`. Paket pembaruan frontend hanya memperbarui folder `assets/` dan `index.html` tanpa menyentuh file `.db` yang sudah ada.
-
-### Q: Bagaimana cara mengganti logo sekolah dan nama ujian?
-> **Solusi:** Masuk sebagai Super Admin, buka menu **Pengaturan Instansi**. Anda dapat mengunggah file logo instansi (PNG/JPG), mengatur nama sekolah, NPSN, koordinat Google Maps, serta batas toleransi pelanggaran.
+### Q: Apakah data siswa akan hilang saat sistem diperbarui ke versi baru?
+> **Solusi:** **Sama sekali tidak hilang.** Database disimpan secara mandiri di berkas `api/examguard.db`. Sistem pembaruan ExamGuard v1.2 telah dilengkapi proteksi isolasi data sehingga proses pembaruan hanya memperbarui berkas frontend dan script API tanpa pernah menimpa database yang sudah ada.
 
 ---
 
 <div align="center">
 
 Dibuat dengan ❤️ oleh **Fandi dari Jawa tech**  
-*Mendukung asesmen digital yang jujur, aman, dan berintegritas.*
+*Mendukung asesmen digital sekolah yang jujur, aman, dan berintegritas tinggi.*
 
 </div>

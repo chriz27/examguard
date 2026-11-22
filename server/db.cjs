@@ -332,6 +332,15 @@ db.exec(`
     user_agent  TEXT NOT NULL DEFAULT ''
   );
 
+  CREATE TABLE IF NOT EXISTS active_broadcast (
+    id            TEXT PRIMARY KEY DEFAULT 'singleton',
+    message       TEXT NOT NULL DEFAULT '',
+    scheduled_at  TEXT DEFAULT NULL,
+    broadcast_id  TEXT NOT NULL DEFAULT '',
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
   CREATE INDEX IF NOT EXISTS idx_error_logs_timestamp ON system_error_logs(timestamp DESC);
   CREATE INDEX IF NOT EXISTS idx_error_logs_level     ON system_error_logs(level);
 `);
@@ -408,6 +417,12 @@ function seedDefaultData() {
       INSERT INTO users (id, username, password, nama, email, role, is_active, is_verified)
       VALUES ('PROCTOR-01', 'proktor', 'proktor', 'Proktor Ujian', 'proktor@examguard.sch.id', 'proctor', 1, 1)
     `).run();
+  }
+
+  // Seed active_broadcast jika belum ada
+  const bcastRow = db.prepare("SELECT id FROM active_broadcast WHERE id='singleton'").get();
+  if (!bcastRow) {
+    db.prepare("INSERT INTO active_broadcast (id, message, broadcast_id) VALUES ('singleton', '', '')").run();
   }
 }
 
@@ -776,6 +791,21 @@ const stmts = {
     VALUES (@id,@timestamp,@source,@level,@message,@details,@solution,@user_agent)
   `),
   clearLogs:    db.prepare('DELETE FROM system_error_logs'),
+
+  // Active Broadcast
+  getActiveBroadcast: db.prepare("SELECT * FROM active_broadcast WHERE id='singleton'"),
+  upsertActiveBroadcast: db.prepare(`
+    INSERT INTO active_broadcast (id, message, scheduled_at, broadcast_id, updated_at)
+    VALUES ('singleton', @message, @scheduled_at, @broadcast_id, @updated_at)
+    ON CONFLICT(id) DO UPDATE SET
+      message=excluded.message,
+      scheduled_at=excluded.scheduled_at,
+      broadcast_id=excluded.broadcast_id,
+      updated_at=excluded.updated_at
+  `),
+  clearActiveBroadcast: db.prepare(`
+    UPDATE active_broadcast SET message='', scheduled_at=NULL, broadcast_id='', updated_at=datetime('now') WHERE id='singleton'
+  `),
 };
 
 // ─── API Handler Functions ────────────────────────────────────────────────────
@@ -1600,6 +1630,47 @@ const dbApi = {
   clearSystemErrorLogs() {
     stmts.clearLogs.run();
     return true;
+  },
+
+  // ── Active Broadcast (Siaran Cepat Peserta & Pengawas) ────────────────────
+  getActiveBroadcast() {
+    try {
+      const row = stmts.getActiveBroadcast.get();
+      if (!row) return { id: 'singleton', message: '', scheduled_at: null, broadcast_id: '' };
+      return {
+        id: row.id || 'singleton',
+        message: row.message || '',
+        scheduled_at: row.scheduled_at || null,
+        broadcast_id: row.broadcast_id || '',
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      };
+    } catch {
+      return { id: 'singleton', message: '', scheduled_at: null, broadcast_id: '' };
+    }
+  },
+
+  saveBroadcast(data) {
+    const msg = String(data?.message || '').slice(0, 100).trim();
+    const sched = data?.scheduled_at || null;
+    const bId = data?.broadcast_id || ('bc_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6));
+    const now = new Date().toISOString();
+    stmts.upsertActiveBroadcast.run({
+      message: msg,
+      scheduled_at: sched,
+      broadcast_id: bId,
+      updated_at: now,
+    });
+    const updated = this.getActiveBroadcast();
+    broadcast('broadcast_updated', { broadcast: updated });
+    return updated;
+  },
+
+  clearBroadcast() {
+    stmts.clearActiveBroadcast.run();
+    const empty = { id: 'singleton', message: '', scheduled_at: null, broadcast_id: '' };
+    broadcast('broadcast_updated', { broadcast: empty });
+    return empty;
   },
 
   // ── Full System Data (Backup/Restore) ─────────────────────────────────────

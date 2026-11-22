@@ -1,0 +1,30 @@
+{
+  "name": "ExamGuard",
+  "version": "1.2.0",
+  "release_name": "ExamGuard v1.2 Enterprise Stable",
+  "build_timestamp": "2026-11-23T01:40:00.000000",
+  "min_php_version": "8.0",
+  "author": "Fandi dari Jawa tech",
+  "required_files": [
+    "index.html",
+    "api/index.php",
+    "manifest.json"
+  ],
+  "protected_files": [
+    "api/examguard.db",
+    "api/examguard.db-wal",
+    "api/examguard.db-shm"
+  ],
+  "changelog": [
+    "Pusat Pembaruan Sistem (OTA Update Hub): 1-Klik Otomatis dari GitHub & Unggah ZIP Offline",
+    "Proteksi mutlak database SQLite (examguard.db) anti-tertimpa saat pembaruan berlangsung",
+    "Fitur Broadcast Siaran Admin/Pengawas real-time dengan pita running text 3x putaran",
+    "Badge status soal aktif (Berlangsung, Akan Datang, Berakhir) & auto-sort cerdas pengawas",
+    "Perbaikan alur tombol reset pekerjaan peserta pada kontrol pengawas",
+    "Penyempurnaan sistem pelanggaran ringan (popup penjelasan) & pelanggaran berat (lockout)",
+    "Identitas nama sekolah & tingkat pada navbar beranda HP dengan animasi marquee continuous loop",
+    "Badge live date & time real-time WIB pada top bar dashboard admin",
+    "Penataan ulang posisi balon panduan token mulai dan token selesai",
+    "Pembersihan dan modernisasi tampilan halaman login peserta"
+  ]
+}

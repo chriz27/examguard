@@ -141,6 +141,15 @@ function _handleServerEvent(evName, data) {
       if (data.appModeConfig || data.app_mode_config) _cache.appModeConfig   = data.appModeConfig || data.app_mode_config;
       if (data.beritaAcaraConfig || data.berita_acara_config) _cache.beritaAcaraConfig = data.beritaAcaraConfig || data.berita_acara_config;
       if (data.systemErrorLogs || data.system_error_logs) _cache.systemErrorLogs = data.systemErrorLogs || data.system_error_logs;
+      if (data.activeBroadcast || data.active_broadcast) {
+        const bcast = data.activeBroadcast || data.active_broadcast;
+        if (typeof window !== 'undefined' && bcast?.broadcast_id) {
+          try {
+            localStorage.setItem('examguard_active_broadcast', JSON.stringify(bcast));
+            window.dispatchEvent(new CustomEvent('examguard_broadcast_updated', { detail: bcast }));
+          } catch {}
+        }
+      }
       _cache.lastSync = Date.now();
       _notifyListeners('snapshot', data);
       break;
@@ -274,6 +283,16 @@ function _handleServerEvent(evName, data) {
       Object.keys(_cache).forEach(k => { _cache[k] = null; });
       _cache.lastSync = 0;
       _notifyListeners('system_restored', data);
+      break;
+
+    case 'broadcast_updated':
+      if (typeof window !== 'undefined' && data?.broadcast) {
+        try {
+          localStorage.setItem('examguard_active_broadcast', JSON.stringify(data.broadcast));
+          window.dispatchEvent(new CustomEvent('examguard_broadcast_updated', { detail: data.broadcast }));
+        } catch {}
+      }
+      _notifyListeners('broadcast_updated', data);
       break;
 
     default:
@@ -608,6 +627,10 @@ export const dbService = {
     _cache.attempts = null;
     _cache.attendance = null;
     return result;
+  },
+
+  async deleteAttempt(studentId, examSessionId) {
+    return this.proctorSetAttemptNotStarted(studentId, examSessionId);
   },
 
   async proctorSetAttemptNotStarted(studentId, examSessionId) {

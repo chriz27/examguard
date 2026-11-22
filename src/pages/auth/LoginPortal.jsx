@@ -914,7 +914,7 @@ export default function LoginPortal({ institution: propInstitution, onLoginSucce
           <School className="w-3.5 h-3.5 text-zinc-400" />
           <span>NPSN: <span className="font-mono text-zinc-700">{institution?.npsn || '20104829'}</span></span>
           <span className="text-zinc-300">&bull;</span>
-          <span className="text-emerald-700 font-medium">Safe Exam Guard v1.0</span>
+          <span className="text-emerald-700 font-medium">Exam Guard v1.2</span>
         </p>
       </header>
 
@@ -1111,7 +1111,7 @@ export default function LoginPortal({ institution: propInstitution, onLoginSucce
                     title="Buka Kamera untuk Scan QR Code Kartu Ujian"
                   >
                     <QrCode className="w-3 h-3 text-blue-600" />
-                    <span>Scan QR</span>
+                    <span>Scan Kartu Ujian</span>
                   </button>
                 )}
               </div>
@@ -1140,7 +1140,6 @@ export default function LoginPortal({ institution: propInstitution, onLoginSucce
               </div>
               {activeTab === 'student' && (
                 <p className="mt-1 text-[11px] text-zinc-500 flex items-center justify-between">
-                  <span>Login: <strong>No. Ujian / NISN</strong> &bull; Password: <strong>NIS Peserta</strong></span>
                   <span className="text-zinc-400">Reset lapor proktor</span>
                 </p>
               )}
@@ -1221,11 +1220,8 @@ export default function LoginPortal({ institution: propInstitution, onLoginSucce
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-800">
                       <Shield className="w-3.5 h-3.5 text-zinc-600" />
-                      <span>Captcha</span>
+                      <span>Ketik Ulang Captcha</span>
                     </div>
-                    <span className="text-[10px] text-zinc-500 bg-zinc-200/60 px-1.5 py-0.5 rounded font-medium">
-                      Anti-Bot
-                    </span>
                   </div>
 
                   <div className="flex items-center gap-2">
@@ -1272,7 +1268,7 @@ export default function LoginPortal({ institution: propInstitution, onLoginSucce
                 {isGoogleOAuthActive ? (
                   <>Lupa kata sandi atau butuh reset SSO? <strong className="text-zinc-700">Wajib lapor ke Admin/Proktor</strong> untuk reset akun.</>
                 ) : (
-                  <>Masuk menggunakan nomor <strong className="text-zinc-700">NISN / No. Ujian</strong> dan kata sandi nomor <strong className="text-zinc-700">NIS Peserta</strong>.</>
+                  <>Masuk menggunakan akun yang diberikan panitia.</>
                 )}
               </p>
             )}
@@ -1332,7 +1328,7 @@ export default function LoginPortal({ institution: propInstitution, onLoginSucce
           </div>
         )}
         <p className="text-[11px] text-zinc-400">
-          ExampGuard v1.1 &copy; {new Date().getFullYear()} &bull; Arsitektur Produksi oleh Fandi dari Jawa tech
+          ExamGuard v1.2 &copy; {new Date().getFullYear()} &bull; Arsitektur Produksi oleh Fandi dari Jawa tech
         </p>
       </footer>
        {/* ─────────────────────────────────────────────────────────────

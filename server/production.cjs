@@ -60,6 +60,7 @@ try {
         appModeConfig:     dbApi.getAppModeConfig(),
         beritaAcaraConfig: dbApi.getBeritaAcaraConfig(),
         systemErrorLogs:   dbApi.getSystemErrorLogs(),
+        activeBroadcast:   dbApi.getActiveBroadcast ? dbApi.getActiveBroadcast() : null,
       };
       ws.send(JSON.stringify({ event: 'snapshot', data: snap, timestamp: Date.now() }));
     } catch (e) {
@@ -168,6 +169,7 @@ const server = http.createServer(async (req, res) => {
           appModeConfig:     dbApi.getAppModeConfig(),
           beritaAcaraConfig: dbApi.getBeritaAcaraConfig(),
           systemErrorLogs:   dbApi.getSystemErrorLogs(),
+          activeBroadcast:   dbApi.getActiveBroadcast ? dbApi.getActiveBroadcast() : null,
         });
       }
 
@@ -428,6 +430,22 @@ const server = http.createServer(async (req, res) => {
           dbApi.clearSystemErrorLogs();
           if (broadcast) broadcast('logs_cleared', {});
           return sendJson(res, 200, { success: true });
+        }
+      }
+
+      // Broadcast
+      if (pathname === '/api/db/broadcast') {
+        if (method === 'GET') {
+          const bcast = dbApi.getActiveBroadcast ? dbApi.getActiveBroadcast() : { id: 'singleton', message: '', scheduled_at: null, broadcast_id: '' };
+          return sendJson(res, 200, bcast);
+        }
+        if (method === 'POST' || method === 'PUT') {
+          const saved = dbApi.saveBroadcast ? dbApi.saveBroadcast(body) : body;
+          return sendJson(res, 200, { success: true, ...saved, broadcast: saved });
+        }
+        if (method === 'DELETE') {
+          const cleared = dbApi.clearBroadcast ? dbApi.clearBroadcast() : { id: 'singleton', message: '', scheduled_at: null, broadcast_id: '' };
+          return sendJson(res, 200, { success: true, ...cleared, broadcast: cleared });
         }
       }
 
