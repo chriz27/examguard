@@ -115,6 +115,69 @@ Setelah instalasi selesai, sistem sudah langsung terisi akun default berikut:
 
 ---
 
+## 🔐 Konfigurasi Google OAuth 2.0 (SSO) & Google reCAPTCHA
+
+ExampGuard mendukung integrasi resmi layanan keamanan Google untuk memvalidasi identitas akun siswa dan mengamankan portal dari serangan *bot*. Pengaturannya dapat dikelola langsung melalui menu **Pengaturan Instansi** (Khusus Super Admin).
+
+---
+
+### 1. 🔑 Google OAuth 2.0 Client ID (Untuk Login Google SSO & One Tap)
+
+Fitur ini memungkinkan sekolah mewajibkan siswa masuk menggunakan akun resmi Google Workspace sekolah (misal `@sekolah.sch.id` atau akun `@belajar.id`).
+
+#### A. Cara Mendapatkan Client ID dari Google Cloud Console:
+1. Buka konsol [Google Cloud Console](https://console.cloud.google.com/) dan masuk menggunakan akun Google Anda.
+2. Buat proyek baru di pojok kiri atas (contoh nama: `ExampGuard Ujian Sekolah`).
+3. Masuk ke menu **APIs & Services** &rarr; **OAuth consent screen**:
+   * Pilih **External** (atau *Internal* jika instansi Anda memiliki Google Workspace berbayar).
+   * Isi **App name** (misal: `ExampGuard CBT`) dan **User support email**.
+   * Klik **Save and Continue** hingga selesai.
+4. Masuk ke menu **Credentials** &rarr; Klik **+ CREATE CREDENTIALS** &rarr; Pilih **OAuth client ID**:
+   * **Application type:** Pilih **Web application**.
+   * **Name:** `ExampGuard Web Client`.
+   * **Authorized JavaScript origins (WAJIB):** Masukkan alamat domain/subdomain tempat aplikasi dipasang dengan awalan `https://` (contoh: `https://ujian.sekolah.sch.id`). Jika sedang menguji di komputer lokal, tambahkan `http://localhost:5173`.
+   * Kolom *Authorized redirect URIs* dapat dikosongkan.
+5. Klik **Create**, lalu salin kode **Client ID** yang berakhiran `.apps.googleusercontent.com`.
+
+#### B. Memasukkan Client ID ke ExampGuard:
+1. Masuk ke dashboard ExampGuard sebagai **Super Admin**.
+2. Buka menu **Pengaturan Instansi** &rarr; Gulir ke bagian **Integrasi Google Workspace OAuth 2.0**.
+3. Tempelkan Client ID pada kolom input yang tersedia.
+4. Klik tombol **Login Akun Google (Verifikasi OAuth)** untuk melakukan uji coba verifikasi ke Google.
+5. Setelah status terverifikasi hijau, aktifkan sakelar **5. Login Akun Google (Wajib SSO)** pada daftar ceklis izin.
+6. Siswa kini dapat masuk menggunakan tombol **Masuk dengan Akun Google** atau melalui prompt otomatis **Google One Tap**.
+
+---
+
+### 2. 🛡️ Google reCAPTCHA (Anti-Bot & Brute Force Protection)
+
+ExampGuard menyediakan proteksi Captcha ganda untuk melindungi formulir login dari serangan tebak kata sandi (*brute-force*).
+
+#### A. Cara Mendapatkan Site Key dari Google reCAPTCHA:
+1. Kunjungi konsol [Google reCAPTCHA Admin](https://www.google.com/recaptcha/admin).
+2. Klik tombol **+ (Create)** di pojok kanan atas untuk mendaftarkan situs.
+3. Isi formulir pendaftaran:
+   * **Label:** Tulis nama sekolah/ujian (misal: `ExampGuard SMPN 1`).
+   * **reCAPTCHA type:** 
+     * Pilih **reCAPTCHA v2 ("I'm not a robot" Checkbox)** untuk verifikasi kotak centang mandiri.
+     * Atau pilih **reCAPTCHA v3 (Score-based)** untuk proteksi transparan otomatis di latar belakang tanpa mengharuskan siswa mencentang.
+   * **Domains:** Masukkan domain situs tanpa `https://` (contoh: `ujian.sekolah.sch.id` atau `localhost`).
+4. Setujui ketentuan layanan dan klik **Submit**.
+5. Salin **Site Key (Kunci Situs)**. *(Secret Key tidak wajib diisi karena validasi klien dijalankan langsung oleh library resmi Google GIS)*.
+
+#### B. Memasukkan reCAPTCHA Key ke ExampGuard:
+1. Buka menu **Pengaturan Instansi** &rarr; Gulir ke kartu **Keamanan Google reCAPTCHA**.
+2. Pilih versi yang Anda gunakan (**reCAPTCHA v2** atau **reCAPTCHA v3**).
+3. Tempelkan **Site Key** Anda pada kolom yang disediakan.
+4. Klik tombol **Simpan Perubahan Konfigurasi Instansi** di bagian bawah.
+
+#### 💡 Alternatif Offline: Captcha Keamanan Mandiri (Bawaan)
+Jika sekolah Anda tidak ingin membuat akun Google Cloud atau menjalankan ujian di jaringan intranet/LAN semi-offline:
+* Kosongkan kolom Google reCAPTCHA Site Key.
+* Sistem ExampGuard akan **secara otomatis mengaktifkan Captcha Mandiri Bawaan** (5 kode angka/huruf acak yang di-generate langsung oleh sistem lokal tanpa memerlukan koneksi internet ke server Google).
+
+---
+
 ## 💻 Panduan Menjalankan di Komputer Lokal (Pengembang)
 
 Jika Anda ingin menjalankan atau memodifikasi aplikasi ini di komputer sendiri:
