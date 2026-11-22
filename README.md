@@ -8,9 +8,10 @@
 [![Database](https://img.shields.io/badge/SQLite-Zero_Config-003B57?style=for-the-badge&logo=sqlite)](https://sqlite.org)
 [![License](https://img.shields.io/badge/License-MIT-purple?style=for-the-badge)](LICENSE)
 
-**Sistem Pengawasan & Pengamanan Ujian Berbasis Web Mandiri untuk Google Forms, CBT, dan Asesmen Sekolah.**
+**Sistem Pengawasan & Pengamanan Ujian Berbasis Web Mandiri untuk Google Forms.**
 
-*Tanpa perlu instal aplikasi di Play Store atau App Store — langsung berjalan aman di seluruh peramban siswa (Chrome, Edge, Safari iOS).*
+*Tanpa perlu instal aplikasi di Play Store atau App Store — langsung berjalan aman di seluruh browser.*</br>
+*(✅ Chrome Android, ✅ Chrome Dekstop, ⚠ iOS)*
 
 ---
 
@@ -24,28 +25,9 @@ Untuk kemajuan sistem asesmen digital sekolah, madrasah, dan instansi pendidikan
 
 ## 💡 Apa Itu ExampGuard?
 
-**ExampGuard** adalah platform *Exam Browser* berbasis web modern yang dirancang untuk mengamankan jalannya asesmen atau ujian daring (seperti Google Formulir / Office 365 Form). Siswa mengerjakan soal di dalam lingkungan peramban terkunci (*Kiosk Mode*) yang mencegah kecurangan seperti membuka tab lain, menyalin jawaban, mencari contekan di peramban, maupun berpindah aplikasi.
+**ExampGuard** adalah platform *Exam Browser* berbasis web modern yang dirancang untuk mengamankan jalannya asesmen atau ujian daring (seperti Google Formulir). Siswa mengerjakan soal di dalam lingkungan peramban terkunci (*Kiosk Mode*) yang mencegah kecurangan seperti membuka tab lain, menyalin jawaban, mencari contekan di peramban (tab baru), maupun berpindah aplikasi.
 
-Aplikasi ini dapat dihosting dengan sangat hemat dan mudah di **cPanel Shared Hosting biasa** tanpa perlu konfigurasi server yang rumit.
-
----
-
-## 🚀 Catatan Rilis: Pembaruan dari v1.0 ke v1.1
-
-Pembaruan **ExampGuard v1.1** menghadirkan penyempurnaan besar berdasarkan umpan balik pengujian lapangan:
-
-| Fitur / Perbaikan | Versi 1.0 (Sebelumnya) | Versi 1.1 (Terbaru) |
-| :--- | :--- | :--- |
-| **⏱️ Waktu Ujian Habis** | Siswa langsung dilempar keluar ke lobby | **Tetap di halaman soal**; waktu membeku di `00:00` + muncul banner merah peringatan agar siswa menekan tombol **"Kirim / Submit"** di Google Form sebelum keluar |
-| **🔊 Alarm Pelanggaran** | Suara alarm standar statis | **Pelanggaran Ringan:** Sirine berulang kontinu sampai siswa kembali ke layar penuh.<br>**Pelanggaran Berat:** Layar merah penuh (*Full Red Screen*) + bunyi sirine 3 detik lalu hening otomatis |
-| **📶 Bilah Navigasi Ujian** | Header 1 baris, tombol refresh mengambang di kanan bawah menutupi soal | **2-Tier Navbar:**<br>• *Atas:* Logo, Wifi Ping ms responsif, Indikator Baterai, Chip Token, Timer, Tombol Selesai.<br>• *Bawah:* Nama Siswa, Rombel, Ruang, dan **Tombol Segarkan Soal Biru Kontras** (tidak menutupi soal + ada konfirmasi) |
-| **🔒 Identitas Instansi** | Form sering ter-reset saat admin sedang mengetik karena background polling | **Form Draft Lock:** Pembaruan memori diabaikan selama admin sedang mengetik input hingga tombol Simpan ditekan |
-| **🛡️ Toleransi Pelanggaran** | Nilai batas pelanggaran statis (3 kali) | **Fleksibel & Ada Mode Unlimited:** Admin dapat mengatur batas pelanggaran. Jika diisi `0`, sistem masuk ke **Mode Bebas / Unlimited** (hanya mencatat log tanpa pernah mengunci layar) |
-| **👥 Kredensial Proktor** | Akun proktor mengalami kendala login di cPanel | **Role & Kredensial Stabil:** SQLite seed diperbaiki ke `role = 'proctor'`, menerima kata sandi `proktor` atau `proktor123`, dan diproteksi ketat dari menu sensitif admin |
-| **🖨️ Cetak Kartu Peserta** | Cetak kartu mandiri/massal terkadang muncul blank putih | **Isolated Hidden Iframe Printing:** Mesin cetak mandiri A4 (grid 3x2) bebas dari blank putih di seluruh browser |
-| **📱 Kompatibilitas iOS** | Suara alarm terkadang tertahan di Safari iPhone | Dukungan penuh gestur *touchstart AudioContext*, CSS `100dvh`, dan deteksi baterai tanpa galat |
-| **⏱️ Panel Pengawas** | Countdown token dan durasi soal tertukar | **Dual Card Countdown:** Card Token menampilkan sisa waktu rilis token selesai, Card Waktu menampilkan status jadwal (*Belum Dimulai, Berlangsung, Selesai*) |
-| **✨ Google SSO & One Tap** | Status hijau SSO terkadang berubah kuning sendiri | **Auto SSO & One Tap:** Prompt Google One Tap otomatis aktif dari halaman login hingga pre-flight, serta tersimpan atomik di database |
+Aplikasi ini dapat dihosting dengan sangat hemat dan mudah di **cPanel Shared Hosting biasa** tanpa perlu konfigurasi server yang rumit dan pengaturan database karena menggunakan SQLite.
 
 ---
 
@@ -67,13 +49,13 @@ Pembaruan **ExampGuard v1.1** menghadirkan penyempurnaan besar berdasarkan umpan
 ```
 
 ### 1. 🔒 Penguncian Peramban (*Kiosk Mode & Anti-Cheat*)
-* **Fullscreen Lock:** Mewajibkan layar penuh. Keluar dari fullscreen memicu peringatan sirine kontinu.
+* **Fullscreen Lock:** Mewajibkan layar penuh. Keluar dari fullscreen memicu peringatan **sirine kontinu**.
 * **Clipboard Blocker:** Pembersihan otomatis papan klip (*clipboard*) mencegah trik *copy-paste* soal/jawaban.
 * **Developer Tools & Shortcut Blocker:** Memblokir tombol F12, Ctrl+U, Ctrl+Shift+I, Alt+Tab, tombol kembali, dan klik kanan.
 
 ### 2. 📍 GPS Geofencing Presisi Tinggi
 * Koordinat diambil langsung dari sensor GPS fisik perangkat siswa (tidak dapat dimanipulasi manual).
-* Admin dapat menentukan titik tengah instansi via Google Maps dan jarak toleransi radius (misal: 100 meter dari gedung sekolah).
+* Admin dapat menentukan titik tengah Sekolah via OpenStreetMap/Google Maps dan jarak toleransi radius (misal: 100 meter dari gedung sekolah).
 
 ### 3. 🆔 Kebijakan Satu Perangkat (*One-Device Lock*)
 * Perangkat siswa diikat dengan tanda pengenal digital unik (*Device Fingerprint*) saat pertama kali login.
@@ -161,6 +143,24 @@ Pengujian bawaan akan mengecek 40 skenario keamanan, relasi database, integritas
 npm run build
 ```
 Hasil kompilasi siap produksi akan tersedia di dalam direktori `dist/`.
+
+---
+## 🚀 Catatan Rilis: Pembaruan dari v1.0 ke v1.1
+
+Pembaruan **ExampGuard v1.1** menghadirkan penyempurnaan besar berdasarkan umpan balik pengujian lapangan:
+
+| Fitur / Perbaikan | Versi 1.0 (Sebelumnya) | Versi 1.1 (Terbaru) |
+| :--- | :--- | :--- |
+| **⏱️ Waktu Ujian Habis** | Siswa langsung dilempar keluar ke lobby | **Tetap di halaman soal**; waktu membeku di `00:00` + muncul banner merah peringatan agar siswa menekan tombol **"Kirim / Submit"** di Google Form sebelum keluar |
+| **🔊 Alarm Pelanggaran** | Suara alarm standar statis | **Pelanggaran Ringan:** Sirine berulang kontinu sampai siswa kembali ke layar penuh.<br>**Pelanggaran Berat:** Layar merah penuh (*Full Red Screen*) + bunyi sirine 3 detik lalu hening otomatis |
+| **📶 Bilah Navigasi Ujian** | Header 1 baris, tombol refresh mengambang di kanan bawah menutupi soal | **2-Tier Navbar:**<br>• *Atas:* Logo, Wifi Ping ms responsif, Indikator Baterai, Chip Token, Timer, Tombol Selesai.<br>• *Bawah:* Nama Siswa, Rombel, Ruang, dan **Tombol Segarkan Soal Biru Kontras** (tidak menutupi soal + ada konfirmasi) |
+| **🔒 Identitas Instansi** | Form sering ter-reset saat admin sedang mengetik karena background polling | **Form Draft Lock:** Pembaruan memori diabaikan selama admin sedang mengetik input hingga tombol Simpan ditekan |
+| **🛡️ Toleransi Pelanggaran** | Nilai batas pelanggaran statis (3 kali) | **Fleksibel & Ada Mode Unlimited:** Admin dapat mengatur batas pelanggaran. Jika diisi `0`, sistem masuk ke **Mode Bebas / Unlimited** (hanya mencatat log tanpa pernah mengunci layar) |
+| **👥 Kredensial Proktor** | Akun proktor mengalami kendala login di cPanel | **Role & Kredensial Stabil:** SQLite seed diperbaiki ke `role = 'proctor'`, menerima kata sandi `proktor` atau `proktor123`, dan diproteksi ketat dari menu sensitif admin |
+| **🖨️ Cetak Kartu Peserta** | Cetak kartu mandiri/massal terkadang muncul blank putih | **Isolated Hidden Iframe Printing:** Mesin cetak mandiri A4 (grid 3x2) bebas dari blank putih di seluruh browser |
+| **📱 Kompatibilitas iOS** | Suara alarm terkadang tertahan di Safari iPhone | Dukungan penuh gestur *touchstart AudioContext*, CSS `100dvh`, dan deteksi baterai tanpa galat |
+| **⏱️ Panel Pengawas** | Countdown token dan durasi soal tertukar | **Dual Card Countdown:** Card Token menampilkan sisa waktu rilis token selesai, Card Waktu menampilkan status jadwal (*Belum Dimulai, Berlangsung, Selesai*) |
+| **✨ Google SSO & One Tap** | Status hijau SSO terkadang berubah kuning sendiri | **Auto SSO & One Tap:** Prompt Google One Tap otomatis aktif dari halaman login hingga pre-flight, serta tersimpan atomik di database |
 
 ---
 
