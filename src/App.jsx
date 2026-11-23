@@ -104,6 +104,7 @@ export default function App() {
 
     // Dengar sinkronisasi real-time via WebSocket
     const unsubscribe = subscribeSync((event) => {
+      if (typeof window !== 'undefined' && window.__examguard_is_editing) return;
       if (event === 'snapshot' || event === 'institution_updated') {
         setInstitution(storageService.getInstitution());
       }
@@ -111,6 +112,7 @@ export default function App() {
 
     // Dengar perubahan localStorage / CustomEvent lokal
     const handleStorageChange = () => {
+      if (typeof window !== 'undefined' && window.__examguard_is_editing) return;
       setInstitution(storageService.getInstitution());
     };
     window.addEventListener('examguard_storage_updated', handleStorageChange);

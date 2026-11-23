@@ -485,8 +485,9 @@ export default function AdminDashboard({ currentUser, onLogout }) {
 
   // State Intip Token Selesai (Klik Tahan untuk Mengintip Token Asli)
   const [isHoldingFinishToken, setIsHoldingFinishToken] = useState(false);
-    // Form Draft Lock: Mencegah snapshot polling background menimpa perubahan input instansi sebelum tombol Simpan ditekan
+  // Form Draft Lock: Mencegah snapshot polling background menimpa perubahan input instansi sebelum tombol Simpan ditekan
   const isInstitutionDirtyRef = useRef(false);
+  const isUserInteractingRef = useRef(false);
 
   const [gmapsInput, setGmapsInput] = useState(
     () => institution?.gmaps_url || (institution?.center_lat ? `https://maps.google.com/?q=${institution.center_lat},${institution.center_lng}` : '')
@@ -1001,7 +1002,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
 
   // URL Repositori GitHub Resmi ExamGuard
   const GITHUB_REPO_URL = 'https://github.com/chriz27/examguard';
-  const CURRENT_APP_VERSION = 'v1.2.0';
+  const CURRENT_APP_VERSION = 'v1.2.1';
 
   // State Pemeriksaan Pembaruan GitHub
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
@@ -1028,7 +1029,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
 
       if (res.ok) {
         const release = await res.json();
-        const latestTag = release.tag_name || 'v1.2.0';
+        const latestTag = release.tag_name || 'v1.2.1';
         const cleanLatest = latestTag.replace(/^v/, '');
         const cleanCurrent = CURRENT_APP_VERSION.replace(/^v/, '');
         const isNewer = cleanLatest.localeCompare(cleanCurrent, undefined, { numeric: true, sensitivity: 'base' }) > 0;
@@ -1069,8 +1070,8 @@ export default function AdminDashboard({ currentUser, onLogout }) {
           status: 'up_to_date',
           latestVersion: CURRENT_APP_VERSION,
           currentVersion: CURRENT_APP_VERSION,
-          releaseName: 'ExamGuard v1.2 Production Release',
-          releaseNotes: 'Sistem Anda saat ini menggunakan versi produksi stabil (v1.2.0). Terhubung aktif ke repositori GitHub resmi.',
+          releaseName: 'ExamGuard v1.2.1 Production Release',
+          releaseNotes: 'Sistem Anda saat ini menggunakan versi produksi stabil (v1.2.1). Terhubung aktif ke repositori GitHub resmi.',
           commitSha,
           publishedAt: latestCommitDate
             ? new Date(latestCommitDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
@@ -1543,6 +1544,63 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     }, 3500);
   };
 
+  // ─── Form & Popup Editing Protection (Mencegah refresh otomatis / reset form saat edit input atau popup aktif) ───
+  const isAnyModalOpen = Boolean(
+    showExamModal || showAddStudentModal || showEditStudentModal ||
+    showImportModal || showPrintAllCardsModal || showQrModal ||
+    showExamDetailModal || showBeritaAcaraModal || showDaftarHadirModal ||
+    showBroadcastModal || confirmDialog?.isOpen
+  );
+
+  const checkIsUserInteracting = () => {
+    if (isAnyModalOpen || isInstitutionDirtyRef.current) {
+      return true;
+    }
+    if (typeof document !== 'undefined') {
+      const el = document.activeElement;
+      if (el) {
+        const tag = el.tagName?.toLowerCase();
+        if (tag === 'input' || tag === 'textarea' || tag === 'select' || el.isContentEditable) {
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+
+  useEffect(() => {
+    isUserInteractingRef.current = isAnyModalOpen || isInstitutionDirtyRef.current;
+    if (typeof window !== 'undefined') {
+      window.__examguard_is_editing = isUserInteractingRef.current;
+    }
+  }, [isAnyModalOpen]);
+
+  useEffect(() => {
+    const handleFocusIn = (e) => {
+      const tag = e.target?.tagName?.toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select' || e.target?.isContentEditable) {
+        isUserInteractingRef.current = true;
+        if (activeTabRef.current === 'institution') {
+          isInstitutionDirtyRef.current = true;
+        }
+        if (typeof window !== 'undefined') window.__examguard_is_editing = true;
+      }
+    };
+    const handleFocusOut = () => {
+      setTimeout(() => {
+        const stillInteracting = checkIsUserInteracting();
+        isUserInteractingRef.current = stillInteracting;
+        if (typeof window !== 'undefined') window.__examguard_is_editing = stillInteracting;
+      }, 250);
+    };
+    window.addEventListener('focusin', handleFocusIn);
+    window.addEventListener('focusout', handleFocusOut);
+    return () => {
+      window.removeEventListener('focusin', handleFocusIn);
+      window.removeEventListener('focusout', handleFocusOut);
+    };
+  }, []);
+
   // Refresh seluruh data sistem termasuk konfigurasi institusi, mode, dan log
   const refreshData = () => {
     setInstitution(storageService.getInstitution());
@@ -1556,14 +1614,20 @@ export default function AdminDashboard({ currentUser, onLogout }) {
   };
 
   // Refresh hanya data aktivitas dinamis (peserta, ujian, attempt) tanpa menimpa formulir instansi yang sedang diedit
-  const refreshMonitoringData = () => {
-    setUsers(storageService.getUsers());
-    setExams(storageService.getExamSessions());
+  const refreshMonitoringData = (forceAll = false) => {
+    // Jika user sedang berinteraksi/mengetik di form atau ada modal popup terbuka, tunda/lewati agar tidak menimpa input
+    if (!forceAll && checkIsUserInteracting()) return;
+
     setAttempts(storageService.getAttempts());
     setAttendance(storageService.getAttendance());
     storageService.syncAttemptsFromServer().then((fresh) => {
-      if (fresh && Array.isArray(fresh)) setAttempts(fresh);
+      if (fresh && Array.isArray(fresh) && !checkIsUserInteracting()) setAttempts(fresh);
     }).catch(() => {});
+
+    if (forceAll) {
+      setUsers(storageService.getUsers());
+      setExams(storageService.getExamSessions());
+    }
   };
 
   // Handler Unduh Backup
@@ -1697,6 +1761,8 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     refreshData();
 
     const handleSyncTrigger = (event) => {
+      if (checkIsUserInteracting()) return;
+
       // Jika event snapshot atau pembaruan instansi, perbarui konfigurasi institusi secara real-time
       if (event === 'institution_updated' || event === 'snapshot') {
         // Form Draft Lock: Jangan timpa state instansi jika sedang di tab 'institution' atau sedang ada draft perubahan
@@ -1711,9 +1777,9 @@ export default function AdminDashboard({ currentUser, onLogout }) {
         setBeritaAcaraConfig(storageService.getBeritaAcaraConfig());
       } else if (event === 'app_mode_updated') {
         setAppModeConfig(storageService.getAppModeConfig());
-      } else {
-        // Pembaruan aktivitas pengerjaan peserta & ujian (tidak menimpa formulir instansi)
-        refreshMonitoringData();
+      } else if (activeTabRef.current === 'proctor') {
+        // Pembaruan aktivitas pengerjaan peserta & ujian (hanya jika di tab proctor)
+        refreshMonitoringData(false);
       }
     };
 
@@ -1722,6 +1788,8 @@ export default function AdminDashboard({ currentUser, onLogout }) {
 
     // 2. CustomEvent lokal di tab yang sama
     const handleStorageChange = (e) => {
+      if (checkIsUserInteracting()) return;
+
       if (e?.detail?.event === 'institution_updated' || e?.detail?.event === 'snapshot') {
         if (activeTabRef.current !== 'institution' && !isInstitutionDirtyRef.current) {
           const freshInst = storageService.getInstitution();
@@ -1731,7 +1799,9 @@ export default function AdminDashboard({ currentUser, onLogout }) {
           }
         }
       }
-      refreshMonitoringData();
+      if (activeTabRef.current === 'proctor') {
+        refreshMonitoringData(false);
+      }
     };
     window.addEventListener('examguard_storage_updated', handleStorageChange);
     window.addEventListener('examguard_db_updated', handleStorageChange);
@@ -1739,29 +1809,25 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     // 3. Storage event native browser (hanya monitoring data)
     window.addEventListener('storage', handleStorageChange);
 
-    // 4. Polling interval 2 detik HANYA untuk pemantauan live data aktivitas peserta (refreshMonitoringData)
-    // Tidak lagi memanggil refreshData() agar formulir konfigurasi yang sedang diketik tidak tereset!
-    const interval = setInterval(refreshMonitoringData, 2000);
-
-    // 5. Auto-refresh saat tab browser kembali aktif/fokus (hanya data monitoring)
+    // 4. Auto-refresh saat tab browser kembali aktif/fokus (hanya jika di tab proctor dan tidak sedang edit)
     const handleFocus = () => {
-      if (document.visibilityState === 'visible') {
-        refreshMonitoringData();
+      if (document.visibilityState === 'visible' && activeTabRef.current === 'proctor' && !checkIsUserInteracting()) {
+        refreshMonitoringData(false);
       }
     };
     window.addEventListener('visibilitychange', handleFocus);
     window.addEventListener('focus', handleFocus);
 
-    // 6. Muat snapshot data terbaru dari backend SQLite saat awal mount
+    // 5. Muat snapshot data terbaru dari backend SQLite saat awal mount
     storageService.syncWithServer().then(() => {
-      if (activeTabRef.current !== 'institution' && !isInstitutionDirtyRef.current) {
+      if (activeTabRef.current !== 'institution' && !isInstitutionDirtyRef.current && !checkIsUserInteracting()) {
         const freshInst = storageService.getInstitution();
         setInstitution(freshInst);
         if (freshInst?.gmaps_url) {
           setGmapsInput(freshInst.gmaps_url);
         }
       }
-      refreshMonitoringData();
+      refreshMonitoringData(false);
     }).catch(() => {});
 
     return () => {
@@ -1771,21 +1837,38 @@ export default function AdminDashboard({ currentUser, onLogout }) {
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('visibilitychange', handleFocus);
       window.removeEventListener('focus', handleFocus);
-      clearInterval(interval);
     };
   }, []);
+
+  // Polling interval pemantauan live pengerjaan peserta: HANYA aktif pada tab Kontrol Pengawas ('proctor')
+  useEffect(() => {
+    if (activeTab !== 'proctor') return;
+
+    const interval = setInterval(() => {
+      // Lewati refresh jika sedang ada modal/popup terbuka atau user sedang fokus di input
+      if (checkIsUserInteracting()) return;
+      refreshMonitoringData(false);
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [activeTab, isAnyModalOpen]);
 
   // Saat berpindah tab, sinkronkan data yang relevan
   useEffect(() => {
     if (activeTab === 'institution') {
-      const saved = storageService.getInstitution();
-      setInstitution(saved);
-      if (saved?.gmaps_url) {
-        setGmapsInput(saved.gmaps_url);
+      if (!isInstitutionDirtyRef.current) {
+        const saved = storageService.getInstitution();
+        setInstitution(saved);
+        if (saved?.gmaps_url) {
+          setGmapsInput(saved.gmaps_url);
+        }
       }
     } else if (activeTab === 'proctor') {
-      refreshMonitoringData();
-      storageService.syncWithServer().then(() => refreshMonitoringData()).catch(() => {});
+      refreshMonitoringData(true);
+    } else if (activeTab === 'exams') {
+      setExams(storageService.getExamSessions());
+    } else if (activeTab === 'users') {
+      setUsers(storageService.getUsers());
     }
   }, [activeTab]);
 
@@ -1857,6 +1940,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
       return;
     }
     isInstitutionDirtyRef.current = false;
+    if (typeof window !== 'undefined') window.__examguard_is_editing = false;
     const updated = {
       ...institution,
       gmaps_url: gmapsInput?.trim() || institution.gmaps_url,
@@ -2573,6 +2657,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     storageService.saveExamSession(examData);
     setShowExamModal(false);
     setEditingExam(null);
+    if (typeof window !== 'undefined') window.__examguard_is_editing = false;
     refreshData();
     showNotification(
       isArchived
@@ -3392,6 +3477,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
 
     const res = storageService.addStudent(newStudentForm);
     if (res.success) {
+      if (typeof window !== 'undefined') window.__examguard_is_editing = false;
       refreshData();
       setAddStudentError('');
       setShowAddStudentModal(false);
@@ -3544,6 +3630,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
 
     const res = storageService.updateStudent(editingStudent.id, editingStudent);
     if (res.success) {
+      if (typeof window !== 'undefined') window.__examguard_is_editing = false;
       refreshData();
       setEditStudentError('');
       setShowEditStudentModal(false);
@@ -12088,10 +12175,10 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                 <div>
                   <div className="inline-flex items-center gap-2 mb-1.5">
                     <h2 className="text-xl sm:text-2xl font-bold text-zinc-900 tracking-tight">
-                      ExamGuard v1.2
+                      ExamGuard v1.2.1
                     </h2>
                     <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-mono font-semibold">
-                      v1.2.0 Stable
+                      v1.2.1 Stable
                     </span>
                   </div>
                   <p className="text-xs sm:text-sm text-zinc-600 max-w-xl mx-auto leading-relaxed">
@@ -12130,7 +12217,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                           Pusat Pembaruan Sistem (System Update Hub)
                         </h3>
                         <span className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full font-mono font-semibold">
-                          v1.2.0 Active
+                          v1.2.1 Active
                         </span>
                       </div>
                       <p className="text-xs text-zinc-500 mt-0.5">
@@ -12188,7 +12275,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                     <div className="flex items-center gap-2">
                       <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
                       <span className="text-[11px]">
-                        Versi terpasang: <strong className="text-zinc-900 font-mono">v1.2.0</strong> &bull; Klik <strong>"Periksa Pembaruan Sekarang"</strong> untuk mengecek rilis baru atau <strong>"Tampilkan"</strong> untuk membuka opsi unggah berkas ZIP.
+                        Versi terpasang: <strong className="text-zinc-900 font-mono">v1.2.1</strong> &bull; Klik <strong>"Periksa Pembaruan Sekarang"</strong> untuk mengecek rilis baru atau <strong>"Tampilkan"</strong> untuk membuka opsi unggah berkas ZIP.
                       </span>
                     </div>
                     <span className="text-[10px] text-zinc-400 font-medium hidden sm:inline">Panel Tersembunyi</span>
@@ -12496,7 +12583,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                   <div className="divide-y divide-zinc-100 text-xs">
                     <div className="py-2 flex justify-between items-center">
                       <span className="text-zinc-500">Versi Rilis</span>
-                      <span className="font-semibold text-zinc-900 font-mono">ExamGuard v1.2.0</span>
+                      <span className="font-semibold text-zinc-900 font-mono">ExamGuard v1.2.1</span>
                     </div>
                     <div className="py-2 flex justify-between items-center">
                       <span className="text-zinc-500">Frontend Engine</span>

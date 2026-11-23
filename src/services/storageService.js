@@ -193,21 +193,22 @@ function _applySnapshot(data) {
     _cache.activeBroadcast = bcast;
     try { localStorage.setItem('examguard_active_broadcast', JSON.stringify(bcast)); } catch {}
   }
-  if (data.institution) {
+  const isEditingLocked = typeof window !== 'undefined' && Boolean(window.__examguard_is_editing);
+  if (data.institution && !isEditingLocked) {
     if (typeof data.institution.browser_permissions === 'string') {
       try { data.institution.browser_permissions = JSON.parse(data.institution.browser_permissions); } catch {}
     }
     _cache.institution = data.institution;
     try { localStorage.setItem('examguard_institution', JSON.stringify(data.institution)); } catch {}
   }
-  if (Array.isArray(data.users)) {
+  if (Array.isArray(data.users) && !isEditingLocked) {
     _cache.users = data.users;
     try { localStorage.setItem('examguard_users', JSON.stringify(data.users)); } catch {}
   }
   const examList = Array.isArray(data.examSessions)
     ? data.examSessions
     : (Array.isArray(data.exam_sessions) ? data.exam_sessions : null);
-  if (examList) {
+  if (examList && !isEditingLocked) {
     _cache.examSessions = examList;
     try { localStorage.setItem('examguard_exam_sessions', JSON.stringify(examList)); } catch {}
   }
@@ -433,8 +434,19 @@ export const storageService = {
     dbService.init();
   },
 
+  setDraftEditing(status) {
+    if (typeof window !== 'undefined') {
+      window.__examguard_is_editing = Boolean(status);
+    }
+  },
+
+  isDraftEditing() {
+    return typeof window !== 'undefined' && Boolean(window.__examguard_is_editing);
+  },
+
   async syncWithServer() {
     if (typeof window === 'undefined') return null;
+    if (this.isDraftEditing()) return null;
     try {
       const res = await fetch('/api/db/snapshot');
       if (res.ok) {

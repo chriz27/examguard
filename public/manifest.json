@@ -1,8 +1,8 @@
 {
   "name": "ExamGuard",
-  "version": "1.2.0",
-  "release_name": "ExamGuard v1.2 Enterprise Stable",
-  "build_timestamp": "2026-11-23T01:40:00.000000",
+  "version": "1.2.1",
+  "release_name": "ExamGuard v1.2.1 Final",
+  "build_timestamp": "2026-11-23T08:00:00.000000",
   "min_php_version": "8.0",
   "author": "Fandi dari Jawa tech",
   "required_files": [
@@ -16,6 +16,8 @@
     "api/examguard.db-shm"
   ],
   "changelog": [
+    "Perbaikan re-render dan background refresh 8 detik yang mengganggu form input dan popup modal admin",
+    "Fitur Form & Modal Lock: mencegah background snapshot menimpa data yang sedang diketik atau diproses di popup",
     "Pusat Pembaruan Sistem (OTA Update Hub): 1-Klik Otomatis dari GitHub & Unggah ZIP Offline",
     "Proteksi mutlak database SQLite (examguard.db) anti-tertimpa saat pembaruan berlangsung",
     "Fitur Broadcast Siaran Admin/Pengawas real-time dengan pita running text 3x putaran",

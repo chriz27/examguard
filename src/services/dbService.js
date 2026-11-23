@@ -56,13 +56,18 @@ function _startHttpPollingFallback() {
       return;
     }
     try {
-      const res = await fetch('/api/db/snapshot');
+      // HANYA poll data aktivitas pengerjaan peserta (attempts) sebagai fallback live monitoring
+      // DILARANG mem-poll /api/db/snapshot agar input form, popup, dan pengaturan yang baru diedit tidak tereset!
+      const res = await fetch('/api/db/attempts');
       if (res.ok) {
-        const snap = await res.json();
-        _handleServerEvent('snapshot', snap);
+        const attempts = await res.json();
+        if (Array.isArray(attempts)) {
+          _cache.attempts = attempts;
+          _notifyListeners('attempt_updated', { attempts });
+        }
       }
     } catch {}
-  }, 8000);
+  }, 10000);
 }
 
 function _connectWebSocket() {
