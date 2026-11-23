@@ -833,13 +833,40 @@ try {
 
     if ($endpoint === 'exam-sessions' && $method === 'POST') {
         $id = $body['id'] ?? ('exam-' . bin2hex(random_bytes(6)));
-        $stmt = $pdo->prepare("INSERT INTO exam_sessions (
-            id, subject, title, session_group, description, grade_level, is_active, is_archived,
-            gform_base_url, respon_base_url, exam_token, finish_token, start_time, end_time, duration_minutes
-        ) VALUES (
-            :id, :subject, :title, :session_group, :description, :grade_level, :is_active, 0,
-            :gform_base_url, :respon_base_url, :exam_token, :finish_token, :start_time, :end_time, :duration_minutes
-        )");
+        $isArchived = isset($body['is_archived']) ? ($body['is_archived'] ? 1 : 0) : 0;
+        $isActive = isset($body['is_active']) ? ($body['is_active'] ? 1 : 0) : 1;
+
+        $checkStmt = $pdo->prepare("SELECT id FROM exam_sessions WHERE id = ?");
+        $checkStmt->execute([$id]);
+        $existing = $checkStmt->fetch();
+
+        if ($existing) {
+            $stmt = $pdo->prepare("UPDATE exam_sessions SET
+                subject = :subject,
+                title = :title,
+                session_group = :session_group,
+                description = :description,
+                grade_level = :grade_level,
+                is_active = :is_active,
+                is_archived = :is_archived,
+                gform_base_url = :gform_base_url,
+                respon_base_url = :respon_base_url,
+                exam_token = :exam_token,
+                finish_token = :finish_token,
+                start_time = :start_time,
+                end_time = :end_time,
+                duration_minutes = :duration_minutes,
+                updated_at = datetime('now')
+            WHERE id = :id");
+        } else {
+            $stmt = $pdo->prepare("INSERT INTO exam_sessions (
+                id, subject, title, session_group, description, grade_level, is_active, is_archived,
+                gform_base_url, respon_base_url, exam_token, finish_token, start_time, end_time, duration_minutes, created_at, updated_at
+            ) VALUES (
+                :id, :subject, :title, :session_group, :description, :grade_level, :is_active, :is_archived,
+                :gform_base_url, :respon_base_url, :exam_token, :finish_token, :start_time, :end_time, :duration_minutes, datetime('now'), datetime('now')
+            )");
+        }
 
         $stmt->execute([
             ':id' => $id,
@@ -848,7 +875,8 @@ try {
             ':session_group' => $body['session_group'] ?? 'Asesmen Tengah Semester (ATS)',
             ':description' => $body['description'] ?? '',
             ':grade_level' => (int)($body['grade_level'] ?? 12),
-            ':is_active' => isset($body['is_active']) ? ($body['is_active'] ? 1 : 0) : 1,
+            ':is_active' => $isActive,
+            ':is_archived' => $isArchived,
             ':gform_base_url' => $body['gform_base_url'] ?? '',
             ':respon_base_url' => $body['respon_base_url'] ?? '',
             ':exam_token' => $body['exam_token'] ?? '',
@@ -903,38 +931,47 @@ try {
             }
 
             if (empty($sub)) {
+                $check = $pdo->prepare("SELECT * FROM exam_sessions WHERE id = ?");
+                $check->execute([$examId]);
+                $cur = $check->fetch();
+                if (!$cur) {
+                    sendJson(['error' => 'Sesi ujian tidak ditemukan.'], 404);
+                }
+
                 $stmt = $pdo->prepare("UPDATE exam_sessions SET 
-                    subject = COALESCE(:subject, subject),
-                    title = COALESCE(:title, title),
-                    session_group = COALESCE(:session_group, session_group),
-                    description = COALESCE(:description, description),
-                    grade_level = COALESCE(:grade_level, grade_level),
-                    is_active = COALESCE(:is_active, is_active),
-                    gform_base_url = COALESCE(:gform_base_url, gform_base_url),
-                    respon_base_url = COALESCE(:respon_base_url, respon_base_url),
-                    exam_token = COALESCE(:exam_token, exam_token),
-                    finish_token = COALESCE(:finish_token, finish_token),
-                    start_time = COALESCE(:start_time, start_time),
-                    end_time = COALESCE(:end_time, end_time),
-                    duration_minutes = COALESCE(:duration_minutes, duration_minutes),
+                    subject = :subject,
+                    title = :title,
+                    session_group = :session_group,
+                    description = :description,
+                    grade_level = :grade_level,
+                    is_active = :is_active,
+                    is_archived = :is_archived,
+                    gform_base_url = :gform_base_url,
+                    respon_base_url = :respon_base_url,
+                    exam_token = :exam_token,
+                    finish_token = :finish_token,
+                    start_time = :start_time,
+                    end_time = :end_time,
+                    duration_minutes = :duration_minutes,
                     updated_at = datetime('now')
                 WHERE id = :id");
 
                 $stmt->execute([
                     ':id' => $examId,
-                    ':subject' => $body['subject'] ?? null,
-                    ':title' => $body['title'] ?? null,
-                    ':session_group' => $body['session_group'] ?? null,
-                    ':description' => $body['description'] ?? null,
-                    ':grade_level' => isset($body['grade_level']) ? (int)$body['grade_level'] : null,
-                    ':is_active' => isset($body['is_active']) ? ($body['is_active'] ? 1 : 0) : null,
-                    ':gform_base_url' => $body['gform_base_url'] ?? null,
-                    ':respon_base_url' => $body['respon_base_url'] ?? null,
-                    ':exam_token' => $body['exam_token'] ?? null,
-                    ':finish_token' => $body['finish_token'] ?? null,
-                    ':start_time' => $body['start_time'] ?? null,
-                    ':end_time' => $body['end_time'] ?? null,
-                    ':duration_minutes' => isset($body['duration_minutes']) ? (int)$body['duration_minutes'] : null,
+                    ':subject' => array_key_exists('subject', $body) ? trim((string)$body['subject']) : $cur['subject'],
+                    ':title' => array_key_exists('title', $body) ? trim((string)$body['title']) : $cur['title'],
+                    ':session_group' => array_key_exists('session_group', $body) ? trim((string)$body['session_group']) : $cur['session_group'],
+                    ':description' => array_key_exists('description', $body) ? trim((string)$body['description']) : ($cur['description'] ?? ''),
+                    ':grade_level' => array_key_exists('grade_level', $body) ? (int)$body['grade_level'] : (int)$cur['grade_level'],
+                    ':is_active' => array_key_exists('is_active', $body) ? ($body['is_active'] ? 1 : 0) : (int)$cur['is_active'],
+                    ':is_archived' => array_key_exists('is_archived', $body) ? ($body['is_archived'] ? 1 : 0) : (int)$cur['is_archived'],
+                    ':gform_base_url' => array_key_exists('gform_base_url', $body) ? trim((string)$body['gform_base_url']) : ($cur['gform_base_url'] ?? ''),
+                    ':respon_base_url' => array_key_exists('respon_base_url', $body) ? trim((string)$body['respon_base_url']) : ($cur['respon_base_url'] ?? ''),
+                    ':exam_token' => array_key_exists('exam_token', $body) ? trim((string)$body['exam_token']) : ($cur['exam_token'] ?? ''),
+                    ':finish_token' => array_key_exists('finish_token', $body) ? trim((string)$body['finish_token']) : ($cur['finish_token'] ?? ''),
+                    ':start_time' => array_key_exists('start_time', $body) ? trim((string)$body['start_time']) : ($cur['start_time'] ?? ''),
+                    ':end_time' => array_key_exists('end_time', $body) ? trim((string)$body['end_time']) : ($cur['end_time'] ?? ''),
+                    ':duration_minutes' => array_key_exists('duration_minutes', $body) ? (int)$body['duration_minutes'] : (int)$cur['duration_minutes'],
                 ]);
 
                 $ex = $pdo->query("SELECT * FROM exam_sessions WHERE id = " . $pdo->quote($examId))->fetch();
@@ -1359,34 +1396,76 @@ try {
         } elseif (!empty($body['download_url'])) {
             $downloadUrl = $body['download_url'];
             
-            // Download via cURL dengan follow-location (GitHub releases asset redirect)
+            // Download via cURL dengan dukungan follow-location yang aman untuk server cPanel (open_basedir & SSL)
             if (function_exists('curl_init')) {
-                $ch = curl_init($downloadUrl);
-                $fp = fopen($zipFilePath, 'wb');
-                curl_setopt($ch, CURLOPT_FILE, $fp);
-                curl_setopt($ch, CURLOPT_HEADER, 0);
-                curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-                curl_setopt($ch, CURLOPT_USERAGENT, 'ExamGuard-AutoUpdater/1.2');
-                curl_setopt($ch, CURLOPT_TIMEOUT, 300);
-                curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
-                $execRes = curl_exec($ch);
-                $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-                curl_close($ch);
-                fclose($fp);
+                $currUrl = $downloadUrl;
+                $redirects = 0;
+                $execRes = false;
+                $httpCode = 0;
+
+                $openBasedir = ini_get('open_basedir');
+                if (empty($openBasedir)) {
+                    $ch = curl_init($downloadUrl);
+                    $fp = fopen($zipFilePath, 'wb');
+                    curl_setopt($ch, CURLOPT_FILE, $fp);
+                    curl_setopt($ch, CURLOPT_HEADER, 0);
+                    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+                    curl_setopt($ch, CURLOPT_MAXREDIRS, 5);
+                    curl_setopt($ch, CURLOPT_USERAGENT, 'ExamGuard-AutoUpdater/1.2.2');
+                    curl_setopt($ch, CURLOPT_TIMEOUT, 300);
+                    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+                    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+                    $execRes = curl_exec($ch);
+                    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                    curl_close($ch);
+                    fclose($fp);
+                } else {
+                    // Manual follow-location untuk server cPanel dengan open_basedir aktif
+                    while ($redirects < 6) {
+                        $ch = curl_init($currUrl);
+                        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+                        curl_setopt($ch, CURLOPT_HEADER, 1);
+                        curl_setopt($ch, CURLOPT_USERAGENT, 'ExamGuard-AutoUpdater/1.2.2');
+                        curl_setopt($ch, CURLOPT_TIMEOUT, 300);
+                        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+                        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+                        $resp = curl_exec($ch);
+                        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                        $headerSize = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+                        curl_close($ch);
+
+                        if ($httpCode == 301 || $httpCode == 302 || $httpCode == 307 || $httpCode == 308) {
+                            $header = substr($resp, 0, $headerSize);
+                            if (preg_match('/Location:\s*([^\r\n]+)/i', $header, $m)) {
+                                $currUrl = trim($m[1]);
+                                $redirects++;
+                                continue;
+                            }
+                        }
+
+                        if ($httpCode >= 200 && $httpCode < 300) {
+                            file_put_contents($zipFilePath, substr($resp, $headerSize));
+                            $execRes = true;
+                        }
+                        break;
+                    }
+                }
 
                 if (!$execRes || $httpCode >= 400 || !file_exists($zipFilePath) || filesize($zipFilePath) < 1000) {
                     @unlink($zipFilePath);
-                    sendJson(['error' => "Gagal mengunduh paket dari GitHub (HTTP $httpCode). Pastikan URL unduhan rilis valid dan server hosting terhubung ke internet."], 500);
+                    sendJson(['error' => "Gagal mengunduh paket dari GitHub (HTTP $httpCode). Pastikan rilis GitHub memiliki aset ZIP rilis produksi (bukan source code zip) dan server cPanel terhubung ke internet."], 500);
                 }
             } else {
                 $opts = [
                     'http' => [
                         'method' => 'GET',
-                        'header' => "User-Agent: ExamGuard-AutoUpdater/1.2
-
-",
+                        'header' => "User-Agent: ExamGuard-AutoUpdater/1.2.2\r\n",
                         'follow_location' => 1,
                         'timeout' => 300
+                    ],
+                    'ssl' => [
+                        'verify_peer' => false,
+                        'verify_peer_name' => false
                     ]
                 ];
                 $ctx = stream_context_create($opts);
@@ -1421,15 +1500,23 @@ try {
             }
         }
 
-        // 4. Verifikasi Berkas Meta (manifest.json) - cek baik di root maupun subfolder
+        // 4. Verifikasi Berkas Meta (manifest.json) & Pastikan Paket Memuat Kompilasi Frontend
         $manifestEntryName = null;
         $manifestContent = null;
+        $hasIndexHtml = false;
+        $hasAssets = false;
+
         for ($i = 0; $i < $zip->numFiles; $i++) {
             $name = $zip->getNameIndex($i);
             if ($name === 'manifest.json' || str_ends_with($name, '/manifest.json')) {
                 $manifestEntryName = $name;
                 $manifestContent = $zip->getFromIndex($i);
-                break;
+            }
+            if ($name === 'index.html' || str_ends_with($name, '/index.html')) {
+                $hasIndexHtml = true;
+            }
+            if (str_contains($name, 'assets/') || str_contains($name, 'assets\\')) {
+                $hasAssets = true;
             }
         }
 
@@ -1440,15 +1527,24 @@ try {
             sendJson(['error' => 'Verifikasi Gagal: Berkas meta manifest.json tidak ditemukan di dalam paket rilis.'], 400);
         }
 
+        if (!$hasIndexHtml || !$hasAssets) {
+            $zip->close();
+            @unlink($zipFilePath);
+            @rmdir($tmpDir);
+            sendJson([
+                'error' => 'Verifikasi Gagal: Paket ZIP ini tidak memuat kompilasi frontend (index.html dan folder assets tidak ditemukan). Berkas yang diunggah tampaknya adalah source code mentah GitHub, bukan berkas rilis kompilasi cPanel. Harap gunakan paket rilis ZIP kompilasi (examguard-v1.2.2-cpanel.zip) yang memuat berkas dist/.'
+            ], 400);
+        }
+
         $manifest = json_decode($manifestContent, true);
-        if (!$manifest || !in_array($manifest['name'] ?? '', ['ExamGuard', 'ExamGuard'])) {
+        if (!$manifest || !in_array($manifest['name'] ?? '', ['ExamGuard', 'exampguard', 'Examguard'])) {
             $zip->close();
             @unlink($zipFilePath);
             @rmdir($tmpDir);
             sendJson(['error' => 'Verifikasi Gagal: Meta file menunjukkan paket ini bukan rilis resmi ExamGuard.'], 400);
         }
 
-        $newVersion = $manifest['version'] ?? '1.2.0';
+        $newVersion = $manifest['version'] ?? '1.2.2';
 
         // 5. Ekstraksi Berkas ke Root Aplikasi (Tangani flat zip maupun folder wrapper seperti dist/ atau ExamGuard/)
         $prefix = '';
@@ -1503,6 +1599,11 @@ try {
         try {
             initDatabaseSchema($pdo);
         } catch (Exception $mErr) {}
+
+        // Sinkronisasi otomatis api/index.php ke public/api/index.php jika folder public ada di server
+        if (file_exists($rootDir . '/public/api/index.php') && file_exists($rootDir . '/api/index.php')) {
+            @copy($rootDir . '/api/index.php', $rootDir . '/public/api/index.php');
+        }
 
         sendJson([
             'success' => true,

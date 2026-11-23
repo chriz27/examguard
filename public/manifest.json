@@ -1,8 +1,8 @@
 {
   "name": "ExamGuard",
-  "version": "1.2.1",
-  "release_name": "ExamGuard v1.2.1 Final",
-  "build_timestamp": "2026-11-23T08:00:00.000000",
+  "version": "1.2.2",
+  "release_name": "ExamGuard v1.2.2 Production Release",
+  "build_timestamp": "2026-11-23T10:30:00.000000",
   "min_php_version": "8.0",
   "author": "Fandi dari Jawa tech",
   "required_files": [
@@ -16,17 +16,19 @@
     "api/examguard.db-shm"
   ],
   "changelog": [
-    "Perbaikan re-render dan background refresh 8 detik yang mengganggu form input dan popup modal admin",
-    "Fitur Form & Modal Lock: mencegah background snapshot menimpa data yang sedang diketik atau diproses di popup",
-    "Pusat Pembaruan Sistem (OTA Update Hub): 1-Klik Otomatis dari GitHub & Unggah ZIP Offline",
-    "Proteksi mutlak database SQLite (examguard.db) anti-tertimpa saat pembaruan berlangsung",
-    "Fitur Broadcast Siaran Admin/Pengawas real-time dengan pita running text 3x putaran",
-    "Badge status soal aktif (Berlangsung, Akan Datang, Berakhir) & auto-sort cerdas pengawas",
-    "Perbaikan alur tombol reset pekerjaan peserta pada kontrol pengawas",
+    "Perbaikan menyeluruh penyimpanan dan pembaruan Sesi Ujian Google Form (Link GForm, Token Mulai, Token Selesai, Waktu Mulai/Selesai, Durasi).",
+    "Penyempurnaan arsitektur UPSERT backend SQLite: memastikan data soal yang diedit tersimpan persisten tanpa error UNIQUE constraint.",
+    "Pembaruan Otomatis 1-Klik GitHub yang lebih tangguh: penanganan otomatis follow-location cURL & redirect S3 AWS untuk server cPanel (open_basedir).",
+    "Pencegahan mutlak penimpaan database examguard.db pada seluruh metode pembaruan (1-Klik maupun unggah manual).",
+    "KETERANGAN KHUSUS CPANEL: Pembaruan versi v1.2.2 di server cPanel dapat menggunakan 1-Klik Otomatis dari GitHub atau mengunggah berkas kompilasi examguard-v1.2.2-cpanel.zip (bukan source-code mentah GitHub).",
+    "Perbaikan re-render dan background refresh 8 detik yang mengganggu form input dan popup modal admin.",
+    "Fitur Form & Modal Lock: mencegah background snapshot menimpa data yang sedang diketik atau diproses di popup.",
+    "Pusat Pembaruan Sistem (OTA Update Hub): 1-Klik Otomatis dari GitHub & Unggah ZIP Offline.",
+    "Fitur Broadcast Siaran Admin/Pengawas real-time dengan pita running text 3x putaran.",
+    "Badge status soal aktif (Berlangsung, Akan Datang, Berakhir) & auto-sort cerdas pengawas.",
+    "Perbaikan alur tombol reset pekerjaan peserta pada kontrol pengawas.",
     "Penyempurnaan sistem pelanggaran ringan (popup penjelasan) & pelanggaran berat (lockout)",
-    "Identitas nama sekolah & tingkat pada navbar beranda HP dengan animasi marquee continuous loop",
-    "Badge live date & time real-time WIB pada top bar dashboard admin",
-    "Penataan ulang posisi balon panduan token mulai dan token selesai",
-    "Pembersihan dan modernisasi tampilan halaman login peserta"
-  ]
+    "Identitas nama sekolah & tingkat pada navbar beranda HP dengan animasi marquee continuous loop"
+  ],
+  "cpanel_update_note": "Khusus pembaruan di server cPanel, wajib mengunggah berkas rilis kompilasi examguard-v1.2.2-cpanel.zip atau menggunakan 1-Klik Otomatis jika paket rilis terhubung di GitHub Releases."
 }

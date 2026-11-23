@@ -615,6 +615,26 @@ export default function AdminDashboard({ currentUser, onLogout }) {
   const [examStartTime, setExamStartTime] = useState('');
   const [examEndTime, setExamEndTime] = useState('');
 
+  // Helper Menormalkan Format Tanggal ke YYYY-MM-DDTHH:mm untuk input type="datetime-local"
+  const formatToDateTimeLocal = (dateStr) => {
+    if (!dateStr) return '';
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(dateStr)) return dateStr;
+    const s = String(dateStr).trim().replace(' ', 'T');
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(s)) {
+      return s.slice(0, 16);
+    }
+    const d = new Date(dateStr);
+    if (!isNaN(d.getTime())) {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      const h = String(d.getHours()).padStart(2, '0');
+      const min = String(d.getMinutes()).padStart(2, '0');
+      return `${y}-${m}-${day}T${h}:${min}`;
+    }
+    return '';
+  };
+
   // Helper Menghitung Waktu Default Sesi Ujian (Mulai: Hari Ini now() Jam 07:30, Selesai: Hari Ini Jam 07:30 + Durasi)
   const getDefaultExamTimes = (durationMinutes = 90) => {
     const now = new Date();
@@ -1002,7 +1022,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
 
   // URL Repositori GitHub Resmi ExamGuard
   const GITHUB_REPO_URL = 'https://github.com/chriz27/examguard';
-  const CURRENT_APP_VERSION = 'v1.2.1';
+  const CURRENT_APP_VERSION = 'v1.2.2';
 
   // State Pemeriksaan Pembaruan GitHub
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
@@ -1029,17 +1049,19 @@ export default function AdminDashboard({ currentUser, onLogout }) {
 
       if (res.ok) {
         const release = await res.json();
-        const latestTag = release.tag_name || 'v1.2.1';
+        const latestTag = release.tag_name || 'v1.2.2';
         const cleanLatest = latestTag.replace(/^v/, '');
         const cleanCurrent = CURRENT_APP_VERSION.replace(/^v/, '');
         const isNewer = cleanLatest.localeCompare(cleanCurrent, undefined, { numeric: true, sensitivity: 'base' }) > 0;
 
-        // Cari file zip asset rilis (misal ExamGuard-v1.2.zip)
+        // Cari file zip asset rilis (misal ExamGuard-v1.2.zip atau examguard-v1.2.2-cpanel.zip)
         const zipAsset = release.assets?.find(a => a.name?.toLowerCase().endsWith('.zip'));
-        const zipDownloadUrl = zipAsset ? zipAsset.browser_download_url : (release.zipball_url || null);
+        const hasProductionAsset = Boolean(zipAsset);
+        const zipDownloadUrl = zipAsset ? zipAsset.browser_download_url : `https://github.com/chriz27/examguard/releases/download/${latestTag}/examguard-${latestTag}-cpanel.zip`;
 
         setUpdateCheckResult({
           status: isNewer ? 'update_available' : 'up_to_date',
+          hasProductionAsset,
           latestVersion: latestTag,
           currentVersion: CURRENT_APP_VERSION,
           releaseName: release.name || latestTag,
@@ -1070,8 +1092,8 @@ export default function AdminDashboard({ currentUser, onLogout }) {
           status: 'up_to_date',
           latestVersion: CURRENT_APP_VERSION,
           currentVersion: CURRENT_APP_VERSION,
-          releaseName: 'ExamGuard v1.2.1 Production Release',
-          releaseNotes: 'Sistem Anda saat ini menggunakan versi produksi stabil (v1.2.1). Terhubung aktif ke repositori GitHub resmi.',
+          releaseName: 'ExamGuard v1.2.2 Production Release',
+          releaseNotes: 'Sistem Anda saat ini menggunakan versi produksi stabil (v1.2.2). Terhubung aktif ke repositori GitHub resmi.\n\n📌 KETERANGAN UPDATE KHUSUS CPANEL (v1.2.2):\nBagi pengguna server cPanel, pembaruan ke versi v1.2.2 dapat menggunakan tombol "⚡ Pasang Pembaruan 1-Klik Otomatis" atau mengunggah berkas kompilasi produksi "examguard-v1.2.2-cpanel.zip" (bukan source code zip GitHub). Berkas ini memuat kompilasi folder dist/ lengkap dan aman dari penimpaan database.',
           commitSha,
           publishedAt: latestCommitDate
             ? new Date(latestCommitDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
@@ -1382,13 +1404,11 @@ export default function AdminDashboard({ currentUser, onLogout }) {
   const [showExamDetailModal, setShowExamDetailModal] = useState(false);
   const [detailExamData, setDetailExamData] = useState(null);
 
-  // Sesi ujian yang sedang aktif dan tidak diarsipkan
+  // Sesi ujian yang siap dipantau pengawas (seluruh sesi non-arsip, baik berstatus Publish maupun Draf)
   const activeExamsList = React.useMemo(() => {
     return (exams || []).filter((e) => {
       const isArchived = e.is_archived === true || e.is_archived === 1 || e.is_archived === '1' || e.is_archived === 'true';
-      if (isArchived) return false;
-      const isActive = e.is_active === undefined || e.is_active === null ? true : (e.is_active === true || e.is_active === 1 || e.is_active === '1' || e.is_active === 'true');
-      return isActive;
+      return !isArchived;
     });
   }, [exams]);
 
@@ -2603,6 +2623,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     setExamDuration(90);
     setExamStartTime(def.startTime);
     setExamEndTime(def.endTime);
+    if (typeof window !== 'undefined') window.__examguard_is_editing = true;
     setShowExamModal(true);
   };
 
@@ -2614,10 +2635,11 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     const dur = parseInt(exam.duration_minutes, 10) || 90;
     setExamDuration(dur);
     const def = getDefaultExamTimes(dur);
-    const start = exam.start_time || def.startTime;
-    const end = exam.end_time || calculateEndTime(start, dur) || def.endTime;
+    const start = formatToDateTimeLocal(exam.start_time) || def.startTime;
+    const end = formatToDateTimeLocal(exam.end_time) || calculateEndTime(start, dur) || def.endTime;
     setExamStartTime(start);
     setExamEndTime(end);
+    if (typeof window !== 'undefined') window.__examguard_is_editing = true;
     setShowExamModal(true);
   };
 
@@ -4542,7 +4564,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                 </span>
               </div>
               <p className="text-xs text-zinc-500 truncate">
-                ExamGuard v1.2 &bull; {institution.name} {institution.npsn ? `(NPSN: ${institution.npsn})` : ''} &bull; Terhubung ke Mode Penyimpanan Terpusat cPanel
+                ExamGuard v1.2.2 &bull; {institution.name} {institution.npsn ? `(NPSN: ${institution.npsn})` : ''} &bull; Terhubung ke Mode Penyimpanan Terpusat cPanel
               </p>
             </div>
           </div>
@@ -5717,8 +5739,51 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                           <tbody className="divide-y divide-zinc-100">
                             {filteredActiveExamsList.length === 0 ? (
                               <tr>
-                                <td colSpan="10" className="py-12 text-center text-zinc-400 text-xs">
-                                  Tidak ada mata pelajaran atau sesi ujian aktif yang sesuai dengan filter.
+                                <td colSpan="10" className="py-10 text-center text-zinc-500 text-xs">
+                                  <div className="flex flex-col items-center justify-center gap-2.5 max-w-md mx-auto">
+                                    <div className="w-10 h-10 rounded-2xl bg-zinc-100 flex items-center justify-center text-zinc-400">
+                                      <BookOpen className="w-5 h-5" />
+                                    </div>
+                                    <div className="font-semibold text-zinc-800 text-sm">
+                                      Belum ada sesi ujian aktif yang sesuai dengan filter
+                                    </div>
+                                    <p className="text-zinc-500 text-xs leading-relaxed">
+                                      {exams.length > 0
+                                        ? `Terdapat ${exams.length} sesi ujian terdaftar di sistem. Periksa kembali filter kelompok atau tingkat di atas, atau pastikan sesi tidak berada di Bank Soal (Arsip).`
+                                        : 'Belum ada sesi ujian yang dibuat. Silakan tambahkan sesi ujian Google Form terlebih dahulu agar muncul di papan pengawas.'}
+                                    </p>
+                                    <div className="flex flex-wrap items-center justify-center gap-2 mt-1">
+                                      {exams.length > 0 && (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setProctorActiveExamGroupFilter('ALL');
+                                            setProctorActiveExamGradeFilter('ALL');
+                                            setProctorActiveExamSearch('');
+                                          }}
+                                          className="px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 rounded-lg text-xs font-semibold cursor-pointer"
+                                        >
+                                          Reset Filter
+                                        </button>
+                                      )}
+                                      <button
+                                        type="button"
+                                        onClick={handleOpenAddExamModal}
+                                        className="px-3.5 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                                      >
+                                        <Plus className="w-3.5 h-3.5" />
+                                        <span>Buat Sesi Ujian Baru</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={handleManualRefreshProctor}
+                                        className="px-3 py-1.5 bg-white border border-zinc-300 hover:bg-zinc-50 text-zinc-700 rounded-lg text-xs font-semibold flex items-center gap-1 shadow-2xs cursor-pointer"
+                                      >
+                                        <RefreshCw className="w-3 h-3" />
+                                        <span>Segarkan Data</span>
+                                      </button>
+                                    </div>
+                                  </div>
                                 </td>
                               </tr>
                             ) : (
@@ -5740,12 +5805,31 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                                       {exam.session_group || '-'}
                                     </td>
 
-                                    {/* 3. Mata Pelajaran */}
+                                    {/* 3. Mata Pelajaran & Indikator Status Publikasi */}
                                     <td className="py-3 px-3 font-bold text-zinc-900">
                                       <div className="flex items-center gap-1.5">
                                         <BookOpen className="w-3.5 h-3.5 text-blue-600 shrink-0" />
                                         <span>{exam.subject || '-'}</span>
                                       </div>
+                                      {(exam.is_active === false || exam.is_active === 0 || exam.is_active === '0') && (
+                                        <div className="flex items-center gap-1.5 mt-1">
+                                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                                            Draf (Non-Aktif)
+                                          </span>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              storageService.toggleExamActive(exam.id);
+                                              refreshData();
+                                              showNotification(`Sesi "${exam.title || exam.subject}" berhasil diaktifkan!`, 'success');
+                                            }}
+                                            className="text-[10px] text-blue-600 hover:text-blue-800 font-bold hover:underline cursor-pointer"
+                                            title="Klik untuk mengaktifkan sesi ini agar muncul di siswa"
+                                          >
+                                            Aktifkan
+                                          </button>
+                                        </div>
+                                      )}
                                     </td>
 
                                     {/* 4. Judul Sesi (dengan tanggal mulai) */}
@@ -12175,10 +12259,10 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                 <div>
                   <div className="inline-flex items-center gap-2 mb-1.5">
                     <h2 className="text-xl sm:text-2xl font-bold text-zinc-900 tracking-tight">
-                      ExamGuard v1.2.1
+                      ExamGuard v1.2.2
                     </h2>
                     <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-mono font-semibold">
-                      v1.2.1 Stable
+                      v1.2.2 Stable
                     </span>
                   </div>
                   <p className="text-xs sm:text-sm text-zinc-600 max-w-xl mx-auto leading-relaxed">
@@ -12217,7 +12301,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                           Pusat Pembaruan Sistem (System Update Hub)
                         </h3>
                         <span className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full font-mono font-semibold">
-                          v1.2.1 Active
+                          v1.2.2 Active
                         </span>
                       </div>
                       <p className="text-xs text-zinc-500 mt-0.5">
@@ -12275,7 +12359,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                     <div className="flex items-center gap-2">
                       <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
                       <span className="text-[11px]">
-                        Versi terpasang: <strong className="text-zinc-900 font-mono">v1.2.1</strong> &bull; Klik <strong>"Periksa Pembaruan Sekarang"</strong> untuk mengecek rilis baru atau <strong>"Tampilkan"</strong> untuk membuka opsi unggah berkas ZIP.
+                        Versi terpasang: <strong className="text-zinc-900 font-mono">v1.2.2</strong> &bull; Klik <strong>"Periksa Pembaruan Sekarang"</strong> untuk mengecek rilis baru atau <strong>"Tampilkan"</strong> untuk membuka opsi unggah berkas ZIP.
                       </span>
                     </div>
                     <span className="text-[10px] text-zinc-400 font-medium hidden sm:inline">Panel Tersembunyi</span>
@@ -12325,6 +12409,19 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                                 {updateCheckResult.publishedAt && <span>&bull; Rilis: {updateCheckResult.publishedAt}</span>}
                               </div>
                             )}
+                            {updateCheckResult.hasProductionAsset && updateCheckResult.zipDownloadUrl && (
+                              <div className="pt-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleRun1ClickUpdate(updateCheckResult.zipDownloadUrl)}
+                                  disabled={isAutoUpdating}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-semibold shadow-xs transition-all cursor-pointer disabled:opacity-60"
+                                >
+                                  <Zap className="w-3.5 h-3.5 text-amber-300 fill-current" />
+                                  <span>⚡ Pasang Ulang / Sinkronkan Paket Rilis ({updateCheckResult.latestVersion})</span>
+                                </button>
+                              </div>
+                            )}
                           </div>
                         )}
 
@@ -12347,16 +12444,30 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                               </div>
                             )}
                             <div className="flex flex-wrap items-center gap-2 pt-1">
-                              {/* Opsi 1: Pasang Pembaruan 1-Klik Langsung dari GitHub */}
-                              <button
-                                type="button"
-                                onClick={() => handleRun1ClickUpdate(updateCheckResult.zipDownloadUrl || updateCheckResult.downloadUrl)}
-                                disabled={isAutoUpdating}
-                                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-lg text-xs font-semibold shadow-xs transition-all cursor-pointer disabled:opacity-60"
-                              >
-                                <Zap className="w-3.5 h-3.5 text-amber-300 fill-current" />
-                                <span>⚡ Pasang Pembaruan 1-Klik Otomatis ({updateCheckResult.latestVersion})</span>
-                              </button>
+                              {updateCheckResult.hasProductionAsset && updateCheckResult.zipDownloadUrl ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRun1ClickUpdate(updateCheckResult.zipDownloadUrl)}
+                                  disabled={isAutoUpdating}
+                                  className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-lg text-xs font-semibold shadow-xs transition-all cursor-pointer disabled:opacity-60"
+                                >
+                                  <Zap className="w-3.5 h-3.5 text-amber-300 fill-current" />
+                                  <span>⚡ Pasang Pembaruan 1-Klik Otomatis ({updateCheckResult.latestVersion})</span>
+                                </button>
+                              ) : (
+                                <div className="w-full p-3 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-800 space-y-1.5">
+                                  <div className="font-semibold flex items-center gap-1.5 text-amber-900 text-xs">
+                                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                                    <span>Pemberitahuan Paket Rilis GitHub</span>
+                                  </div>
+                                  <p className="leading-relaxed">
+                                    Rilis resmi GitHub saat ini belum melampirkan berkas aset kompilasi mandiri (ZIP asset cPanel). Pembaruan 1-Klik dicegah mengunduh source-code mentah agar tidak merusak folder build server.
+                                  </p>
+                                  <p className="font-medium">
+                                    Silakan gunakan menu <strong>Unggah Paket Rilis ZIP Secara Manual</strong> di bawah dengan berkas <code className="font-mono bg-white px-1.5 py-0.5 rounded border border-amber-300 font-bold text-zinc-900">examguard-v1.2.2-cpanel.zip</code> yang telah dikompilasi siap pakai.
+                                  </p>
+                                </div>
+                              )}
 
                               <a
                                 href={updateCheckResult.downloadUrl}
@@ -12365,7 +12476,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                                 className="inline-flex items-center gap-1.5 px-3 py-2 bg-white hover:bg-zinc-100 text-zinc-700 border border-zinc-300 rounded-lg text-xs font-semibold shadow-2xs transition-colors"
                               >
                                 <Download className="w-3.5 h-3.5" />
-                                <span>Unduh Manual di GitHub</span>
+                                <span>Buka Halaman Rilis GitHub</span>
                                 <ExternalLink className="w-3 h-3 text-zinc-400" />
                               </a>
                             </div>
@@ -12418,7 +12529,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                               Offline: Unggah Paket Pembaruan Manual (.ZIP)
                             </h4>
                             <p className="text-[11px] text-zinc-500">
-                              Alternatif pembaruan offline atau server tanpa akses internet keluar (cPanel firewall friendly)
+                              Khusus cPanel: Wajib unggah berkas rilis kompilasi <code className="font-mono text-zinc-900 font-bold bg-zinc-100 px-1 py-0.2 rounded">examguard-v1.2.2-cpanel.zip</code>
                             </p>
                           </div>
                         </div>
@@ -12435,7 +12546,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                         </div>
                         <ol className="list-decimal list-inside text-zinc-600 space-y-1.5 pl-1 leading-relaxed text-[11px]">
                           <li>
-                            Unduh atau siapkan berkas rilis resmi (contoh: <code className="font-mono text-zinc-900 bg-white px-1 py-0.5 rounded border border-zinc-200">ExamGuard-v1.2.zip</code>) yang memuat berkas meta <code className="font-mono text-zinc-900">manifest.json</code>.
+                            <strong className="text-amber-800">Khusus Server cPanel (v1.2.2):</strong> Wajib mengunggah berkas rilis kompilasi <code className="font-mono text-zinc-900 bg-white px-1.5 py-0.5 rounded border border-amber-300 font-bold">examguard-v1.2.2-cpanel.zip</code> yang telah memuat berkas meta <code className="font-mono text-zinc-900">manifest.json</code> serta seluruh folder kompilasi produksi (<code className="font-mono text-zinc-800">dist/</code>).
                           </li>
                           <li>
                             Klik tombol <strong>"Pilih Berkas ZIP..."</strong> di bawah ini dan pilih berkas dari perangkat komputer Anda.
@@ -12583,7 +12694,23 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                   <div className="divide-y divide-zinc-100 text-xs">
                     <div className="py-2 flex justify-between items-center">
                       <span className="text-zinc-500">Versi Rilis</span>
-                      <span className="font-semibold text-zinc-900 font-mono">ExamGuard v1.2.1</span>
+                      <div className="text-right">
+                        <span className="font-semibold text-zinc-900 font-mono">ExamGuard v1.2.2</span>
+                        <span className="ml-2 text-[10px] bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-full font-semibold">Production</span>
+                      </div>
+                    </div>
+                    {/* Keterangan Pembaruan Khusus v1.2.2 untuk cPanel */}
+                    <div className="p-3.5 bg-amber-50/90 border border-amber-300 rounded-xl space-y-1.5 my-2.5">
+                      <div className="flex items-center gap-1.5 text-amber-900 font-bold text-xs">
+                        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                        <span>Keterangan Update Khusus v1.2.2 (Server cPanel)</span>
+                      </div>
+                      <p className="text-[11px] text-amber-900 leading-relaxed font-medium">
+                        Bagi pengguna server <strong>cPanel</strong>, pembaruan ke versi <strong>v1.2.2</strong> dapat dilakukan langsung melalui <strong>⚡ Pasang Pembaruan 1-Klik Otomatis</strong> (jika paket rilis terhubung di GitHub Releases) atau mengunggah berkas kompilasi produksi: <code className="font-mono bg-white px-1.5 py-0.5 rounded border border-amber-300 font-bold text-zinc-900">examguard-v1.2.2-cpanel.zip</code> (melalui formulir unggah berkas ZIP di Pusat Pembaruan di atas atau diekstrak langsung ke folder web root di File Manager cPanel).
+                      </p>
+                      <p className="text-[10px] text-amber-700">
+                        * Jangan mengunggah berkas ZIP source code mentah bawaan GitHub Releases karena tidak memuat hasil kompilasi frontend (<code className="font-mono">dist/</code>).
+                      </p>
                     </div>
                     <div className="py-2 flex justify-between items-center">
                       <span className="text-zinc-500">Frontend Engine</span>
@@ -12934,14 +13061,18 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                 {editingExam ? 'Edit Sesi Ujian Google Form' : 'Tambah Sesi Ujian Google Form Baru'}
               </h3>
               <button
-                onClick={() => setShowExamModal(false)}
-                className="text-zinc-400 hover:text-zinc-600 p-1"
+                onClick={() => {
+                  setShowExamModal(false);
+                  setEditingExam(null);
+                  if (typeof window !== 'undefined') window.__examguard_is_editing = false;
+                }}
+                className="text-zinc-400 hover:text-zinc-600 p-1 cursor-pointer"
               >
                 &times;
               </button>
             </div>
 
-            <form onSubmit={handleSaveExamSubmit} className="space-y-4 text-xs">
+            <form key={editingExam?.id || 'new'} onSubmit={handleSaveExamSubmit} className="space-y-4 text-xs">
               <datalist id="popularSubjectsList">
                 {POPULAR_SUBJECTS.map((subj) => (
                   <option key={subj} value={subj} />
@@ -13256,8 +13387,12 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
               <div className="flex gap-2 pt-3 border-t border-zinc-100">
                 <button
                   type="button"
-                  onClick={() => setShowExamModal(false)}
-                  className="flex-1 py-2.5 rounded-xl border border-zinc-300 text-xs font-medium text-zinc-600 hover:bg-zinc-50"
+                  onClick={() => {
+                    setShowExamModal(false);
+                    setEditingExam(null);
+                    if (typeof window !== 'undefined') window.__examguard_is_editing = false;
+                  }}
+                  className="flex-1 py-2.5 rounded-xl border border-zinc-300 text-xs font-medium text-zinc-600 hover:bg-zinc-50 cursor-pointer"
                 >
                   Batal
                 </button>

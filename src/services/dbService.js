@@ -513,7 +513,16 @@ export const dbService = {
   },
 
   async saveExamSession(data) {
-    const result = await _fetch('/exam-sessions', { method: 'POST', body: JSON.stringify(data) });
+    let result;
+    if (data.id) {
+      try {
+        result = await _fetch(`/exam-sessions/${encodeURIComponent(data.id)}`, { method: 'PUT', body: JSON.stringify(data) });
+      } catch {
+        result = await _fetch('/exam-sessions', { method: 'POST', body: JSON.stringify(data) });
+      }
+    } else {
+      result = await _fetch('/exam-sessions', { method: 'POST', body: JSON.stringify(data) });
+    }
     _cache.examSessions = null;
     return result;
   },
