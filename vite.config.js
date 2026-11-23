@@ -69,6 +69,7 @@ function examGuardSQLitePlugin() {
           appModeConfig:      dbApi.getAppModeConfig(),
           beritaAcaraConfig:  dbApi.getBeritaAcaraConfig(),
           systemErrorLogs:    dbApi.getSystemErrorLogs(),
+          activeBroadcast:    dbApi.getActiveBroadcast ? dbApi.getActiveBroadcast() : null,
         };
         ws.send(JSON.stringify({ event: 'snapshot', data: snapshot, timestamp: Date.now() }));
       } catch (e) {
@@ -170,6 +171,7 @@ function examGuardSQLitePlugin() {
           appModeConfig:     dbApi.getAppModeConfig(),
           beritaAcaraConfig: dbApi.getBeritaAcaraConfig(),
           systemErrorLogs:   dbApi.getSystemErrorLogs(),
+          activeBroadcast:   dbApi.getActiveBroadcast ? dbApi.getActiveBroadcast() : null,
         });
       }
 
@@ -463,6 +465,22 @@ function examGuardSQLitePlugin() {
           dbApi.clearSystemErrorLogs();
           broadcast('logs_cleared', {});
           return sendJson(res, 200, { success: true });
+        }
+      }
+
+      // ── /api/db/broadcast (Siaran Cepat Peserta & Pengawas) ──────────────
+      if (url === '/api/db/broadcast') {
+        if (method === 'GET') {
+          const bcast = dbApi.getActiveBroadcast ? dbApi.getActiveBroadcast() : { id: 'singleton', message: '', scheduled_at: null, broadcast_id: '' };
+          return sendJson(res, 200, bcast);
+        }
+        if (method === 'POST' || method === 'PUT') {
+          const saved = dbApi.saveBroadcast ? dbApi.saveBroadcast(body) : body;
+          return sendJson(res, 200, { success: true, ...saved, broadcast: saved });
+        }
+        if (method === 'DELETE') {
+          const cleared = dbApi.clearBroadcast ? dbApi.clearBroadcast() : { id: 'singleton', message: '', scheduled_at: null, broadcast_id: '' };
+          return sendJson(res, 200, { success: true, ...cleared, broadcast: cleared });
         }
       }
 

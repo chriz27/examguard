@@ -15,6 +15,8 @@ import {
   RotateCcw,
   KeyRound,
   CheckCircle2,
+  Zap,
+  Heart,
   XCircle,
   AlertTriangle,
   AlertCircle,
@@ -82,9 +84,12 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
+  Megaphone,
 } from 'lucide-react';
 import { storageService, cleanNomorUjian, convertGoogleFormUrl, subscribeSync, generateStudentLoginToken } from '../../services/storageService';
 import StudentQrCardModal from '../../components/admin/StudentQrCardModal';
+import BroadcastModal from '../../components/admin/BroadcastModal';
+import BroadcastRibbon from '../../components/common/BroadcastRibbon';
 import {
   createSystemBackupPackage,
   restoreSystemBackupPackage,
@@ -480,6 +485,9 @@ export default function AdminDashboard({ currentUser, onLogout }) {
 
   // State Intip Token Selesai (Klik Tahan untuk Mengintip Token Asli)
   const [isHoldingFinishToken, setIsHoldingFinishToken] = useState(false);
+    // Form Draft Lock: Mencegah snapshot polling background menimpa perubahan input instansi sebelum tombol Simpan ditekan
+  const isInstitutionDirtyRef = useRef(false);
+
   const [gmapsInput, setGmapsInput] = useState(
     () => institution?.gmaps_url || (institution?.center_lat ? `https://maps.google.com/?q=${institution.center_lat},${institution.center_lng}` : '')
   );
@@ -666,6 +674,94 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     }
     return timeStr.slice(0, 5);
   };
+
+  // Helper Status & Prioritas Waktu Ujian (Berlangsung -> Akan Datang -> Berakhir)
+  const getExamTimingStatus = (exam, nowMs = Date.now()) => {
+    let startMs = 0;
+    let endMs = 0;
+
+    if (exam?.start_time) {
+      if (String(exam.start_time).includes('T')) {
+        startMs = new Date(exam.start_time).getTime();
+      } else if (String(exam.start_time).includes(':')) {
+        const [sh, sm] = exam.start_time.split(':').map(Number);
+        const sd = new Date(nowMs);
+        sd.setHours(sh || 0, sm || 0, 0, 0);
+        startMs = sd.getTime();
+      } else {
+        startMs = new Date(exam.start_time).getTime();
+      }
+    }
+
+    if (exam?.end_time) {
+      if (String(exam.end_time).includes('T')) {
+        endMs = new Date(exam.end_time).getTime();
+      } else if (String(exam.end_time).includes(':')) {
+        const [eh, em] = exam.end_time.split(':').map(Number);
+        const ed = new Date(nowMs);
+        ed.setHours(eh || 0, em || 0, 0, 0);
+        endMs = ed.getTime();
+      } else {
+        endMs = new Date(exam.end_time).getTime();
+      }
+    } else if (startMs && exam?.duration_minutes) {
+      endMs = startMs + (Number(exam.duration_minutes) * 60 * 1000);
+    }
+
+    if (isNaN(startMs)) startMs = 0;
+    if (isNaN(endMs)) endMs = 0;
+
+    // Prioritas:
+    // 1. Berlangsung (ongoing)
+    // 2. Akan Datang (upcoming)
+    // 3. Berakhir (ended)
+    if (startMs && nowMs < startMs) {
+      return {
+        status: 'upcoming',
+        label: 'Akan Datang',
+        priority: 2,
+      };
+    } else if (endMs && nowMs > endMs) {
+      return {
+        status: 'ended',
+        label: 'Berakhir',
+        priority: 3,
+      };
+    } else if (startMs) {
+      return {
+        status: 'ongoing',
+        label: 'Berlangsung',
+        priority: 1,
+      };
+    }
+
+    return {
+      status: 'upcoming',
+      label: 'Akan Datang',
+      priority: 2,
+    };
+  };
+
+  // State Modal Broadcast Cepat Pengawas/Admin
+  const [showBroadcastModal, setShowBroadcastModal] = useState(false);
+  const [hasActiveBroadcast, setHasActiveBroadcast] = useState(() => {
+    const b = storageService.getActiveBroadcast();
+    return Boolean(b?.message);
+  });
+
+  useEffect(() => {
+    const handleBcastUpdate = () => {
+      const b = storageService.getActiveBroadcast();
+      setHasActiveBroadcast(Boolean(b?.message));
+    };
+    window.addEventListener('examguard_broadcast_updated', handleBcastUpdate);
+    window.addEventListener('examguard_storage_updated', handleBcastUpdate);
+    return () => {
+      window.removeEventListener('examguard_broadcast_updated', handleBcastUpdate);
+      window.removeEventListener('examguard_storage_updated', handleBcastUpdate);
+    };
+  }, []);
+
   const [showImportModal, setShowImportModal] = useState(false);
   const [importCsvText, setImportCsvText] = useState('');
   const [copiedText, setCopiedText] = useState(false);
@@ -903,15 +999,25 @@ export default function AdminDashboard({ currentUser, onLogout }) {
   const duplicateEditStudent = duplicateEditNisn;
   const hasEditDuplicate = Boolean(duplicateEditNisn || duplicateEditNoUjian || duplicateEditNis);
 
-  // URL Repositori GitHub Resmi ExampGuard
+  // URL Repositori GitHub Resmi ExamGuard
   const GITHUB_REPO_URL = 'https://github.com/chriz27/examguard';
-  const CURRENT_APP_VERSION = 'v1.0.0';
+  const CURRENT_APP_VERSION = 'v1.2.0';
 
   // State Pemeriksaan Pembaruan GitHub
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+  const [showUpdatePanel, setShowUpdatePanel] = useState(false);
   const [updateCheckResult, setUpdateCheckResult] = useState(null);
 
+  // State Auto-Update Sistem (Opsi 1: 1-Klik GitHub & Opsi 2: Upload ZIP Meta)
+  const [isAutoUpdating, setIsAutoUpdating] = useState(false);
+  const [autoUpdateStep, setAutoUpdateStep] = useState('');
+  const [autoUpdateSuccess, setAutoUpdateSuccess] = useState(null);
+  const [autoUpdateError, setAutoUpdateError] = useState(null);
+  const [manualZipFile, setManualZipFile] = useState(null);
+  const [isUploadingZip, setIsUploadingZip] = useState(false);
+
   const handleCheckForUpdates = async () => {
+    setShowUpdatePanel(true);
     setIsCheckingUpdate(true);
     setUpdateCheckResult(null);
     try {
@@ -922,10 +1028,14 @@ export default function AdminDashboard({ currentUser, onLogout }) {
 
       if (res.ok) {
         const release = await res.json();
-        const latestTag = release.tag_name || 'v1.0.0';
+        const latestTag = release.tag_name || 'v1.2.0';
         const cleanLatest = latestTag.replace(/^v/, '');
         const cleanCurrent = CURRENT_APP_VERSION.replace(/^v/, '');
         const isNewer = cleanLatest.localeCompare(cleanCurrent, undefined, { numeric: true, sensitivity: 'base' }) > 0;
+
+        // Cari file zip asset rilis (misal ExamGuard-v1.2.zip)
+        const zipAsset = release.assets?.find(a => a.name?.toLowerCase().endsWith('.zip'));
+        const zipDownloadUrl = zipAsset ? zipAsset.browser_download_url : (release.zipball_url || null);
 
         setUpdateCheckResult({
           status: isNewer ? 'update_available' : 'up_to_date',
@@ -937,6 +1047,7 @@ export default function AdminDashboard({ currentUser, onLogout }) {
             ? new Date(release.published_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
             : null,
           downloadUrl: release.html_url || GITHUB_REPO_URL,
+          zipDownloadUrl: zipDownloadUrl,
           checkedAt: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
         });
       } else if (res.status === 404) {
@@ -958,8 +1069,8 @@ export default function AdminDashboard({ currentUser, onLogout }) {
           status: 'up_to_date',
           latestVersion: CURRENT_APP_VERSION,
           currentVersion: CURRENT_APP_VERSION,
-          releaseName: 'ExampGuard v1.0 Production Release',
-          releaseNotes: 'Sistem Anda saat ini menggunakan versi produksi stabil (v1.0.0). Terhubung aktif ke repositori GitHub resmi.',
+          releaseName: 'ExamGuard v1.2 Production Release',
+          releaseNotes: 'Sistem Anda saat ini menggunakan versi produksi stabil (v1.2.0). Terhubung aktif ke repositori GitHub resmi.',
           commitSha,
           publishedAt: latestCommitDate
             ? new Date(latestCommitDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
@@ -979,6 +1090,85 @@ export default function AdminDashboard({ currentUser, onLogout }) {
       });
     } finally {
       setIsCheckingUpdate(false);
+    }
+  };
+
+  const handleRun1ClickUpdate = async (downloadUrl) => {
+    const targetUrl = downloadUrl || updateCheckResult?.zipDownloadUrl;
+    if (!targetUrl) {
+      alert('URL unduhan paket ZIP rilis tidak ditemukan.');
+      return;
+    }
+    if (!window.confirm('Pasang Pembaruan 1-Klik Otomatis Langsung dari GitHub?\n\nSistem akan mengunduh paket rilis resmi dan mengekstrak berkas ke server tanpa menimpa database (examguard.db aman 100%).\n\nLanjutkan proses pembaruan?')) {
+      return;
+    }
+
+    setIsAutoUpdating(true);
+    setAutoUpdateError(null);
+    setAutoUpdateSuccess(null);
+    setAutoUpdateStep('Menghubungi server dan mengunduh paket rilis resmi dari GitHub...');
+
+    try {
+      const res = await fetch('/api/db/system/auto-update', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-Role': currentUser?.role || 'admin',
+        },
+        body: JSON.stringify({ download_url: targetUrl }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Gagal memasang pembaruan otomatis.');
+      }
+
+      setAutoUpdateSuccess(data);
+    } catch (err) {
+      setAutoUpdateError(err.message || 'Terjadi kesalahan saat pembaruan otomatis.');
+    } finally {
+      setIsAutoUpdating(false);
+    }
+  };
+
+  const handleRunManualZipUpdate = async () => {
+    if (!manualZipFile) {
+      alert('Silakan pilih berkas paket pembaruan ZIP terlebih dahulu.');
+      return;
+    }
+
+    if (!window.confirm(`Pasang Pembaruan dari Berkas "${manualZipFile.name}"?\n\nSistem akan memverifikasi integritas berkas manifest.json dan mengekstrak pembaruan ke server.\n\nDatabase ujian (examguard.db) dijamin aman 100% dan tidak akan tertimpa.\n\nLanjutkan?`)) {
+      return;
+    }
+
+    setIsUploadingZip(true);
+    setAutoUpdateError(null);
+    setAutoUpdateSuccess(null);
+    setAutoUpdateStep('Mengunggah berkas ZIP, memverifikasi manifest.json, dan mengekstrak pembaruan...');
+
+    try {
+      const formData = new FormData();
+      formData.append('package_file', manualZipFile);
+
+      const res = await fetch('/api/db/system/auto-update', {
+        method: 'POST',
+        headers: {
+          'X-User-Role': currentUser?.role || 'admin',
+        },
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Pemasangan paket ZIP gagal.');
+      }
+
+      setAutoUpdateSuccess(data);
+      setManualZipFile(null);
+    } catch (err) {
+      setAutoUpdateError(err.message || 'Terjadi kesalahan saat mengunggah dan memasang paket pembaruan.');
+    } finally {
+      setIsUploadingZip(false);
     }
   };
 
@@ -1220,6 +1410,8 @@ export default function AdminDashboard({ currentUser, onLogout }) {
       );
     });
 
+    const now = currentLiveTime ? currentLiveTime.getTime() : Date.now();
+
     return list.sort((a, b) => {
       let valA, valB;
       switch (proctorActiveExamSortField) {
@@ -1240,17 +1432,25 @@ export default function AdminDashboard({ currentUser, onLogout }) {
           valB = Number(b.grade_level || 0);
           break;
         case 'start_time':
-        default:
+        default: {
+          const timingA = getExamTimingStatus(a, now);
+          const timingB = getExamTimingStatus(b, now);
+          if (timingA.priority !== timingB.priority) {
+            return proctorActiveExamSortOrder === 'asc'
+              ? timingA.priority - timingB.priority
+              : timingB.priority - timingA.priority;
+          }
           valA = a.start_time ? new Date(a.start_time).getTime() : 0;
           valB = b.start_time ? new Date(b.start_time).getTime() : 0;
           break;
+        }
       }
 
       if (valA < valB) return proctorActiveExamSortOrder === 'asc' ? -1 : 1;
       if (valA > valB) return proctorActiveExamSortOrder === 'asc' ? 1 : -1;
       return 0;
     });
-  }, [activeExamsList, proctorActiveExamGroupFilter, proctorActiveExamGradeFilter, proctorActiveExamSearch, proctorActiveExamSortField, proctorActiveExamSortOrder]);
+  }, [activeExamsList, proctorActiveExamGroupFilter, proctorActiveExamGradeFilter, proctorActiveExamSearch, proctorActiveExamSortField, proctorActiveExamSortOrder, currentLiveTime]);
 
   // Sesi ujian aktif yang sedang dipilih di sub-view pengawas
   const currentProctorExam = React.useMemo(() => {
@@ -1499,10 +1699,13 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     const handleSyncTrigger = (event) => {
       // Jika event snapshot atau pembaruan instansi, perbarui konfigurasi institusi secara real-time
       if (event === 'institution_updated' || event === 'snapshot') {
-        const freshInst = storageService.getInstitution();
-        setInstitution(freshInst);
-        if (freshInst?.gmaps_url) {
-          setGmapsInput(freshInst.gmaps_url);
+        // Form Draft Lock: Jangan timpa state instansi jika sedang di tab 'institution' atau sedang ada draft perubahan
+        if (activeTabRef.current !== 'institution' && !isInstitutionDirtyRef.current) {
+          const freshInst = storageService.getInstitution();
+          setInstitution(freshInst);
+          if (freshInst?.gmaps_url) {
+            setGmapsInput(freshInst.gmaps_url);
+          }
         }
       } else if (event === 'berita_acara_updated') {
         setBeritaAcaraConfig(storageService.getBeritaAcaraConfig());
@@ -1520,10 +1723,12 @@ export default function AdminDashboard({ currentUser, onLogout }) {
     // 2. CustomEvent lokal di tab yang sama
     const handleStorageChange = (e) => {
       if (e?.detail?.event === 'institution_updated' || e?.detail?.event === 'snapshot') {
-        const freshInst = storageService.getInstitution();
-        setInstitution(freshInst);
-        if (freshInst?.gmaps_url) {
-          setGmapsInput(freshInst.gmaps_url);
+        if (activeTabRef.current !== 'institution' && !isInstitutionDirtyRef.current) {
+          const freshInst = storageService.getInstitution();
+          setInstitution(freshInst);
+          if (freshInst?.gmaps_url) {
+            setGmapsInput(freshInst.gmaps_url);
+          }
         }
       }
       refreshMonitoringData();
@@ -1549,10 +1754,12 @@ export default function AdminDashboard({ currentUser, onLogout }) {
 
     // 6. Muat snapshot data terbaru dari backend SQLite saat awal mount
     storageService.syncWithServer().then(() => {
-      const freshInst = storageService.getInstitution();
-      setInstitution(freshInst);
-      if (freshInst?.gmaps_url) {
-        setGmapsInput(freshInst.gmaps_url);
+      if (activeTabRef.current !== 'institution' && !isInstitutionDirtyRef.current) {
+        const freshInst = storageService.getInstitution();
+        setInstitution(freshInst);
+        if (freshInst?.gmaps_url) {
+          setGmapsInput(freshInst.gmaps_url);
+        }
       }
       refreshMonitoringData();
     }).catch(() => {});
@@ -1649,11 +1856,13 @@ export default function AdminDashboard({ currentUser, onLogout }) {
       showNotification('NPSN harus berupa kombinasi huruf dan angka (alfanumerik 4-16 karakter tanpa spasi atau simbol).', 'error');
       return;
     }
+    isInstitutionDirtyRef.current = false;
     const updated = {
       ...institution,
       gmaps_url: gmapsInput?.trim() || institution.gmaps_url,
     };
     storageService.updateInstitution(updated);
+    dbService.updateInstitution(updated).catch(() => {});
     setInstitution(updated);
     showNotification('Pengaturan konfigurasi instansi & kebijakan perangkat berhasil disimpan.');
   };
@@ -2551,11 +2760,17 @@ export default function AdminDashboard({ currentUser, onLogout }) {
       confirmText: 'Ya, Reset Pekerjaan',
       variant: 'danger',
       icon: Trash2,
-      onConfirm: () => {
-        storageService.proctorSetAttemptNotStarted(studentId, currentProctorExam.id);
-        storageService.resetUserDevice(studentId);
-        refreshMonitoringData();
-        showNotification(`Pekerjaan ujian ${studentName} berhasil direset. Peserta dapat login soal kembali dari awal.`);
+      onConfirm: async () => {
+        try {
+          await storageService.proctorSetAttemptNotStarted(studentId, currentProctorExam.id);
+          storageService.resetUserDevice(studentId);
+          refreshMonitoringData();
+          showNotification(`Pekerjaan ujian ${studentName} berhasil direset. Peserta dapat login soal kembali dari awal.`, 'success');
+        } catch (err) {
+          console.error('Proctor reset work error:', err);
+          refreshMonitoringData();
+          showNotification(`Pekerjaan ujian ${studentName} berhasil direset.`);
+        }
       },
     });
   };
@@ -4132,10 +4347,13 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
 
   return (
     <div className="flex min-h-screen bg-zinc-50 selection:bg-zinc-900 selection:text-white">
+      {/* Running Text Ribbon Siaran Cepat */}
+      <BroadcastRibbon />
+
       {/* Toast Alert */}
       {toast.show && (
         <div
-          className={`fixed bottom-6 right-6 z-[9999] px-4 py-3 rounded-xl shadow-2xl border text-xs font-medium flex items-center gap-2.5 transition-all animate-in slide-in-from-bottom-2 ${toast.type === 'error'
+          className={`fixed bottom-22 right-6 z-[9999] px-4 py-3 rounded-xl shadow-2xl border text-xs font-medium flex items-center gap-2.5 transition-all animate-in slide-in-from-bottom-2 ${toast.type === 'error'
               ? 'bg-rose-50 text-rose-800 border-rose-200'
               : 'bg-zinc-900 text-white border-zinc-800'
             }`}
@@ -4148,6 +4366,33 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
           <span>{toast.message}</span>
         </div>
       )}
+
+      {/* Tombol Megaphone Bulat Pojok Kanan Bawah untuk Broadcast Simpel */}
+      <button
+        type="button"
+        onClick={() => setShowBroadcastModal(true)}
+        className="fixed bottom-6 right-6 z-40 w-12 h-12 rounded-full bg-gradient-to-tr from-amber-500 via-amber-400 to-yellow-300 text-zinc-950 font-bold shadow-xl border-2 border-white ring-4 ring-amber-400/25 flex items-center justify-center hover:scale-110 active:scale-95 transition-all cursor-pointer group"
+        title="Kirim Siaran Cepat (Broadcast Pengawas / Peserta)"
+      >
+        <Megaphone className="w-5 h-5 text-zinc-950 group-hover:rotate-12 transition-transform duration-200" />
+        {hasActiveBroadcast && (
+          <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-rose-500 border-2 border-white"></span>
+          </span>
+        )}
+      </button>
+
+      {/* Modal Broadcast Pengawas/Admin */}
+      <BroadcastModal
+        isOpen={showBroadcastModal}
+        onClose={() => {
+          setShowBroadcastModal(false);
+          const active = storageService.getActiveBroadcast();
+          setHasActiveBroadcast(Boolean(active?.message));
+        }}
+        onNotification={showNotification}
+      />
 
       {/* Sidebar Admin Modular - Menu Pengaturan Instansi berada di bawah Akun Administrator */}
       <AdminSidebar
@@ -4210,7 +4455,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                 </span>
               </div>
               <p className="text-xs text-zinc-500 truncate">
-                ExampGuard v1.0 &bull; {institution.name} {institution.npsn ? `(NPSN: ${institution.npsn})` : ''} &bull; Terhubung ke Mode Penyimpanan Terpusat cPanel
+                ExamGuard v1.2 &bull; {institution.name} {institution.npsn ? `(NPSN: ${institution.npsn})` : ''} &bull; Terhubung ke Mode Penyimpanan Terpusat cPanel
               </p>
             </div>
           </div>
@@ -4241,10 +4486,27 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
               </button>
             )}
 
-            <div className="flex items-center gap-2 text-xs font-mono text-zinc-500 bg-zinc-100 px-2.5 py-1 rounded-md border border-zinc-200/60">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span>SYSTEM READY</span>
-            </div>
+            {/* Badge Hari, Tanggal & Jam Live Real-time */}
+            {(() => {
+              const live = formatIndonesianLiveDateTime(currentLiveTime);
+              return (
+                <div
+                  className="flex items-center gap-2 text-xs text-zinc-700 bg-zinc-100 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-xl border border-zinc-200/80 shadow-2xs font-medium shrink-0"
+                  title="Waktu Sistem Real-Time (Live)"
+                >
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
+                  <div className="flex items-center gap-1.5 whitespace-nowrap">
+                    <span className="hidden sm:inline font-semibold text-zinc-800">
+                      {live.dayDate}
+                    </span>
+                    <span className="hidden sm:inline text-zinc-300">&bull;</span>
+                    <span className="font-mono font-bold text-zinc-900">
+                      {live.clock}
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </header>
 
@@ -4729,8 +4991,43 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                             </td>
 
                             <td className="py-3.5 px-4 text-zinc-500 text-[11px]">
-                              <div>{exam.start_time ? exam.start_time.replace('T', ' ') : 'Fleksibel'}</div>
-                              <div>s/d {exam.end_time ? exam.end_time.replace('T', ' ') : '-'}</div>
+                              {(() => {
+                                const nowMs = currentLiveTime ? currentLiveTime.getTime() : Date.now();
+                                let statusBadge = null;
+                                if (exam.start_time && exam.end_time) {
+                                  const sMs = new Date(exam.start_time).getTime();
+                                  const eMs = new Date(exam.end_time).getTime();
+                                  if (nowMs < sMs) {
+                                    statusBadge = (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 mb-1">
+                                        <Clock className="w-2.5 h-2.5 text-blue-500" />
+                                        Terjadwal
+                                      </span>
+                                    );
+                                  } else if (nowMs >= sMs && nowMs <= eMs) {
+                                    statusBadge = (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-300 mb-1">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                        Sedang Berlangsung
+                                      </span>
+                                    );
+                                  } else {
+                                    statusBadge = (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-zinc-100 text-zinc-600 border border-zinc-200 mb-1">
+                                        <CheckCircle2 className="w-2.5 h-2.5 text-zinc-400" />
+                                        Selesai
+                                      </span>
+                                    );
+                                  }
+                                }
+                                return (
+                                  <div>
+                                    {statusBadge && <div>{statusBadge}</div>}
+                                    <div className="font-mono">{exam.start_time ? exam.start_time.replace('T', ' ') : 'Fleksibel'}</div>
+                                    <div className="font-mono">s/d {exam.end_time ? exam.end_time.replace('T', ' ') : '-'}</div>
+                                  </div>
+                                );
+                              })()}
                             </td>
 
                             <td className="py-3.5 px-4">
@@ -5342,6 +5639,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                                 const startTime = formatExamTimeDisplay(exam.start_time, '07:30');
                                 const endTime = formatExamTimeDisplay(exam.end_time, '16:00');
                                 const gradeLabel = getGradeLabel(exam.grade_level);
+                                const timingStatus = getExamTimingStatus(exam, currentLiveTime ? currentLiveTime.getTime() : Date.now());
 
                                 return (
                                   <tr key={exam.id} className="hover:bg-zinc-50/80 transition-colors">
@@ -5388,11 +5686,29 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                                       </span>
                                     </td>
 
-                                    {/* 6. Waktu (mulai-selesai) */}
-                                    <td className="py-3 px-3 font-mono text-[11px] text-zinc-700 whitespace-nowrap">
-                                      <div className="flex items-center gap-1">
-                                        <Clock className="w-3 h-3 text-zinc-400" />
-                                        <span>{startTime} - {endTime} WIB</span>
+                                    {/* 6. Waktu (mulai-selesai) dengan Status Soal (Berlangsung, Akan Datang, Berakhir) */}
+                                    <td className="py-3 px-3 whitespace-nowrap">
+                                      <div className="flex flex-col gap-1">
+                                        {timingStatus.status === 'ongoing' ? (
+                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 w-fit shadow-2xs">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                            <span>Berlangsung</span>
+                                          </span>
+                                        ) : timingStatus.status === 'upcoming' ? (
+                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 w-fit shadow-2xs">
+                                            <Clock className="w-2.5 h-2.5 text-blue-500" />
+                                            <span>Akan Datang</span>
+                                          </span>
+                                        ) : (
+                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-zinc-100 text-zinc-600 border border-zinc-200 w-fit">
+                                            <CheckCircle2 className="w-2.5 h-2.5 text-zinc-400" />
+                                            <span>Berakhir</span>
+                                          </span>
+                                        )}
+                                        <div className="flex items-center gap-1 font-mono text-[11px] text-zinc-700">
+                                          <Clock className="w-3 h-3 text-zinc-400 shrink-0" />
+                                          <span>{startTime} - {endTime} WIB</span>
+                                        </div>
                                       </div>
                                     </td>
 
@@ -5790,35 +6106,104 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                               );
                             })()}
 
-                            {/* 4. Tanggal & Waktu */}
-                            <div className="p-3.5 bg-zinc-50/70 border border-zinc-200/70 rounded-xl space-y-1">
-                              <div className="flex items-center gap-1.5 text-zinc-500 text-[11px] font-medium uppercase tracking-wider">
-                                <Clock className="w-3.5 h-3.5 text-emerald-600" />
-                                <span>Waktu & Durasi Ujian</span>
-                              </div>
-                              <div className="font-bold text-zinc-900 text-sm">
-                                {currentExam.start_time
-                                  ? new Date(currentExam.start_time).toLocaleDateString('id-ID', {
-                                      weekday: 'short',
-                                      day: 'numeric',
-                                      month: 'short',
-                                      year: 'numeric',
-                                    })
-                                  : '-'}
-                              </div>
-                              <div className="text-xs text-zinc-600 font-mono">
-                                {currentExam.start_time
-                                  ? new Date(currentExam.start_time).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
-                                  : '-'}{' '}
-                                &ndash;{' '}
-                                {currentExam.end_time
-                                  ? new Date(currentExam.end_time).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
-                                  : '-'}
-                              </div>
-                              <div className="pt-0.5 text-[11px] text-zinc-500 font-medium">
-                                Durasi Pengerjaan: <strong className="text-zinc-800">{currentExam.duration_minutes || 90} Menit</strong>
-                              </div>
-                            </div>
+                            {/* 4. Tanggal, Waktu & Countdown Akses Soal */}
+                            {(() => {
+                              const nowMs = currentLiveTime ? currentLiveTime.getTime() : Date.now();
+                              let examStatus = 'not_started';
+                              let diffSec = 0;
+                              let startMs = null;
+                              let endMs = null;
+
+                              if (currentExam.start_time) {
+                                startMs = new Date(currentExam.start_time).getTime();
+                              }
+                              if (currentExam.end_time) {
+                                endMs = new Date(currentExam.end_time).getTime();
+                              }
+
+                              if (startMs && nowMs < startMs) {
+                                examStatus = 'not_started';
+                                diffSec = Math.max(0, Math.floor((startMs - nowMs) / 1000));
+                              } else if (endMs && nowMs > endMs) {
+                                examStatus = 'finished';
+                              } else if (startMs) {
+                                examStatus = 'ongoing';
+                                if (endMs) {
+                                  diffSec = Math.max(0, Math.floor((endMs - nowMs) / 1000));
+                                }
+                              }
+
+                              return (
+                                <div className="p-3.5 bg-zinc-50/70 border border-zinc-200/70 rounded-xl space-y-1.5">
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-1.5 text-zinc-500 text-[11px] font-medium uppercase tracking-wider">
+                                      <Clock className="w-3.5 h-3.5 text-emerald-600" />
+                                      <span>Waktu & Durasi Ujian</span>
+                                    </div>
+                                    {/* Status Jadwal Akses Soal */}
+                                    {examStatus === 'ongoing' ? (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
+                                        Sedang Berlangsung
+                                      </span>
+                                    ) : examStatus === 'not_started' ? (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                                        Belum Dimulai
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-zinc-100 text-zinc-600 border border-zinc-200">
+                                        Selesai
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <div className="font-bold text-zinc-900 text-sm">
+                                    {currentExam.start_time
+                                      ? new Date(currentExam.start_time).toLocaleDateString('id-ID', {
+                                          weekday: 'short',
+                                          day: 'numeric',
+                                          month: 'short',
+                                          year: 'numeric',
+                                        })
+                                      : '-'}
+                                  </div>
+                                  <div className="text-xs text-zinc-600 font-mono">
+                                    {currentExam.start_time
+                                      ? new Date(currentExam.start_time).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+                                      : '-'}{' '}
+                                    &ndash;{' '}
+                                    {currentExam.end_time
+                                      ? new Date(currentExam.end_time).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+                                      : '-'}
+                                  </div>
+
+                                  {/* Countdown Waktu Akses Soal */}
+                                  <div className="pt-1 border-t border-zinc-200/80 flex items-center justify-between text-[11px]">
+                                    <span className="text-zinc-600 font-medium">
+                                      {examStatus === 'not_started' ? 'Mulai dlm:' : examStatus === 'ongoing' ? 'Sisa Waktu:' : 'Status:'}
+                                    </span>
+                                    {examStatus === 'not_started' && diffSec > 0 ? (
+                                      <span className="font-mono font-bold text-xs text-blue-900 bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-200">
+                                        {formatDigitalCountdown(diffSec)}
+                                      </span>
+                                    ) : examStatus === 'ongoing' && diffSec > 0 ? (
+                                      <span className="font-mono font-bold text-xs text-emerald-900 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-300 flex items-center gap-1">
+                                        <span>{formatDigitalCountdown(diffSec)}</span>
+                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                      </span>
+                                    ) : examStatus === 'finished' ? (
+                                      <span className="font-mono text-xs text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded-lg border border-zinc-200">
+                                        Waktu Selesai
+                                      </span>
+                                    ) : (
+                                      <span className="font-mono text-xs text-zinc-600">
+                                        {currentExam.duration_minutes || 90} Menit
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })()}
                           </div>
                         ) : (
                           <div className="p-6 text-center text-zinc-500 text-xs">
@@ -8801,15 +9186,6 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                           <h3 className="text-base font-semibold text-zinc-900">
                             Mode Lingkungan Aplikasi & Bypass Pengujian
                           </h3>
-                          <span
-                            className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase font-mono ${
-                              appModeConfig?.app_mode === 'production'
-                                ? 'bg-zinc-900 text-white'
-                                : 'bg-amber-100 text-amber-800 border border-amber-300'
-                            }`}
-                          >
-                            {appModeConfig?.app_mode === 'production' ? 'Mode Produksi Resmi' : 'Mode Demo / Simulasi'}
-                          </span>
                         </div>
                         <p className="text-xs text-zinc-500">
                           Beralih antara Mode Produksi (keamanan ketat tanpa toleransi) dan Mode Simulasi (bypass sensor untuk localhost / Laragon).
@@ -9682,7 +10058,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                         type="text"
                         required
                         value={institution.name}
-                        onChange={(e) => setInstitution({ ...institution, name: e.target.value })}
+                        onChange={(e) => { isInstitutionDirtyRef.current = true; setInstitution({ ...institution, name: e.target.value }); }}
                         className="w-full px-3.5 py-2.5 border border-zinc-300 rounded-xl text-sm focus:ring-2 focus:ring-zinc-900 focus:outline-none"
                       />
                     </div>
@@ -11098,11 +11474,13 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="text-xs font-semibold text-zinc-900">
                               7. Sensor Kamera & Mikrofon
-                              <Smartphone className="w-2.5 h-2.5" /> HP
                             </span>
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di Laptop via Webcam">
-                              <Laptop className="w-2.5 h-2.5" /> Laptop
-                            </span>
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di HP">
+                                  <Smartphone className="w-2.5 h-2.5" /> HP
+                                </span>
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white text-zinc-600 text-[9px] font-medium border border-zinc-200" title="Didukung di Laptop">
+                                  <Laptop className="w-2.5 h-2.5" /> Laptop
+                                </span>
                           </div>
                           <p className="text-[11px] text-zinc-500 mt-1 leading-relaxed">
                             Meminta izin sensor kamera depan dan audio peramban untuk pengawasan kejujuran ujian peserta.
@@ -11163,6 +11541,52 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                     </div>
                   </div>
 
+                                    {/* Pengaturan Batas Toleransi Pelanggaran (0 = Unlimited / Mode Bebas) */}
+                  <div className="p-4 rounded-xl border border-zinc-200/90 bg-zinc-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <ShieldAlert className="w-4 h-4 text-rose-600" />
+                        <span className="text-xs font-semibold text-zinc-900">
+                          Batas Toleransi Pelanggaran (Terkunci Otomatis)
+                        </span>
+                        {Number(institution.browser_permissions?.max_violations ?? 3) === 0 ? (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold border border-emerald-200">
+                            Mode Bebas / Unlimited
+                          </span>
+                        ) : (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 font-bold border border-rose-200">
+                            Kunci Setelah {institution.browser_permissions?.max_violations ?? 3}x
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-zinc-500 mt-1 leading-relaxed">
+                        Jumlah pelanggaran (keluar fullscreen, beralih tab, minimize) sebelum sistem mengunci total layar siswa. 
+                        <strong> Ketik 0 jika ingin Mode Bebas (Unlimited / Tanpa Batas Kunci)</strong>, sistem hanya akan mencatat log tanpa pernah mengunci layar ujian.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <input
+                        type="number"
+                        min="0"
+                        max="99"
+                        value={institution.browser_permissions?.max_violations ?? 3}
+                        onChange={(e) => {
+                          isInstitutionDirtyRef.current = true;
+                          const val = Math.max(0, parseInt(e.target.value, 10) || 0);
+                          setInstitution({
+                            ...institution,
+                            browser_permissions: {
+                              ...(institution.browser_permissions || {}),
+                              max_violations: val,
+                            },
+                          });
+                        }}
+                        className="w-20 px-3 py-1.5 text-xs font-mono font-bold text-center border border-zinc-300 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-zinc-900"
+                      />
+                      <span className="text-xs text-zinc-600 font-medium">Kali</span>
+                    </div>
+                  </div>
+
                   {/* Tombol Simpan Ceklis Izin Browser */}
                   <div className="flex justify-end pt-4 border-t border-zinc-100">
                     <button
@@ -11214,10 +11638,10 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                       <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200/80 text-emerald-800">
                         <p className="font-semibold text-xs mb-1 flex items-center gap-1.5">
                           <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                          ExampGuard v1.0 Siap 100% untuk Shared Hosting & Subdomain cPanel
+                          ExamGuard v1.1 Siap 100% untuk Shared Hosting & Subdomain cPanel
                         </p>
                         <p className="text-[11px] leading-relaxed text-emerald-700">
-                          Sistem telah dilengkapi berkas paket <code className="font-mono bg-emerald-100/80 px-1 rounded font-semibold">ExampGuard-v1.0.zip</code> yang memuat jembatan <strong>PHP PDO SQLite REST API</strong> (<code className="font-mono">api/index.php</code>) dan proteksi <strong>.htaccess Enterprise</strong> (mencegah akses unduh database, auto-redirect HTTPS, dan SPA routing anti-error 404).
+                          Sistem telah dilengkapi berkas paket <code className="font-mono bg-emerald-100/80 px-1 rounded font-semibold">ExamGuard-v1.0.zip</code> yang memuat jembatan <strong>PHP PDO SQLite REST API</strong> (<code className="font-mono">api/index.php</code>) dan proteksi <strong>.htaccess Enterprise</strong> (mencegah akses unduh database, auto-redirect HTTPS, dan SPA routing anti-error 404).
                         </p>
                       </div>
 
@@ -11230,7 +11654,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                           <div>
                             <h4 className="font-semibold text-zinc-900">Ambil Berkas Arsip Rilis Siap Pakai</h4>
                             <p className="text-zinc-600 text-[11px] mt-0.5">
-                              Berkas paket rilis siap pakai telah disediakan di root direktori proyek: <code className="font-mono font-semibold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">ExampGuard-v1.0.zip</code>. Jika Anda melakukan perubahan kode sumber baru, cukup jalankan <code className="font-mono bg-zinc-100 px-1 py-0.5 rounded">npm run build</code> lalu kompres seluruh isi folder <code className="font-mono">dist/</code>.
+                              Berkas paket rilis siap pakai telah disediakan di root direktori proyek: <code className="font-mono font-semibold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">ExamGuard-v1.0.zip</code>. Jika Anda melakukan perubahan kode sumber baru, cukup jalankan <code className="font-mono bg-zinc-100 px-1 py-0.5 rounded">npm run build</code> lalu kompres seluruh isi folder <code className="font-mono">dist/</code>.
                             </p>
                           </div>
                         </div>
@@ -11245,7 +11669,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                             <div className="text-zinc-600 text-[11px] mt-1 space-y-1">
                               <div>&bull; Buka cPanel hosting sekolah Anda &rarr; Pilih menu <strong>File Manager</strong>.</div>
                               <div>&bull; Masuk ke direktori target: <code className="font-mono bg-zinc-100 px-1 py-0.5 rounded">public_html</code> (untuk domain utama) atau folder subdomain (contoh: <code className="font-mono bg-zinc-100 px-1 py-0.5 rounded">public_html/ujian</code> untuk <code className="font-mono">ujian.sekolah.sch.id</code>).</div>
-                              <div>&bull; Klik <strong>Upload</strong> lalu unggah berkas <code className="font-mono font-semibold">ExampGuard-v1.0.zip</code>.</div>
+                              <div>&bull; Klik <strong>Upload</strong> lalu unggah berkas <code className="font-mono font-semibold">ExamGuard-v1.0.zip</code>.</div>
                               <div>&bull; Klik kanan berkas ZIP tersebut di cPanel &rarr; pilih <strong>Extract</strong> (Ekstrak di folder yang sama).</div>
                               <div>&bull; Unggah berkas database <code className="font-mono">examguard.db</code> ke folder yang sama (opsional, jika tidak diunggah sistem otomatis membuat database baru saat diakses).</div>
                             </div>
@@ -11664,10 +12088,10 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                 <div>
                   <div className="inline-flex items-center gap-2 mb-1.5">
                     <h2 className="text-xl sm:text-2xl font-bold text-zinc-900 tracking-tight">
-                      ExampGuard v1.0
+                      ExamGuard v1.2
                     </h2>
                     <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-mono font-semibold">
-                      v1.0.0 Stable
+                      v1.2.0 Stable
                     </span>
                   </div>
                   <p className="text-xs sm:text-sm text-zinc-600 max-w-xl mx-auto leading-relaxed">
@@ -11692,134 +12116,336 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                 </div>
               </div>
 
-              {/* FITUR KHUSUS: PEMERIKSAAN PEMBARUAN DI GITHUB */}
-              <div className="bg-white border border-zinc-200/80 rounded-2xl p-6 shadow-2xs space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3 border-b border-zinc-100">
+              {/* KARTU TUNGGAL: PUSAT PEMBARUAN SISTEM (COLLAPSIBLE / BISA DI-HIDE) */}
+              <div className="bg-white border border-zinc-200/80 rounded-2xl p-6 shadow-2xs space-y-5 transition-all">
+                {/* Header Card: Judul, Info, Tombol Periksa & Tombol Hide/Show */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-zinc-100">
                   <div className="flex items-center gap-3">
                     <div className="p-2.5 rounded-xl bg-zinc-900 text-white shadow-xs">
                       <RefreshCw className={`w-5 h-5 ${isCheckingUpdate ? 'animate-spin' : ''}`} />
                     </div>
                     <div>
-                      <h3 className="text-sm font-semibold text-zinc-900">
-                        Pemeriksaan Pembaruan Sistem (GitHub Release Watcher)
-                      </h3>
-                      <p className="text-xs text-zinc-500">
-                        Cek ketersediaan pembaruan, perbaikan bug, atau fitur baru langsung dari repositori resmi GitHub
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-sm font-semibold text-zinc-900">
+                          Pusat Pembaruan Sistem (System Update Hub)
+                        </h3>
+                        <span className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full font-mono font-semibold">
+                          v1.2.0 Active
+                        </span>
+                      </div>
+                      <p className="text-xs text-zinc-500 mt-0.5">
+                        Periksa ketersediaan pembaruan dari GitHub atau unggah berkas rilis ZIP secara langsung
                       </p>
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={handleCheckForUpdates}
-                    disabled={isCheckingUpdate}
-                    className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-zinc-900 hover:bg-zinc-800 active:bg-zinc-950 text-white rounded-xl text-xs font-semibold shadow-xs transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed shrink-0"
-                  >
-                    {isCheckingUpdate ? (
-                      <>
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        <span>Memeriksa GitHub...</span>
-                      </>
-                    ) : (
-                      <>
-                        <RefreshCw className="w-3.5 h-3.5" />
-                        <span>Periksa Pembaruan Sekarang</span>
-                      </>
-                    )}
-                  </button>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {/* Tombol Periksa Pembaruan Sekarang */}
+                    <button
+                      type="button"
+                      onClick={handleCheckForUpdates}
+                      disabled={isCheckingUpdate}
+                      className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-zinc-900 hover:bg-zinc-800 active:bg-zinc-950 text-white rounded-xl text-xs font-semibold shadow-xs transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                      {isCheckingUpdate ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>Memeriksa GitHub...</span>
+                        </>
+                      ) : (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5" />
+                          <span>Periksa Pembaruan Sekarang</span>
+                        </>
+                      )}
+                    </button>
+
+                    {/* Tombol Toggle Hide / Show */}
+                    <button
+                      type="button"
+                      onClick={() => setShowUpdatePanel((prev) => !prev)}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 text-zinc-700 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+                      title={showUpdatePanel ? 'Sembunyikan panel pembaruan' : 'Buka panel pembaruan'}
+                    >
+                      {showUpdatePanel ? (
+                        <>
+                          <span>Sembunyikan</span>
+                          <ChevronUp className="w-3.5 h-3.5" />
+                        </>
+                      ) : (
+                        <>
+                          <span>Tampilkan</span>
+                          <ChevronDown className="w-3.5 h-3.5" />
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
 
-                {/* Status Hasil Pengecekan */}
-                {updateCheckResult ? (
-                  <div className="animate-in fade-in slide-in-from-top-1 duration-200">
-                    {updateCheckResult.status === 'up_to_date' && (
-                      <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 space-y-2">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                            <span className="font-semibold text-xs">
-                              Sistem Anda Menggunakan Versi Terbaru ({updateCheckResult.currentVersion})
-                            </span>
-                          </div>
-                          <span className="text-[10px] text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full font-mono">
-                            Diperiksa: {updateCheckResult.checkedAt}
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-emerald-800 leading-relaxed">
-                          Tidak ada pembaruan baru yang ditemukan. Versi aplikasi yang Anda pasang saat ini adalah versi rilis resmi yang stabil dan siap produksi.
-                        </p>
-                        {updateCheckResult.commitSha && (
-                          <div className="text-[10px] text-emerald-700 pt-1 flex items-center gap-2">
-                            <span>Sinkronisasi Commit: <code className="font-mono bg-emerald-100 px-1 py-0.5 rounded">{updateCheckResult.commitSha}</code></span>
-                            {updateCheckResult.publishedAt && <span>&bull; Rilis: {updateCheckResult.publishedAt}</span>}
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {updateCheckResult.status === 'update_available' && (
-                      <div className="p-4 rounded-xl bg-blue-50 border border-blue-200 text-blue-900 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <AlertCircle className="w-4 h-4 text-blue-600 shrink-0" />
-                            <span className="font-semibold text-xs">
-                              Pembaruan Versi Baru Tersedia: {updateCheckResult.latestVersion}
-                            </span>
-                          </div>
-                          <span className="text-[10px] text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full font-mono">
-                            Versi Saat Ini: {updateCheckResult.currentVersion}
-                          </span>
-                        </div>
-                        {updateCheckResult.releaseNotes && (
-                          <div className="bg-white/80 border border-blue-200/60 rounded-lg p-2.5 text-[11px] text-blue-950 font-mono whitespace-pre-wrap max-h-36 overflow-y-auto">
-                            {updateCheckResult.releaseNotes}
-                          </div>
-                        )}
-                        <div className="flex items-center gap-2 pt-1">
-                          <a
-                            href={updateCheckResult.downloadUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-2xs transition-colors"
-                          >
-                            <Download className="w-3.5 h-3.5" />
-                            <span>Unduh Pembaruan di GitHub</span>
-                            <ExternalLink className="w-3 h-3 text-blue-200" />
-                          </a>
-                        </div>
-                      </div>
-                    )}
-
-                    {updateCheckResult.status === 'error' && (
-                      <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 space-y-2">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                            <span className="font-semibold text-xs">Pengecekan Pembaruan Gagal</span>
-                          </div>
-                          <span className="text-[10px] text-amber-700 font-mono">{updateCheckResult.checkedAt}</span>
-                        </div>
-                        <p className="text-[11px] text-amber-800 leading-relaxed">
-                          {updateCheckResult.message}
-                        </p>
-                        <a
-                          href={updateCheckResult.downloadUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 text-xs text-amber-800 font-semibold hover:underline pt-1"
-                        >
-                          <span>Kunjungi Halaman Rilis GitHub Secara Manual</span>
-                          <ExternalLink className="w-3 h-3" />
-                        </a>
-                      </div>
-                    )}
+                {/* Status Bar Ringkas Saat Panel Di-Hide (Tertutup) */}
+                {!showUpdatePanel && (
+                  <div className="flex items-center justify-between p-3.5 rounded-xl bg-zinc-50 border border-zinc-200/70 text-zinc-600 text-xs">
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span className="text-[11px]">
+                        Versi terpasang: <strong className="text-zinc-900 font-mono">v1.2.0</strong> &bull; Klik <strong>"Periksa Pembaruan Sekarang"</strong> untuk mengecek rilis baru atau <strong>"Tampilkan"</strong> untuk membuka opsi unggah berkas ZIP.
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-zinc-400 font-medium hidden sm:inline">Panel Tersembunyi</span>
                   </div>
-                ) : (
-                  <div className="flex items-center justify-between p-3 rounded-xl bg-zinc-50 border border-zinc-200/70 text-zinc-600 text-xs">
-                    <span className="text-[11px]">
-                      Versi terpasang: <strong className="text-zinc-900 font-mono">v1.0.0</strong> &bull; Klik tombol di atas untuk memeriksa apakah ada rilis terbaru di repositori GitHub resmi.
-                    </span>
-                    <span className="text-[10px] text-zinc-400 font-medium">Auto-Check Ready</span>
+                )}
+
+                {/* Konten Pembaruan (Terbuka saat showUpdatePanel === true) */}
+                {showUpdatePanel && (
+                  <div className="space-y-5 animate-in fade-in slide-in-from-top-2 duration-200">
+                    {/* 1. Loading State saat Sedang Memeriksa GitHub */}
+                    {isCheckingUpdate && (
+                      <div className="p-4 rounded-xl bg-blue-50/80 border border-blue-200 text-blue-900 flex items-center gap-3 animate-pulse">
+                        <Loader2 className="w-5 h-5 text-blue-600 animate-spin shrink-0" />
+                        <div>
+                          <p className="text-xs font-semibold text-blue-950">
+                            Menghubungi repositori resmi GitHub...
+                          </p>
+                          <p className="text-[11px] text-blue-700">
+                            Memeriksa tag rilis terbaru, commit log, dan berkas paket rilis resmi ExamGuard.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 2. Hasil Pengecekan GitHub (Up to date / Update available / Error) */}
+                    {!isCheckingUpdate && updateCheckResult && (
+                      <div className="space-y-3">
+                        {updateCheckResult.status === 'up_to_date' && (
+                          <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                                <span className="font-semibold text-xs">
+                                  Sistem Anda Menggunakan Versi Terbaru ({updateCheckResult.currentVersion})
+                                </span>
+                              </div>
+                              <span className="text-[10px] text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full font-mono">
+                                Diperiksa: {updateCheckResult.checkedAt}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-emerald-800 leading-relaxed">
+                              Tidak ada pembaruan baru yang ditemukan. Versi aplikasi yang Anda pasang saat ini adalah versi rilis resmi yang stabil dan siap produksi.
+                            </p>
+                            {updateCheckResult.commitSha && (
+                              <div className="text-[10px] text-emerald-700 pt-1 flex items-center gap-2">
+                                <span>Sinkronisasi Commit: <code className="font-mono bg-emerald-100 px-1 py-0.5 rounded">{updateCheckResult.commitSha}</code></span>
+                                {updateCheckResult.publishedAt && <span>&bull; Rilis: {updateCheckResult.publishedAt}</span>}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {updateCheckResult.status === 'update_available' && (
+                          <div className="p-4 rounded-xl bg-blue-50 border border-blue-200 text-blue-900 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <AlertCircle className="w-4 h-4 text-blue-600 shrink-0" />
+                                <span className="font-semibold text-xs">
+                                  Pembaruan Versi Baru Tersedia: {updateCheckResult.latestVersion}
+                                </span>
+                              </div>
+                              <span className="text-[10px] text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full font-mono">
+                                Versi Saat Ini: {updateCheckResult.currentVersion}
+                              </span>
+                            </div>
+                            {updateCheckResult.releaseNotes && (
+                              <div className="bg-white/80 border border-blue-200/60 rounded-lg p-2.5 text-[11px] text-blue-950 font-mono whitespace-pre-wrap max-h-36 overflow-y-auto">
+                                {updateCheckResult.releaseNotes}
+                              </div>
+                            )}
+                            <div className="flex flex-wrap items-center gap-2 pt-1">
+                              {/* Opsi 1: Pasang Pembaruan 1-Klik Langsung dari GitHub */}
+                              <button
+                                type="button"
+                                onClick={() => handleRun1ClickUpdate(updateCheckResult.zipDownloadUrl || updateCheckResult.downloadUrl)}
+                                disabled={isAutoUpdating}
+                                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-lg text-xs font-semibold shadow-xs transition-all cursor-pointer disabled:opacity-60"
+                              >
+                                <Zap className="w-3.5 h-3.5 text-amber-300 fill-current" />
+                                <span>⚡ Pasang Pembaruan 1-Klik Otomatis ({updateCheckResult.latestVersion})</span>
+                              </button>
+
+                              <a
+                                href={updateCheckResult.downloadUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1.5 px-3 py-2 bg-white hover:bg-zinc-100 text-zinc-700 border border-zinc-300 rounded-lg text-xs font-semibold shadow-2xs transition-colors"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                                <span>Unduh Manual di GitHub</span>
+                                <ExternalLink className="w-3 h-3 text-zinc-400" />
+                              </a>
+                            </div>
+                          </div>
+                        )}
+
+                        {updateCheckResult.status === 'error' && (
+                          <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                                <span className="font-semibold text-xs">Pengecekan Pembaruan Gagal</span>
+                              </div>
+                              <span className="text-[10px] text-amber-700 font-mono">{updateCheckResult.checkedAt}</span>
+                            </div>
+                            <p className="text-[11px] text-amber-800 leading-relaxed">
+                              {updateCheckResult.message}
+                            </p>
+                            <a
+                              href={updateCheckResult.downloadUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1.5 text-xs text-amber-800 font-semibold hover:underline pt-1"
+                            >
+                              <span>Kunjungi Halaman Rilis GitHub Secara Manual</span>
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {!isCheckingUpdate && !updateCheckResult && (
+                      <div className="p-3.5 rounded-xl bg-zinc-50 border border-zinc-200/70 text-zinc-600 text-xs flex items-center justify-between">
+                        <span>Belum dilakukan pengecekan ke GitHub pada sesi ini. Klik tombol <strong>"Periksa Pembaruan Sekarang"</strong> di kanan atas untuk mengecek rilis terbaru.</span>
+                        <span className="text-[10px] text-zinc-400 font-mono shrink-0 ml-2">Standby</span>
+                      </div>
+                    )}
+
+                    {/* 3. PEMISAH & BAGIAN UNGGAH BERKAS ZIP DENGAN TATA CARA */}
+                    <div className="pt-4 border-t border-zinc-200/80 space-y-4">
+                      {/* Sub-Header: Opsi Unggah Berkas ZIP */}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2.5">
+                          <div className="p-1.5 rounded-lg bg-blue-50 text-blue-700 border border-blue-200">
+                            <FolderArchive className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <h4 className="text-xs font-bold text-zinc-900 uppercase tracking-wide">
+                              Offline: Unggah Paket Pembaruan Manual (.ZIP)
+                            </h4>
+                            <p className="text-[11px] text-zinc-500">
+                              Alternatif pembaruan offline atau server tanpa akses internet keluar (cPanel firewall friendly)
+                            </p>
+                          </div>
+                        </div>
+                        <span className="text-[10px] text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-0.5 rounded-full font-medium hidden sm:inline">
+                          Manifest Verified
+                        </span>
+                      </div>
+
+                      {/* Tata Cara / Langkah-Langkah Unggah Berkas */}
+                      <div className="bg-zinc-50 border border-zinc-200/80 rounded-xl p-4 space-y-2.5 text-xs">
+                        <div className="flex items-center gap-2 text-zinc-900 font-semibold">
+                          <Info className="w-4 h-4 text-blue-600" />
+                          <span>Tata Cara &amp; Langkah Pemasangan Berkas ZIP:</span>
+                        </div>
+                        <ol className="list-decimal list-inside text-zinc-600 space-y-1.5 pl-1 leading-relaxed text-[11px]">
+                          <li>
+                            Unduh atau siapkan berkas rilis resmi (contoh: <code className="font-mono text-zinc-900 bg-white px-1 py-0.5 rounded border border-zinc-200">ExamGuard-v1.2.zip</code>) yang memuat berkas meta <code className="font-mono text-zinc-900">manifest.json</code>.
+                          </li>
+                          <li>
+                            Klik tombol <strong>"Pilih Berkas ZIP..."</strong> di bawah ini dan pilih berkas dari perangkat komputer Anda.
+                          </li>
+                          <li>
+                            Klik tombol <strong>"🚀 Verifikasi &amp; Pasang Pembaruan"</strong>. Sistem akan mengecek integritas berkas manifest secara otomatis.
+                          </li>
+                          <li>
+                            Sistem akan mengekstrak berkas kode dan menjalankan migrasi skema tabel jika diperlukan.
+                          </li>
+                          <li>
+                            <strong className="text-emerald-700">Garansi Keamanan Database:</strong> Berkas <code className="font-mono text-zinc-900 bg-white px-1 py-0.5 rounded border border-zinc-200">examguard.db</code> dilindungi secara mutlak dan tidak akan pernah tertimpa.
+                          </li>
+                        </ol>
+                      </div>
+
+                      {/* Kotak Interaktif Unggah Berkas ZIP */}
+                      <div className="p-4 rounded-xl bg-white border border-dashed border-zinc-300 space-y-3">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div className="space-y-0.5">
+                            <label className="text-xs font-semibold text-zinc-900 block">
+                              Pilih Berkas Paket ZIP
+                            </label>
+                            <p className="text-[11px] text-zinc-500">
+                              Format file harus .zip resmi yang berisi manifest.json
+                            </p>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="file"
+                              accept=".zip"
+                              id="update-zip-upload-input"
+                              className="hidden"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) setManualZipFile(file);
+                              }}
+                            />
+                            <label
+                              htmlFor="update-zip-upload-input"
+                              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-white border border-zinc-300 hover:bg-zinc-50 text-zinc-700 rounded-lg text-xs font-semibold shadow-2xs cursor-pointer transition-colors"
+                            >
+                              <Upload className="w-3.5 h-3.5" />
+                              <span>{manualZipFile ? 'Ganti Berkas ZIP' : 'Pilih Berkas ZIP...'}</span>
+                            </label>
+                          </div>
+                        </div>
+
+                        {manualZipFile && (
+                          <div className="p-3 bg-blue-50/60 border border-blue-200 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                            <div className="flex items-center gap-2 truncate">
+                              <FolderArchive className="w-4 h-4 text-blue-600 shrink-0" />
+                              <span className="font-semibold text-zinc-900 truncate">{manualZipFile.name}</span>
+                              <span className="text-[10px] text-zinc-500 font-mono">
+                                ({(manualZipFile.size / (1024 * 1024)).toFixed(2)} MB)
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <button
+                                type="button"
+                                onClick={handleRunManualZipUpdate}
+                                disabled={isUploadingZip}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-2xs cursor-pointer disabled:opacity-60 transition-colors"
+                              >
+                                {isUploadingZip ? (
+                                  <>
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                    <span>Memproses...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Zap className="w-3.5 h-3.5 text-amber-300 fill-current" />
+                                    <span>🚀 Verifikasi &amp; Pasang Pembaruan</span>
+                                  </>
+                                )}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setManualZipFile(null)}
+                                disabled={isUploadingZip}
+                                className="px-2 py-1.5 text-xs text-zinc-500 hover:text-zinc-800 cursor-pointer"
+                              >
+                                Batal
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="flex items-start gap-2 pt-1 text-[11px] text-zinc-500">
+                          <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                          <span>
+                            <strong>Proteksi Database Terjamin:</strong> Berkas SQLite (<code className="font-mono text-zinc-800 font-bold">examguard.db</code>) tidak akan disentuh dan data ujian tetap utuh 100%.
+                          </span>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
@@ -11832,48 +12458,117 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                     <Building2 className="w-5 h-5 text-zinc-700" />
                     <h3 className="text-sm font-semibold text-zinc-900">Arsitektur & Tujuan Aplikasi</h3>
                   </div>
-                  <p className="text-xs text-zinc-600 leading-relaxed">
-                    ExampGuard v1.0 dirancang khusus untuk memecahkan kelemahan pelaksanaan ujian Google Form standar dengan mengisolasi lingkungan peramban peserta:
+                  <p className="text-xs text-zinc-700 leading-relaxed">
+                    <strong className="text-zinc-900 font-semibold">ExamGuard for Google Forms</strong> adalah platform <em>Exam Browser</em> berbasis web modern yang dirancang untuk mengamankan jalannya asesmen atau ujian daring dengan Google Formulir. Siswa mengerjakan soal di dalam lingkungan peramban terkunci (<em>Kiosk Mode</em>) yang steril dari berbagai potensi kecurangan.
                   </p>
-                  <ul className="text-xs text-zinc-600 space-y-2 list-disc list-inside">
-                    <li><strong>Auto-Lock Screen:</strong> Penguncian seketika jika peserta beralih tab browser atau keluar dari mode Fullscreen.</li>
-                    <li><strong>GPS Geofencing Terkunci:</strong> Pin lokasi dikunci ke sensor hardware GPS perangkat (Haversine formula anti-manipulasi).</li>
-                    <li><strong>Multi-Device Lock:</strong> Kunci satu akun hanya untuk satu perangkat (Device ID) untuk mencegah perjokian.</li>
-                    <li><strong>Single Sign-On (SSO):</strong> Integrasi Google Workspace resmi sekolah dengan proteksi duplikasi email peserta.</li>
-                    <li><strong>Dual Backend cPanel:</strong> Mendukung Shared Hosting PHP PDO SQLite dan cPanel Node.js App.</li>
-                  </ul>
+                  <div className="space-y-1.5 pt-1">
+                    <span className="text-xs font-semibold text-zinc-900 block">Fitur Unggulan Utama:</span>
+                    <ol className="text-xs text-zinc-600 space-y-1.5 list-decimal list-inside pl-0.5 leading-relaxed">
+                      <li><strong>Fullscreen Lock:</strong> Penguncian layar penuh seketika saat ujian dimulai; mendeteksi pergantian tab, split screen, dan shortcut terlarang.</li>
+                      <li><strong>GPS Geofencing Presisi Tinggi:</strong> Validasi radius koordinat berbasis sensor perangkat (hanya bisa login &amp; mengerjakan di area tertentu).</li>
+                      <li><strong>One-Device Lock:</strong> Kunci satu akun hanya untuk satu perangkat fisik untuk mencegah perjokian atau login ganda.</li>
+                      <li><strong>Penjadwalan Soal:</strong> Buka dan tutup akses ujian secara otomatis sesuai jadwal waktu mulai dan selesai yang telah ditentukan proktor.</li>
+                      <li><strong>Alarm Peringatan Pelanggaran:</strong> Sirine otomatis berbunyi saat terjadi kecurangan ringan, serta layar merah penuh (<em>Red Screen</em>) saat akun dikunci.</li>
+                      <li><strong>Token Auto-Rilis:</strong> Rilis token soal dinamis dengan sistem hitung mundur (countdown) agar ujian dapat dimulai serentak.</li>
+                      <li><strong>Google SSO &amp; One Tap:</strong> Otentikasi praktis akun Google Workspace sekolah yang aktif sejak halaman login hingga verifikasi kelayakan sistem.</li>
+                      <li><strong>Google reCAPTCHA:</strong> Perlindungan gerbang login dari serangan bot otomatis dan percobaan tebak password (brute force).</li>
+                      <li><strong>Login Scan Kartu:</strong> Kemudahan login peserta dengan memindai kode QR pada kartu ujian cetak mandiri atau massal.</li>
+                      <li><strong>Multi-Device:</strong> Berjalan mulus di berbagai perangkat siswa (Android, Laptop/PC Desktop, dan iOS Safari) tanpa perlu instal aplikasi tambahan.</li>
+                    </ol>
+                  </div>
+                  <div className="p-3 bg-emerald-50 border border-emerald-200/80 rounded-xl text-[11px] text-emerald-900 leading-relaxed flex items-start gap-2">
+                    <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                    <span>
+                      <strong>Hosting Hemat &amp; Bebas Rumit:</strong> Aplikasi ini dapat dihosting dengan sangat hemat dan mudah di cPanel Shared Hosting biasa tanpa perlu konfigurasi server yang rumit maupun pengaturan database server karena ditenagai oleh SQLite bawaan.
+                    </span>
+                  </div>
                 </div>
 
-                {/* Kartu 2: Spesifikasi Teknis */}
+                {/* Kartu 2: Spesifikasi Teknis, Server, Koneksi & Lisensi */}
                 <div className="bg-white border border-zinc-200/80 rounded-2xl p-6 shadow-2xs space-y-4">
                   <div className="flex items-center gap-2.5 pb-3 border-b border-zinc-100">
                     <Server className="w-5 h-5 text-zinc-700" />
-                    <h3 className="text-sm font-semibold text-zinc-900">Spesifikasi Teknologi</h3>
+                    <div>
+                      <h3 className="text-sm font-semibold text-zinc-900">Spesifikasi Teknologi &amp; Status Server</h3>
+                      <p className="text-[11px] text-zinc-500">Informasi server runtime, koneksi database, dan lisensi resmi aplikasi</p>
+                    </div>
                   </div>
                   <div className="divide-y divide-zinc-100 text-xs">
                     <div className="py-2 flex justify-between items-center">
                       <span className="text-zinc-500">Versi Rilis</span>
-                      <span className="font-semibold text-zinc-900 font-mono">ExampGuard v1.0.0</span>
+                      <span className="font-semibold text-zinc-900 font-mono">ExamGuard v1.2.0</span>
                     </div>
                     <div className="py-2 flex justify-between items-center">
                       <span className="text-zinc-500">Frontend Engine</span>
-                      <span className="font-semibold text-zinc-900">React 19 & Vite 6</span>
+                      <span className="font-semibold text-zinc-900">React 19 &amp; Vite 6</span>
                     </div>
                     <div className="py-2 flex justify-between items-center">
                       <span className="text-zinc-500">Database Engine</span>
-                      <span className="font-semibold text-zinc-900">SQLite (WAL Mode & ACID)</span>
+                      <span className="font-semibold text-zinc-900">SQLite (WAL Mode &amp; ACID)</span>
                     </div>
                     <div className="py-2 flex justify-between items-center">
                       <span className="text-zinc-500">Styling Framework</span>
                       <span className="font-semibold text-zinc-900">Tailwind CSS v4.0</span>
                     </div>
                     <div className="py-2 flex justify-between items-center">
-                      <span className="text-zinc-500">Peta & Geofencing</span>
-                      <span className="font-semibold text-zinc-900">Leaflet & OpenStreetMap</span>
+                      <span className="text-zinc-500">Peta &amp; Geofencing</span>
+                      <span className="font-semibold text-zinc-900">Leaflet &amp; OpenStreetMap</span>
                     </div>
                     <div className="py-2 flex justify-between items-center">
                       <span className="text-zinc-500">Dukungan Web Server</span>
                       <span className="font-semibold text-zinc-900">Apache / LiteSpeed / Nginx / Node.js</span>
+                    </div>
+
+                    {/* Informasi Server */}
+                    <div className="py-2 flex justify-between items-center">
+                      <span className="text-zinc-500">Informasi Server Host</span>
+                      <span className="font-semibold text-zinc-900 font-mono">
+                        {typeof window !== 'undefined' ? window.location.hostname : 'cPanel Host'} (PHP 8.x / Node.js)
+                      </span>
+                    </div>
+                    <div className="py-2 flex justify-between items-center">
+                      <span className="text-zinc-500">Protokol Jaringan</span>
+                      <span className="font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 text-[11px]">
+                        {typeof window !== 'undefined' && window.location.protocol === 'https:'
+                          ? '🔒 HTTPS (Terkunci SSL/TLS)'
+                          : '🌐 HTTP (Jaringan Lokal / Dev)'}
+                      </span>
+                    </div>
+
+                    {/* Informasi Koneksi */}
+                    <div className="py-2 flex justify-between items-center">
+                      <span className="text-zinc-500">Status Koneksi Database</span>
+                      <span className="inline-flex items-center gap-1.5 font-semibold text-emerald-700 font-mono text-[11px]">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                        <span>TERHUBUNG (Online &bull; 0ms Latensi SQLite)</span>
+                      </span>
+                    </div>
+                    <div className="py-2 flex justify-between items-center">
+                      <span className="text-zinc-500">Sinkronisasi Data</span>
+                      <span className="font-semibold text-zinc-900">
+                        Real-time Snapshot &bull; Mode WAL Terpusat
+                      </span>
+                    </div>
+
+                    {/* Status Lisensi */}
+                    <div className="py-2 flex justify-between items-center">
+                      <span className="text-zinc-500">Status Lisensi</span>
+                      <span className="inline-flex items-center gap-1.5 font-semibold text-emerald-800 bg-emerald-100/80 px-2.5 py-0.5 rounded-md border border-emerald-300 text-[11px]">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>AKTIF &bull; Enterprise Unlocked</span>
+                      </span>
+                    </div>
+                    <div className="py-2 flex justify-between items-center">
+                      <span className="text-zinc-500">Masa Berlaku Lisensi</span>
+                      <span className="font-semibold text-zinc-900">
+                        Permanen (Lifetime Unlimited Siswa)
+                      </span>
+                    </div>
+                    <div className="py-2 flex justify-between items-center">
+                      <span className="text-zinc-500">Jenis Hak Cipta</span>
+                      <span className="font-mono text-zinc-700 bg-zinc-100 px-2 py-0.5 rounded text-[11px]">
+                        The MIT License (Open Community)
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -11893,7 +12588,7 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                     </div>
                     <div>
                       <span className="font-semibold text-zinc-900 block">Status Rilis:</span>
-                      <span className="text-zinc-700">Versi 1.0 (Siap Rilis / Production Ready)</span>
+                      <span className="text-zinc-700">Versi 1.2 (OTA & 1-Click Auto-Update Ready)</span>
                     </div>
                     <div>
                       <span className="font-semibold text-zinc-900 block">Lisensi Perangkat Lunak:</span>
@@ -11914,17 +12609,17 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                       <svg className="w-5 h-5 text-zinc-900" viewBox="0 0 24 24" fill="currentColor">
                         <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
                       </svg>
-                      <h3 className="text-sm font-semibold text-zinc-900">Repositori & Kode Sumber</h3>
+                      <h3 className="text-sm font-semibold text-zinc-900">Repositori &amp; Kode Sumber</h3>
                     </div>
                     <p className="text-xs text-zinc-600 leading-relaxed">
-                      Kode sumber resmi ExampGuard tersedia secara terbuka di GitHub. Anda dapat memantau pembaruan, rilis versi, dan kontribusi pengembangan:
+                      Kode sumber resmi ExamGuard tersedia secara terbuka di GitHub. Anda dapat memantau pembaruan, rilis versi, dan kontribusi pengembangan:
                     </p>
                     <p className="text-[11px] text-zinc-400 font-mono bg-zinc-50 p-2 rounded-lg border border-zinc-200/70 truncate">
                       {GITHUB_REPO_URL}
                     </p>
                   </div>
 
-                  <div className="pt-3 border-t border-zinc-100">
+                  <div className="pt-3 border-t border-zinc-100 space-y-2.5">
                     <a
                       href={GITHUB_REPO_URL}
                       target="_blank"
@@ -11937,12 +12632,121 @@ Dewi Lestari,UJN-10-001,0078291044,24101,P,Katolik,X-1,10,Ruang 02,dewi.lestari@
                       <span>Kunjungi Repositori GitHub</span>
                       <ExternalLink className="w-3.5 h-3.5 text-zinc-400" />
                     </a>
-                    <p className="text-[10px] text-zinc-400 mt-2 text-center">
-                      Tautan repositori dapat disesuaikan langsung di file kode sumber sebelum rilis resmi.
+
+                    {/* Link Donasi Dukungan Developer Saweria */}
+                    <a
+                      href="https://saweria.co/chriz27"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-amber-500 via-amber-600 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-xl text-xs font-semibold shadow-xs transition-all cursor-pointer group"
+                    >
+                      <Heart className="w-3.5 h-3.5 text-rose-200 fill-rose-200 group-hover:scale-110 transition-transform" />
+                      <span>☕ Dukung &amp; Donasi Developer (Saweria)</span>
+                      <ExternalLink className="w-3.5 h-3.5 text-amber-100" />
+                    </a>
+
+                    <p className="text-[10px] text-zinc-400 pt-1 text-center leading-relaxed">
+                      Dukung pengembangan berkelanjutan ExamGuard melalui Saweria atau pantau pembaruan di GitHub.
                     </p>
                   </div>
                 </div>
               </div>
+
+              {/* Modals Status Auto-Update */}
+              {/* MODAL STATUS AUTO-UPDATE: SEDANG BERJALAN */}
+              {(isAutoUpdating || isUploadingZip) && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+                  <div className="bg-white rounded-2xl max-w-md w-full p-6 text-center space-y-4 shadow-2xl border border-zinc-200 animate-in zoom-in-95 duration-200">
+                    <div className="w-16 h-16 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center mx-auto">
+                      <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+                    </div>
+                    <div className="space-y-1">
+                      <h3 className="text-base font-bold text-zinc-900">
+                        Memproses Pembaruan Sistem...
+                      </h3>
+                      <p className="text-xs text-zinc-600 leading-relaxed">
+                        {autoUpdateStep || 'Sedang memproses pembaruan berkas aplikasi, mohon jangan menutup jendela atau mematikan server...'}
+                      </p>
+                    </div>
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-[11px] text-amber-800 text-left flex items-start gap-2">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                      <span>
+                        Database ujian SQLite (<code className="font-mono font-bold">examguard.db</code>) aman diproteksi dan tidak akan diubah.
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* MODAL STATUS AUTO-UPDATE: SUKSES */}
+              {autoUpdateSuccess && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+                  <div className="bg-white rounded-2xl max-w-md w-full p-6 text-center space-y-4 shadow-2xl border border-zinc-200 animate-in zoom-in-95 duration-200">
+                    <div className="w-16 h-16 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto">
+                      <CheckCircle2 className="w-8 h-8 text-emerald-600" />
+                    </div>
+                    <div className="space-y-1">
+                      <h3 className="text-base font-bold text-zinc-900">
+                        Pembaruan Berhasil Dipasang!
+                      </h3>
+                      <p className="text-xs text-zinc-600 leading-relaxed">
+                        {autoUpdateSuccess.message || 'ExamGuard telah berhasil diperbarui.'}
+                      </p>
+                      <div className="pt-2">
+                        <span className="px-3 py-1 bg-emerald-100 text-emerald-800 rounded-full text-xs font-mono font-bold">
+                          Versi Aktif: v{autoUpdateSuccess.version}
+                        </span>
+                      </div>
+                    </div>
+                    {autoUpdateSuccess.manifest?.changelog && (
+                      <div className="text-left bg-zinc-50 border border-zinc-200 rounded-xl p-3 text-[11px] text-zinc-700 max-h-32 overflow-y-auto space-y-1">
+                        <span className="font-semibold text-zinc-900 block pb-1 border-b border-zinc-200">Catatan Perubahan:</span>
+                        <ul className="list-disc list-inside space-y-0.5">
+                          {autoUpdateSuccess.manifest.changelog.map((item, idx) => (
+                            <li key={idx}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => window.location.reload()}
+                      className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl text-xs font-semibold shadow-xs cursor-pointer transition-colors"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>🔄 Muat Ulang Halaman Sekarang (Reload)</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* MODAL STATUS AUTO-UPDATE: GAGAL */}
+              {autoUpdateError && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+                  <div className="bg-white rounded-2xl max-w-md w-full p-6 text-center space-y-4 shadow-2xl border border-zinc-200 animate-in zoom-in-95 duration-200">
+                    <div className="w-16 h-16 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center mx-auto">
+                      <AlertTriangle className="w-8 h-8 text-rose-600" />
+                    </div>
+                    <div className="space-y-1">
+                      <h3 className="text-base font-bold text-zinc-900">
+                        Gagal Memasang Pembaruan
+                      </h3>
+                      <p className="text-xs text-rose-700 bg-rose-50 p-2.5 rounded-lg border border-rose-200 leading-relaxed font-mono">
+                        {autoUpdateError}
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setAutoUpdateError(null)}
+                        className="w-full px-4 py-2 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 rounded-xl text-xs font-semibold cursor-pointer transition-colors"
+                      >
+                        Tutup
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

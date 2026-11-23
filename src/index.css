@@ -233,3 +233,14 @@
   }
 }
 
+/* Animasi Marquee Berjalan Looping Halus untuk Nama Sekolah pada Navbar HP */
+@keyframes egSchoolNameMarquee {
+  0% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+

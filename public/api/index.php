@@ -238,6 +238,15 @@ function initDatabaseSchema(PDO $pdo) {
             solution TEXT NOT NULL DEFAULT '',
             user_agent TEXT NOT NULL DEFAULT ''
         );
+
+        CREATE TABLE IF NOT EXISTS active_broadcast (
+            id TEXT PRIMARY KEY DEFAULT 'singleton',
+            message TEXT NOT NULL DEFAULT '',
+            scheduled_at TEXT DEFAULT NULL,
+            broadcast_id TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
     ");
 
     // Pastikan singleton configs memiliki row awal
@@ -256,12 +265,29 @@ function initDatabaseSchema(PDO $pdo) {
         $pdo->exec("INSERT INTO berita_acara_config (id) VALUES ('singleton')");
     }
 
+    $bcast = $pdo->query("SELECT id FROM active_broadcast WHERE id = 'singleton'")->fetch();
+    if (!$bcast) {
+        $pdo->exec("INSERT INTO active_broadcast (id, message, broadcast_id) VALUES ('singleton', '', '')");
+    }
+
     // Default admin jika tabel user kosong
     $userCount = $pdo->query("SELECT count(*) as cnt FROM users")->fetch()['cnt'];
     if ($userCount == 0) {
         $stmt = $pdo->prepare("INSERT INTO users (id, username, password, nama, email, role, is_active, is_verified) VALUES (?, ?, ?, ?, ?, ?, 1, 1)");
         $stmt->execute(['admin-1', 'admin', 'admin123', 'Super Admin ExamGuard', 'admin@examguard.local', 'admin']);
-        $stmt->execute(['proktor-1', 'proktor', 'proktor123', 'Proktor Utama', 'proktor@examguard.local', 'proktor']);
+        $stmt->execute(['proktor-1', 'proktor', 'proktor', 'Proktor Utama', 'proktor@examguard.local', 'proctor']);
+    }
+
+    // Auto-repair proktor role & account jika belum ada atau role salah ('proktor' -> 'proctor')
+    try {
+        $pUser = $pdo->query("SELECT id, role FROM users WHERE username = 'proktor'")->fetch();
+        if (!$pUser) {
+            $pStmt = $pdo->prepare("INSERT INTO users (id, username, password, nama, email, role, is_active, is_verified) VALUES (?, ?, ?, ?, ?, ?, 1, 1)");
+            $pStmt->execute(['proktor-1', 'proktor', 'proktor', 'Proktor Utama', 'proktor@examguard.local', 'proctor']);
+        } else if ($pUser['role'] !== 'proctor') {
+            $pdo->exec("UPDATE users SET role = 'proctor' WHERE username = 'proktor'");
+        }
+    } catch (Exception $e) {
     }
 }
 
@@ -459,6 +485,7 @@ try {
 
         $baRow = $pdo->query("SELECT * FROM berita_acara_config WHERE id = 'singleton'")->fetch();
         $logs = $pdo->query("SELECT * FROM system_error_logs ORDER BY timestamp DESC LIMIT 200")->fetchAll();
+        $bcastRow = $pdo->query("SELECT * FROM active_broadcast WHERE id = 'singleton'")->fetch();
 
         sendJson([
             'institution' => $inst,
@@ -468,7 +495,8 @@ try {
             'attendance' => $attendance,
             'appModeConfig' => $appMode,
             'beritaAcaraConfig' => $baRow ?: [],
-            'systemErrorLogs' => $logs
+            'systemErrorLogs' => $logs,
+            'activeBroadcast' => $bcastRow ?: null
         ]);
     }
 
@@ -479,6 +507,9 @@ try {
             sendJson(rowToInstitution($row));
         }
         if ($method === 'POST' || $method === 'PUT') {
+            if ($callerRole === 'proctor' || ($callerRole !== null && $callerRole !== 'admin')) {
+                sendJson(['error' => 'Akses Ditolak: Hanya Super Admin yang diizinkan mengubah konfigurasi instansi.'], 403);
+            }
             $allowedGrades = isset($body['allowed_grades']) ? (is_array($body['allowed_grades']) ? json_encode($body['allowed_grades']) : $body['allowed_grades']) : '[10,11,12]';
             $browserPerms = isset($body['browser_permissions']) ? (is_array($body['browser_permissions']) ? json_encode($body['browser_permissions']) : $body['browser_permissions']) : '{}';
 
@@ -588,6 +619,9 @@ try {
 
     // /users/delete-all-students
     if ($endpoint === 'users/delete-all-students' && $method === 'DELETE') {
+        if ($callerRole === 'proctor' || ($callerRole !== null && $callerRole !== 'admin')) {
+            sendJson(['error' => 'Akses Ditolak: Hanya Super Admin yang dapat menghapus seluruh data peserta.'], 403);
+        }
         $pdo->exec("DELETE FROM users WHERE role = 'student'");
         sendJson(['success' => true]);
     }
@@ -719,6 +753,9 @@ try {
             }
 
             if ($sub === 'update-admin') {
+                if ($callerRole === 'proctor' || ($callerRole !== null && $callerRole !== 'admin')) {
+                    sendJson(['error' => 'Akses Ditolak: Proktor tidak diizinkan mengubah akun administrator.'], 403);
+                }
                 $sql = "UPDATE users SET nama = COALESCE(:nama, nama), username = COALESCE(:username, username), updated_at = datetime('now')";
                 if (!empty($body['password'])) {
                     $sql .= ", password = :password";
@@ -755,6 +792,7 @@ try {
                     active_device_id = :active_device_id,
                     login_token = COALESCE(:login_token, login_token),
                     google_linked = COALESCE(:google_linked, google_linked),
+                    google_id = COALESCE(:google_id, google_id),
                     google_email = COALESCE(:google_email, google_email),
                     google_linked_at = COALESCE(:google_linked_at, google_linked_at),
                     updated_at = datetime('now')
@@ -776,6 +814,7 @@ try {
                     ':active_device_id' => array_key_exists('active_device_id', $body) ? $body['active_device_id'] : null,
                     ':login_token' => $body['login_token'] ?? null,
                     ':google_linked' => isset($body['google_linked']) ? ($body['google_linked'] ? 1 : 0) : null,
+                    ':google_id' => $body['google_id'] ?? null,
                     ':google_email' => $body['google_email'] ?? null,
                     ':google_linked_at' => $body['google_linked_at'] ?? null,
                 ]);
@@ -1218,8 +1257,54 @@ try {
         }
     }
 
+    // ── /broadcast (Siaran Cepat Peserta & Pengawas) ───────────
+    if ($endpoint === 'broadcast') {
+        if ($method === 'GET') {
+            $row = $pdo->query("SELECT * FROM active_broadcast WHERE id = 'singleton'")->fetch();
+            sendJson($row ?: [
+                'id' => 'singleton',
+                'message' => '',
+                'scheduled_at' => null,
+                'broadcast_id' => '',
+                'created_at' => date('Y-m-d H:i:s'),
+                'updated_at' => date('Y-m-d H:i:s')
+            ]);
+        }
+        if ($method === 'POST' || $method === 'PUT') {
+            $msg = trim($body['message'] ?? '');
+            if (mb_strlen($msg) > 100) {
+                $msg = mb_substr($msg, 0, 100);
+            }
+            $sched = !empty($body['scheduled_at']) ? $body['scheduled_at'] : null;
+            $broadcastId = !empty($body['broadcast_id']) ? $body['broadcast_id'] : ('bc_' . time() . '_' . substr(md5(uniqid()), 0, 6));
+
+            $stmt = $pdo->prepare("INSERT INTO active_broadcast (id, message, scheduled_at, broadcast_id, updated_at) 
+                VALUES ('singleton', :message, :scheduled_at, :broadcast_id, datetime('now'))
+                ON CONFLICT(id) DO UPDATE SET 
+                    message = :message, 
+                    scheduled_at = :scheduled_at, 
+                    broadcast_id = :broadcast_id, 
+                    updated_at = datetime('now')");
+            $stmt->execute([
+                ':message' => $msg,
+                ':scheduled_at' => $sched,
+                ':broadcast_id' => $broadcastId
+            ]);
+
+            $saved = $pdo->query("SELECT * FROM active_broadcast WHERE id = 'singleton'")->fetch();
+            sendJson(['success' => true, 'broadcast' => $saved]);
+        }
+        if ($method === 'DELETE') {
+            $pdo->exec("UPDATE active_broadcast SET message = '', scheduled_at = NULL, broadcast_id = '', updated_at = datetime('now') WHERE id = 'singleton'");
+            sendJson(['success' => true]);
+        }
+    }
+
     // ── /backup & /restore ─────────────────────────────────────
     if ($endpoint === 'backup' && $method === 'GET') {
+        if ($callerRole === 'proctor' || ($callerRole !== null && $callerRole !== 'admin')) {
+            sendJson(['error' => 'Akses Ditolak: Fitur Backup hanya dapat diakses oleh Super Admin.'], 403);
+        }
         $inst = rowToInstitution($pdo->query("SELECT * FROM institution WHERE id = 'singleton'")->fetch());
         $users = array_map('rowToUser', $pdo->query("SELECT * FROM users ORDER BY nama ASC")->fetchAll());
         $exams = array_map('rowToExamSession', $pdo->query("SELECT * FROM exam_sessions ORDER BY created_at DESC")->fetchAll());
@@ -1240,6 +1325,192 @@ try {
             'systemErrorLogs' => $logs,
             'backup_timestamp' => date('c'),
             'generator' => 'ExamGuard Enterprise v1.0'
+        ]);
+    }
+
+    // ── /system/auto-update (1-Klik GitHub & Upload ZIP Verifikasi Meta) ──────
+    if ($endpoint === 'system/auto-update' && $method === 'POST') {
+        if ($callerRole !== 'admin') {
+            sendJson(['error' => 'Akses Ditolak: Hanya Super Admin yang berwenang memperbarui sistem.'], 403);
+        }
+
+        if (!class_exists('ZipArchive')) {
+            sendJson(['error' => 'Ekstensi PHP ZipArchive belum aktif di server cPanel Anda. Harap aktifkan ekstensi "zip" melalui menu "Select PHP Version" > "Extensions" di cPanel.'], 500);
+        }
+
+        $rootDir = realpath(__DIR__ . '/..');
+        $tmpDir = sys_get_temp_dir() . '/examguard_update_' . time() . '_' . mt_rand(1000, 9999);
+        if (!is_dir($tmpDir)) {
+            mkdir($tmpDir, 0755, true);
+        }
+        $zipFilePath = $tmpDir . '/package.zip';
+
+        // 1. Terima berkas paket: Upload Multipart, JSON Base64, atau Unduh dari GitHub
+        if (!empty($_FILES['package_file']['tmp_name'])) {
+            if (!move_uploaded_file($_FILES['package_file']['tmp_name'], $zipFilePath)) {
+                sendJson(['error' => 'Gagal memproses file unggahan paket pembaruan.'], 500);
+            }
+        } elseif (!empty($body['package_base64'])) {
+            $bin = base64_decode($body['package_base64']);
+            if (!$bin) {
+                sendJson(['error' => 'Format paket base64 tidak valid.'], 400);
+            }
+            file_put_contents($zipFilePath, $bin);
+        } elseif (!empty($body['download_url'])) {
+            $downloadUrl = $body['download_url'];
+            
+            // Download via cURL dengan follow-location (GitHub releases asset redirect)
+            if (function_exists('curl_init')) {
+                $ch = curl_init($downloadUrl);
+                $fp = fopen($zipFilePath, 'wb');
+                curl_setopt($ch, CURLOPT_FILE, $fp);
+                curl_setopt($ch, CURLOPT_HEADER, 0);
+                curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+                curl_setopt($ch, CURLOPT_USERAGENT, 'ExamGuard-AutoUpdater/1.2');
+                curl_setopt($ch, CURLOPT_TIMEOUT, 300);
+                curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+                $execRes = curl_exec($ch);
+                $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                curl_close($ch);
+                fclose($fp);
+
+                if (!$execRes || $httpCode >= 400 || !file_exists($zipFilePath) || filesize($zipFilePath) < 1000) {
+                    @unlink($zipFilePath);
+                    sendJson(['error' => "Gagal mengunduh paket dari GitHub (HTTP $httpCode). Pastikan URL unduhan rilis valid dan server hosting terhubung ke internet."], 500);
+                }
+            } else {
+                $opts = [
+                    'http' => [
+                        'method' => 'GET',
+                        'header' => "User-Agent: ExamGuard-AutoUpdater/1.2
+
+",
+                        'follow_location' => 1,
+                        'timeout' => 300
+                    ]
+                ];
+                $ctx = stream_context_create($opts);
+                $content = @file_get_contents($downloadUrl, false, $ctx);
+                if ($content === false || strlen($content) < 1000) {
+                    sendJson(['error' => 'Gagal mengunduh paket pembaruan dari URL yang diberikan.'], 500);
+                }
+                file_put_contents($zipFilePath, $content);
+            }
+        } else {
+            sendJson(['error' => 'Parameter tidak valid. Diperlukan download_url atau unggahan berkas paket pembaruan.'], 400);
+        }
+
+        // 2. Buka ZIP & Verifikasi Integritas
+        $zip = new ZipArchive();
+        $openRes = $zip->open($zipFilePath);
+        if ($openRes !== true) {
+            @unlink($zipFilePath);
+            @rmdir($tmpDir);
+            sendJson(['error' => "Berkas paket ZIP tidak dapat dibuka atau korup (Kode error: $openRes)."], 400);
+        }
+
+        // 3. KEAMANAN MUTLAK: Pastikan TIDAK ADA file database SQLite (.db) dalam ZIP
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $entryName = $zip->getNameIndex($i);
+            $lower = strtolower($entryName);
+            if (str_ends_with($lower, '.db') || str_ends_with($lower, '.db-wal') || str_ends_with($lower, '.db-shm') || str_contains($lower, 'examguard.db')) {
+                $zip->close();
+                @unlink($zipFilePath);
+                @rmdir($tmpDir);
+                sendJson(['error' => 'BATAL DEMI KEAMANAN: Paket pembaruan memuat berkas database (.db) yang berpotensi menimpa data siswa dan nilai ujian yang sedang berjalan!'], 400);
+            }
+        }
+
+        // 4. Verifikasi Berkas Meta (manifest.json) - cek baik di root maupun subfolder
+        $manifestEntryName = null;
+        $manifestContent = null;
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $name = $zip->getNameIndex($i);
+            if ($name === 'manifest.json' || str_ends_with($name, '/manifest.json')) {
+                $manifestEntryName = $name;
+                $manifestContent = $zip->getFromIndex($i);
+                break;
+            }
+        }
+
+        if (!$manifestContent) {
+            $zip->close();
+            @unlink($zipFilePath);
+            @rmdir($tmpDir);
+            sendJson(['error' => 'Verifikasi Gagal: Berkas meta manifest.json tidak ditemukan di dalam paket rilis.'], 400);
+        }
+
+        $manifest = json_decode($manifestContent, true);
+        if (!$manifest || !in_array($manifest['name'] ?? '', ['ExamGuard', 'ExamGuard'])) {
+            $zip->close();
+            @unlink($zipFilePath);
+            @rmdir($tmpDir);
+            sendJson(['error' => 'Verifikasi Gagal: Meta file menunjukkan paket ini bukan rilis resmi ExamGuard.'], 400);
+        }
+
+        $newVersion = $manifest['version'] ?? '1.2.0';
+
+        // 5. Ekstraksi Berkas ke Root Aplikasi (Tangani flat zip maupun folder wrapper seperti dist/ atau ExamGuard/)
+        $prefix = '';
+        if ($manifestEntryName !== 'manifest.json') {
+            $prefix = substr($manifestEntryName, 0, strrpos($manifestEntryName, 'manifest.json'));
+        }
+
+        $extractedFiles = 0;
+        if (empty($prefix)) {
+            $extractRes = $zip->extractTo($rootDir);
+            $extractedFiles = $zip->numFiles;
+        } else {
+            $extractRes = true;
+            for ($i = 0; $i < $zip->numFiles; $i++) {
+                $entryName = $zip->getNameIndex($i);
+                if (str_starts_with($entryName, $prefix)) {
+                    $relPath = substr($entryName, strlen($prefix));
+                    if (empty($relPath) || str_ends_with($relPath, '/')) {
+                        if (!empty($relPath)) {
+                            @mkdir($rootDir . '/' . $relPath, 0755, true);
+                        }
+                        continue;
+                    }
+                    $destPath = $rootDir . '/' . $relPath;
+                    $destDir = dirname($destPath);
+                    if (!is_dir($destDir)) {
+                        @mkdir($destDir, 0755, true);
+                    }
+                    $stream = $zip->getStream($entryName);
+                    if ($stream) {
+                        $outFp = fopen($destPath, 'wb');
+                        if ($outFp) {
+                            stream_copy_to_stream($stream, $outFp);
+                            fclose($outFp);
+                            $extractedFiles++;
+                        }
+                        fclose($stream);
+                    }
+                }
+            }
+        }
+
+        $zip->close();
+        @unlink($zipFilePath);
+        @rmdir($tmpDir);
+
+        if (!$extractRes) {
+            sendJson(['error' => 'Gagal mengekstrak berkas ke folder server. Pastikan folder subdomain memiliki izin tulis (chmod 755).'], 500);
+        }
+
+        // 6. Jalankan Migrasi Database Otomatis jika ada perubahan skema
+        try {
+            initDatabaseSchema($pdo);
+        } catch (Exception $mErr) {}
+
+        sendJson([
+            'success' => true,
+            'message' => "Pembaruan ExamGuard ke versi $newVersion berhasil dipasang dengan sukses!",
+            'version' => $newVersion,
+            'manifest' => $manifest,
+            'extracted_files_count' => $extractedFiles,
+            'updated_at' => date('c')
         ]);
     }
 

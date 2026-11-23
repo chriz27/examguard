@@ -158,6 +158,7 @@ const _cache = {
   },
   beritaAcaraConfig: null,
   systemErrorLogs: [],
+  activeBroadcast: null,
 };
 
 // Muat cache awal dari localStorage (0ms synchronous read)
@@ -180,11 +181,18 @@ function _loadInitialCache() {
     if (rawBa) _cache.beritaAcaraConfig = JSON.parse(rawBa);
     const rawLogs = localStorage.getItem('examguard_error_logs');
     if (rawLogs) _cache.systemErrorLogs = JSON.parse(rawLogs);
+    const rawBcast = localStorage.getItem('examguard_active_broadcast');
+    if (rawBcast) _cache.activeBroadcast = JSON.parse(rawBcast);
   } catch {}
 }
 
 function _applySnapshot(data) {
   if (!data) return;
+  const bcast = data.activeBroadcast || data.active_broadcast;
+  if (bcast) {
+    _cache.activeBroadcast = bcast;
+    try { localStorage.setItem('examguard_active_broadcast', JSON.stringify(bcast)); } catch {}
+  }
   if (data.institution) {
     if (typeof data.institution.browser_permissions === 'string') {
       try { data.institution.browser_permissions = JSON.parse(data.institution.browser_permissions); } catch {}
@@ -270,6 +278,14 @@ if (typeof window !== 'undefined') {
       try {
         const raw = localStorage.getItem('examguard_app_mode');
         if (raw) _cache.appModeConfig = JSON.parse(raw);
+      } catch {}
+    }
+    if (!e.key || e.key === 'examguard_active_broadcast') {
+      try {
+        const raw = localStorage.getItem('examguard_active_broadcast');
+        if (raw) _cache.activeBroadcast = JSON.parse(raw);
+        else _cache.activeBroadcast = null;
+        window.dispatchEvent(new CustomEvent('examguard_broadcast_updated', { detail: _cache.activeBroadcast }));
       } catch {}
     }
     try {
@@ -717,12 +733,16 @@ export const storageService = {
   },
 
   resetUserDevice(id) {
-    const idx = (_cache.users || []).findIndex(u => u.id === id);
+    const idx = (_cache.users || []).findIndex(u => String(u.id) === String(id));
     if (idx >= 0) {
       _cache.users[idx].active_device_id = null;
       _cache.users[idx].updated_at = new Date().toISOString();
       try { localStorage.setItem('examguard_users', JSON.stringify(_cache.users)); } catch {}
-      dbService.resetUserDevice(id).catch(() => {});
+      try {
+        if (typeof dbService.resetUserDevice === 'function') {
+          dbService.resetUserDevice(id).catch(() => {});
+        }
+      } catch (e) {}
       return { success: true, user: _cache.users[idx] };
     }
     return { success: false };
@@ -1065,10 +1085,18 @@ export const storageService = {
 
   deleteAttempt(studentId, examSessionId) {
     _cache.attempts = (_cache.attempts || []).filter(
-      a => !(a.student_id === studentId && a.exam_session_id === examSessionId)
+      a => !(String(a.student_id) === String(studentId) && String(a.exam_session_id) === String(examSessionId))
     );
     try { localStorage.setItem('examguard_attempts', JSON.stringify(_cache.attempts)); } catch {}
-    dbService.deleteAttempt(studentId, examSessionId).catch(() => {});
+    try {
+      if (typeof dbService.deleteAttempt === 'function') {
+        dbService.deleteAttempt(studentId, examSessionId).catch(() => {});
+      } else if (typeof dbService.proctorSetAttemptNotStarted === 'function') {
+        dbService.proctorSetAttemptNotStarted(studentId, examSessionId).catch(() => {});
+      }
+    } catch (e) {
+      console.warn('Sync server deleteAttempt error:', e);
+    }
     return true;
   },
 
@@ -1533,6 +1561,80 @@ export const storageService = {
     });
     dbService.restoreAllData(restoredData).catch(err => console.error('[ExamGuard Storage] Sync error restoreAllData:', err));
     return { success: true };
+  },
+
+  // ── Broadcast (Siaran Cepat Peserta & Pengawas) ───────────────────────────
+  getActiveBroadcast() {
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = localStorage.getItem('examguard_active_broadcast');
+        if (raw) _cache.activeBroadcast = JSON.parse(raw);
+      } catch {}
+    }
+    return _cache.activeBroadcast || { message: '', scheduled_at: null, broadcast_id: '' };
+  },
+
+  async saveBroadcast({ message, scheduled_at = null, broadcast_id = null }) {
+    const finalMsg = String(message || '').slice(0, 100).trim();
+    const bId = broadcast_id || ('bc_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6));
+    const data = {
+      id: 'singleton',
+      message: finalMsg,
+      scheduled_at: scheduled_at || null,
+      broadcast_id: bId,
+      updated_at: new Date().toISOString(),
+    };
+    _cache.activeBroadcast = data;
+    try {
+      localStorage.setItem('examguard_active_broadcast', JSON.stringify(data));
+      if (finalMsg) {
+        localStorage.setItem('examguard_last_broadcast_text', finalMsg);
+        localStorage.setItem('examguard_last_broadcast_time', new Date().toISOString());
+      }
+    } catch {}
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('examguard_broadcast_updated', { detail: data }));
+      window.dispatchEvent(new CustomEvent('examguard_storage_updated', { detail: { event: 'broadcast_updated', data } }));
+      window.dispatchEvent(new CustomEvent('examguard_db_updated', { detail: { event: 'broadcast_updated', data } }));
+    }
+
+    try {
+      await fetch('/api/db/broadcast', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+    } catch (e) {
+      console.warn('[ExamGuard Storage] saveBroadcast error:', e);
+    }
+    return data;
+  },
+
+  getLastBroadcastInfo() {
+    try {
+      const text = localStorage.getItem('examguard_last_broadcast_text') || _cache.activeBroadcast?.message || '';
+      const time = localStorage.getItem('examguard_last_broadcast_time') || _cache.activeBroadcast?.updated_at || '';
+      return { text, time };
+    } catch {
+      return { text: '', time: '' };
+    }
+  },
+
+  async clearBroadcast() {
+    const empty = { id: 'singleton', message: '', scheduled_at: null, broadcast_id: '' };
+    _cache.activeBroadcast = empty;
+    try {
+      localStorage.removeItem('examguard_active_broadcast');
+    } catch {}
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('examguard_broadcast_updated', { detail: empty }));
+      window.dispatchEvent(new CustomEvent('examguard_storage_updated', { detail: { event: 'broadcast_updated', data: empty } }));
+    }
+    try {
+      await fetch('/api/db/broadcast', { method: 'DELETE' });
+    } catch {}
+    return empty;
   },
 };
 

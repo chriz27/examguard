@@ -121,8 +121,13 @@ export default function ConfirmDialog({
           <button
             type="button"
             onClick={() => {
-              if (onConfirm) onConfirm();
-              onClose();
+              try {
+                if (onConfirm) onConfirm();
+              } catch (err) {
+                console.error('ConfirmDialog action error:', err);
+              } finally {
+                onClose();
+              }
             }}
             className={`px-4 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${config.btnConfirm}`}
           >

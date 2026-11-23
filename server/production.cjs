@@ -60,6 +60,7 @@ try {
         appModeConfig:     dbApi.getAppModeConfig(),
         beritaAcaraConfig: dbApi.getBeritaAcaraConfig(),
         systemErrorLogs:   dbApi.getSystemErrorLogs(),
+        activeBroadcast:   dbApi.getActiveBroadcast ? dbApi.getActiveBroadcast() : null,
       };
       ws.send(JSON.stringify({ event: 'snapshot', data: snap, timestamp: Date.now() }));
     } catch (e) {
@@ -168,6 +169,7 @@ const server = http.createServer(async (req, res) => {
           appModeConfig:     dbApi.getAppModeConfig(),
           beritaAcaraConfig: dbApi.getBeritaAcaraConfig(),
           systemErrorLogs:   dbApi.getSystemErrorLogs(),
+          activeBroadcast:   dbApi.getActiveBroadcast ? dbApi.getActiveBroadcast() : null,
         });
       }
 
@@ -175,6 +177,9 @@ const server = http.createServer(async (req, res) => {
       if (pathname === '/api/db/institution') {
         if (method === 'GET') return sendJson(res, 200, dbApi.getInstitution());
         if (method === 'POST' || method === 'PUT') {
+          if (callerRole === 'proctor' || (callerRole !== null && callerRole !== 'admin')) {
+            return sendJson(res, 403, { error: 'Akses Ditolak: Hanya Super Admin yang diizinkan mengubah konfigurasi instansi.' });
+          }
           const updated = dbApi.updateInstitution(body);
           if (broadcast) broadcast('institution_updated', { institution: updated });
           return sendJson(res, 200, updated);
@@ -194,6 +199,9 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, result.success ? 200 : 400, result);
       }
       if (pathname === '/api/db/users/delete-all-students' && method === 'DELETE') {
+        if (callerRole === 'proctor' || (callerRole !== null && callerRole !== 'admin')) {
+          return sendJson(res, 403, { error: 'Akses Ditolak: Hanya Super Admin yang dapat menghapus seluruh data peserta.' });
+        }
         dbApi.deleteAllStudents();
         if (broadcast) broadcast('all_students_deleted', {});
         return sendJson(res, 200, { success: true });
@@ -425,7 +433,26 @@ const server = http.createServer(async (req, res) => {
         }
       }
 
+      // Broadcast
+      if (pathname === '/api/db/broadcast') {
+        if (method === 'GET') {
+          const bcast = dbApi.getActiveBroadcast ? dbApi.getActiveBroadcast() : { id: 'singleton', message: '', scheduled_at: null, broadcast_id: '' };
+          return sendJson(res, 200, bcast);
+        }
+        if (method === 'POST' || method === 'PUT') {
+          const saved = dbApi.saveBroadcast ? dbApi.saveBroadcast(body) : body;
+          return sendJson(res, 200, { success: true, ...saved, broadcast: saved });
+        }
+        if (method === 'DELETE') {
+          const cleared = dbApi.clearBroadcast ? dbApi.clearBroadcast() : { id: 'singleton', message: '', scheduled_at: null, broadcast_id: '' };
+          return sendJson(res, 200, { success: true, ...cleared, broadcast: cleared });
+        }
+      }
+
       if (pathname === '/api/db/backup' && method === 'GET') {
+        if (callerRole === 'proctor' || (callerRole !== null && callerRole !== 'admin')) {
+          return sendJson(res, 403, { error: 'Akses Ditolak: Fitur Backup hanya dapat diakses oleh Super Admin.' });
+        }
         return sendJson(res, 200, dbApi.getFullSystemData());
       }
 

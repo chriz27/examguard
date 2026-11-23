@@ -22,6 +22,13 @@ dist-ssr/
 *.png
 *.jpg
 *.jpeg
+!screenshot/*.png
+!screenshot/*.jpg
+!screenshot/*.jpeg
+
+# Local command wrappers
+powershell.cmd
+powershell.bat
 
 # Editor directories and files
 .vscode/*
@@ -41,7 +48,8 @@ dist-ssr/
 .env.test.local
 .env.production.local
 
-# SQLite temporary WAL & SHM files
+# SQLite temporary & database files
+*.db
 *.db-wal
 *.db-shm
 
