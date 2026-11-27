@@ -16,7 +16,9 @@ import {
   Info,
   ClipboardCheck,
   RotateCcw,
+  Award,
 } from 'lucide-react';
+import { APP_VERSION } from '../../constants/appVersion';
 
 export default function AdminSidebar({
   activeTab,
@@ -51,6 +53,15 @@ export default function AdminSidebar({
       icon: ShieldAlert,
       badge: 'Live Hub',
       description: 'Pantau, Reset & Presensi Mapel Aktif',
+    },
+    {
+      id: 'grades',
+      label: 'Rekap Nilai',
+      icon: Award,
+      badge: 'Soon',
+      badgeColor: 'bg-amber-100 text-amber-800 border-amber-300',
+      description: 'Rekapitulasi & Analisis Nilai Ujian',
+      superAdminOnly: false,
     },
     {
       id: 'users',
@@ -111,13 +122,13 @@ export default function AdminSidebar({
                 src={institutionLogo}
                 alt="Logo Instansi"
                 className="w-9 h-9 rounded-xl object-contain bg-white border border-zinc-200/80 p-0.5 shadow-2xs shrink-0 cursor-pointer"
-                title={institutionName || 'ExamGuard v1.2'}
+                title={institutionName || `ExamGuard ${APP_VERSION}`}
                 onClick={onToggleCollapse}
               />
             ) : (
               <div
                 className="w-9 h-9 rounded-xl bg-zinc-900 text-white flex items-center justify-center shadow-xs shrink-0 cursor-pointer"
-                title="ExamGuard v1.2 Proctoring"
+                title={`ExamGuard ${APP_VERSION} Proctoring`}
                 onClick={onToggleCollapse}
               >
                 <Shield className="w-4 h-4 text-zinc-100" />
@@ -151,7 +162,7 @@ export default function AdminSidebar({
                   <span className="font-semibold text-zinc-900 tracking-tight text-base truncate">
                     ExamGuard
                   </span>
-                  <span className="text-[10px] uppercase font-mono font-medium px-1.5 py-0.5 rounded bg-zinc-100 text-zinc-600 border border-zinc-200 shrink-0">v1.2</span>
+                  <span className="text-[10px] uppercase font-mono font-medium px-1.5 py-0.5 rounded bg-zinc-100 text-zinc-600 border border-zinc-200 shrink-0">{APP_VERSION}</span>
                 </div>
                 <p className="text-xs text-zinc-600 font-medium truncate max-w-[140px]" title={institutionName}>
                   {institutionName || 'Sistem Proctoring GForm'}

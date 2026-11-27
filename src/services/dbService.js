@@ -384,6 +384,14 @@ export const dbService = {
     return updated;
   },
 
+  async getTunnelStatus() {
+    try {
+      return await _fetch('/tunnel/status');
+    } catch (err) {
+      return { success: false, active: false, error: err.message };
+    }
+  },
+
   // ── Users ──────────────────────────────────────────────────────────────────
   async getUsers() {
     return _cacheOrFetch('users', '/users');
@@ -455,6 +463,10 @@ export const dbService = {
 
   async resetStudentPassword(id) {
     const result = await _fetch(`/users/${encodeURIComponent(id)}/reset-password`, { method: 'PUT' });
+    if (result.success && _cache.users && result.user) {
+      const idx = _cache.users.findIndex(u => u.id === id);
+      if (idx >= 0) _cache.users[idx] = result.user;
+    }
     return result;
   },
 

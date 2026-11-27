@@ -178,6 +178,7 @@ db.exec(`
     google_oauth_verified_email TEXT DEFAULT '',
     google_oauth_verified_at TEXT DEFAULT '',
     lock_device_enabled INTEGER NOT NULL DEFAULT 1,
+    ngrok_authtoken     TEXT DEFAULT '',
     updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
@@ -359,6 +360,9 @@ try {
   rawDb.exec(`ALTER TABLE institution ADD COLUMN lock_device_enabled INTEGER NOT NULL DEFAULT 1;`);
 } catch (_) {}
 try {
+  rawDb.exec(`ALTER TABLE institution ADD COLUMN ngrok_authtoken TEXT DEFAULT '';`);
+} catch (_) {}
+try {
   rawDb.exec(`ALTER TABLE users ADD COLUMN login_token TEXT DEFAULT '';`);
 } catch (_) {}
 try {
@@ -463,6 +467,7 @@ function rowToInstitution(r) {
     recaptcha_secret_key: r.recaptcha_secret_key || '',
     recaptcha_version: r.recaptcha_version,
     lock_device_enabled: r.lock_device_enabled !== 0,
+    ngrok_authtoken: r.ngrok_authtoken || '',
     finish_token_lead_minutes: r.finish_token_lead_minutes,
     browser_permissions: parseJson(r.browser_permissions, {}),
     google_oauth_verified: intToBool(r.google_oauth_verified),
@@ -596,12 +601,12 @@ const stmts = {
       idle_timeout_minutes,gps_enabled,center_lat,center_lng,max_radius_meters,
       gmaps_url,auth_method,google_oauth_enabled,google_client_id,google_client_secret,
       recaptcha_enabled,recaptcha_site_key,recaptcha_secret_key,recaptcha_version,
-      finish_token_lead_minutes,browser_permissions,google_oauth_verified,google_oauth_verified_email,google_oauth_verified_at,lock_device_enabled,updated_at)
+      finish_token_lead_minutes,browser_permissions,google_oauth_verified,google_oauth_verified_email,google_oauth_verified_at,lock_device_enabled,ngrok_authtoken,updated_at)
     VALUES (@id,@name,@npsn,@logo_url,@education_level,@allowed_grades,
       @idle_timeout_minutes,@gps_enabled,@center_lat,@center_lng,@max_radius_meters,
       @gmaps_url,@auth_method,@google_oauth_enabled,@google_client_id,@google_client_secret,
       @recaptcha_enabled,@recaptcha_site_key,@recaptcha_secret_key,@recaptcha_version,
-      @finish_token_lead_minutes,@browser_permissions,@google_oauth_verified,@google_oauth_verified_email,@google_oauth_verified_at,@lock_device_enabled,@updated_at)
+      @finish_token_lead_minutes,@browser_permissions,@google_oauth_verified,@google_oauth_verified_email,@google_oauth_verified_at,@lock_device_enabled,@ngrok_authtoken,@updated_at)
     ON CONFLICT(id) DO UPDATE SET
       name=excluded.name,npsn=excluded.npsn,logo_url=excluded.logo_url,
       education_level=excluded.education_level,allowed_grades=excluded.allowed_grades,
@@ -618,6 +623,7 @@ const stmts = {
       google_oauth_verified_email=excluded.google_oauth_verified_email,
       google_oauth_verified_at=excluded.google_oauth_verified_at,
       lock_device_enabled=excluded.lock_device_enabled,
+      ngrok_authtoken=excluded.ngrok_authtoken,
       updated_at=excluded.updated_at
   `),
 
@@ -663,10 +669,10 @@ const stmts = {
   insertExamSession: db.prepare(`
     INSERT INTO exam_sessions (id,subject,title,session_group,description,grade_level,
       is_active,is_archived,gform_base_url,respon_base_url,exam_token,finish_token,
-      start_time,end_time,duration_minutes,updated_at)
+      start_time,end_time,duration_minutes,created_at,updated_at)
     VALUES (@id,@subject,@title,@session_group,@description,@grade_level,
       @is_active,@is_archived,@gform_base_url,@respon_base_url,@exam_token,@finish_token,
-      @start_time,@end_time,@duration_minutes,@updated_at)
+      @start_time,@end_time,@duration_minutes,@created_at,@updated_at)
   `),
   updateExamSession: db.prepare(`
     UPDATE exam_sessions SET
@@ -856,6 +862,7 @@ const dbApi = {
       google_oauth_verified_email: safeStr(data.google_oauth_verified_email, current.google_oauth_verified_email || ''),
       google_oauth_verified_at: safeStr(data.google_oauth_verified_at, current.google_oauth_verified_at || ''),
       lock_device_enabled: boolToInt(data.lock_device_enabled !== undefined ? data.lock_device_enabled : (current.lock_device_enabled !== undefined ? current.lock_device_enabled : true)),
+      ngrok_authtoken: safeStr(data.ngrok_authtoken, current.ngrok_authtoken || ''),
       updated_at: now,
     });
     return this.getInstitution();
@@ -1117,23 +1124,32 @@ const dbApi = {
   },
 
   updateAdminProfile(userId, { username, email, password, nama }) {
-    const user = this.getUserById(userId);
+    let user = this.getUserById(userId);
+    if (!user && (userId === 'PROCTOR-01' || userId === 'proktor-1')) {
+      const pRow = db.prepare("SELECT * FROM users WHERE role = 'proctor' LIMIT 1").get();
+      if (pRow) user = this.rowToUser(pRow);
+    }
+    if (!user && (userId === 'ADMIN-SUPER-01' || userId === 'admin-1')) {
+      const aRow = db.prepare("SELECT * FROM users WHERE role = 'admin' LIMIT 1").get();
+      if (aRow) user = this.rowToUser(aRow);
+    }
     if (!user || (user.role !== 'admin' && user.role !== 'proctor')) {
       return { success: false, message: 'Akun pengawas/administrator tidak ditemukan.' };
     }
+    const targetId = user.id;
     if (username && username.trim().toLowerCase() !== user.username.toLowerCase()) {
-      const dup = db.prepare('SELECT id FROM users WHERE username=? AND id!=?').get(username.trim().toLowerCase(), userId);
+      const dup = db.prepare('SELECT id FROM users WHERE username=? AND id!=?').get(username.trim().toLowerCase(), targetId);
       if (dup) return { success: false, message: `Username "${username}" sudah digunakan oleh akun lain.` };
     }
     this.saveUser({
       ...user,
-      id: userId,
+      id: targetId,
       username: username ? username.trim() : user.username,
       email: email ? email.trim() : user.email,
       password: password || user.password,
       nama: nama ? nama.trim() : user.nama,
     });
-    return { success: true, user: this.getUserById(userId) };
+    return { success: true, user: this.getUserById(targetId) };
   },
 
   // Validasi import massal
@@ -1232,6 +1248,7 @@ const dbApi = {
       start_time: safeStr(data.start_time, '').trim(),
       end_time: safeStr(data.end_time, '').trim(),
       duration_minutes: parseInt(data.duration_minutes, 10) || 60,
+      created_at: existing ? existing.created_at : (data.created_at || now),
       updated_at: now,
     };
 

@@ -1,5 +1,5 @@
 Add-Type -AssemblyName System.IO.Compression.FileSystem
-$zipPath = Join-Path $PSScriptRoot "..\examguard-v1.2.2-cpanel.zip"
+$zipPath = Join-Path $PSScriptRoot "..\examguard-v1.3.0-cpanel.zip"
 $zipPath = [System.IO.Path]::GetFullPath($zipPath)
 $distPath = Join-Path $PSScriptRoot "..\dist"
 $distPath = [System.IO.Path]::GetFullPath($distPath)

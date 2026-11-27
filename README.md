@@ -1,9 +1,9 @@
-# 🛡️ ExamGuard v1.2.2 - Enterprise Exam Browser & Proctoring System
+# 🛡️ ExamGuard v1.3.0 - Enterprise Exam Browser & Proctoring System
 
 <div align="center">
 
-[![Versi](https://img.shields.io/badge/Versi-1.2.2_Production_Ready-emerald?style=for-the-badge&logo=shield)](https://github.com/chriz27/examguard/releases)
-[![Unduh Paket cPanel](https://img.shields.io/badge/📥_Download-cPanel_ZIP_(v1.2.2)-blue?style=for-the-badge&logo=archive)](https://github.com/chriz27/examguard/releases/download/v1.2.2/examguard-v1.2.2-cpanel.zip)
+[![Versi](https://img.shields.io/badge/Versi-1.3.0_Production_Ready-emerald?style=for-the-badge&logo=shield)](https://github.com/chriz27/examguard/releases)
+[![Unduh Paket cPanel](https://img.shields.io/badge/📥_Download-cPanel_ZIP_(v1.3.0)-blue?style=for-the-badge&logo=archive)](https://github.com/chriz27/examguard/releases/download/v1.3.0/examguard-v1.3.0-cpanel.zip)
 [![React](https://img.shields.io/badge/React-19.0-61DAFB?style=for-the-badge&logo=react)](https://react.dev)
 [![Vite](https://img.shields.io/badge/Vite-6.0-646CFF?style=for-the-badge&logo=vite)](https://vitejs.dev)
 [![TailwindCSS](https://img.shields.io/badge/Tailwind-v4_HEX_Safe-38B2AC?style=for-the-badge&logo=tailwind-css)](https://tailwindcss.com)
@@ -38,11 +38,11 @@ Bagi pengguna hosting **cPanel**, gunakan berkas paket kompilasi mandiri di bawa
 
 | Versi Rilis | Berkas Paket ZIP cPanel | Tautan Unduh Langsung | Status |
 | :--- | :--- | :--- | :--- |
-| **v1.2.2 (Terbaru)** | `examguard-v1.2.2-cpanel.zip` | [**Unduh examguard-v1.2.2-cpanel.zip**](https://github.com/chriz27/examguard/releases/download/v1.2.2/examguard-v1.2.2-cpanel.zip) | 🟢 **Sangat Disarankan (Production)** |
-| **v1.2.1** | `examguard-v1.2.1-cpanel.zip` | [**Unduh examguard-v1.2.1-cpanel.zip**](https://github.com/chriz27/examguard/releases/download/v1.2.1/examguard-v1.2.1-cpanel.zip) | ⚪ Arsip Rilis Stabil |
+| **v1.3.0 (Terbaru)** | `examguard-v1.3.0-cpanel.zip` | [**Unduh examguard-v1.3.0-cpanel.zip**](https://github.com/chriz27/examguard/releases/download/v1.3.0/examguard-v1.3.0-cpanel.zip) | 🟢 **Sangat Disarankan (Production)** |
+| **v1.2.2** | `examguard-v1.2.2-cpanel.zip` | [**Unduh examguard-v1.2.2-cpanel.zip**](https://github.com/chriz27/examguard/releases/download/v1.2.2/examguard-v1.2.2-cpanel.zip) | ⚪ Arsip Rilis Stabil |
 
 > [!WARNING]
-> **PENTING UNTUK PENGGUNA CPANEL:** Jangan mengunggah berkas ZIP *Source Code* mentah bawaan GitHub Releases (`Source code.zip`) karena berkas tersebut belum dikompilasi oleh Vite/Node.js dan tidak memuat folder aset produksi. **Wajib gunakan berkas rilis kompilasi: `examguard-v1.2.2-cpanel.zip`**.
+> **PENTING UNTUK PENGGUNA CPANEL:** Jangan mengunggah berkas ZIP *Source Code* mentah bawaan GitHub Releases (`Source code.zip`) karena berkas tersebut belum dikompilasi oleh Vite/Node.js dan tidak memuat folder aset produksi. **Wajib gunakan berkas rilis kompilasi: `examguard-v1.3.0-cpanel.zip`**.
 
 ---
 
@@ -121,7 +121,7 @@ Sistem proctoring ExamGuard membedakan antara pelanggaran sementara (*warning ba
 
 | Komponen / Lapisan | Spesifikasi Teknologi | Keterangan & Peran |
 | :--- | :--- | :--- |
-| **Versi Rilis** | **ExamGuard v1.2.2 Stable** | Rilis produksi mutakhir dengan perbaikan sesi soal & OTA cPanel tangguh |
+| **Versi Rilis** | **ExamGuard v1.3.0 Stable** | Rilis produksi mutakhir dengan Mode Offline/Online Ngrok, hardening keamanan, &amp; perbaikan portal proktor |
 | **Frontend Engine** | **React 19 & Vite 6** | Framework Single Page Application (SPA) modern, rendering reaktif, dan HMR ultra-cepat |
 | **Styling Framework** | **Tailwind CSS v4.0 (HEX-Safe)** | Desain modern dengan palet standar sRGB HEX untuk kompatibilitas 100% pada Chrome & OS lawas |
 | **Backend Runtime** | **cPanel Host (PHP 8.0+ PDO) & Node.js 18+** | Endpoint REST `api/index.php` atau runtime Express + WebSocket untuk LAN/VPS |
@@ -138,7 +138,19 @@ Sistem proctoring ExamGuard membedakan antara pelanggaran sementara (*warning ba
 
 ## 🚀 Riwayat Rilis & Pembaruan (Changelog)
 
-### Versi 1.2.2 (Rilis Terbaru - 23 November 2026)
+### Versi 1.3.0 (Rilis Terbaru - 27 November 2026)
+* 🌐 **Mode Offline & Online (Akses Server & Cloud Tunnel):** Kartu kontrol cerdas di Pengaturan Instansi dengan deteksi otomatis 3 mode lingkungan (cPanel Hosting Publik, Cloud Ngrok HTTPS, dan Wi-Fi Lokal).
+* 🔒 **Integrasi Cloud Tunneling Ngrok:** Kemudahan online-kan server lokal sekolah dengan enkripsi HTTPS gratis agar izin Kamera, Mikrofon, dan GPS HP siswa aktif 100% tanpa kendala sertifikat SSL.
+* 🛡️ **Hardening Keamanan Rahasia (Secrets Masking):** Standar enterprise ISO/IEC 27001 & OWASP ASVS; kredensial rahasia (Google Client Secret, reCAPTCHA Secret Key, dan Ngrok Authtoken) di-masking sehingga tidak pernah bocor ke browser peserta.
+* 👨‍🏫 **Perbaikan Autentikasi Proktor:** Validasi password terenkripsi & sinkronisasi multi-role proktor berjalan stabil.
+* 🔄 **Reset Password Peserta:** Sinkronisasi instan ke database dan cache penyimpanan lokal.
+* 🚪 **Akses Form Admin Tersembunyi:** 7x ketuk logo sekolah untuk membuka formulir login admin; ketukan ke-8 mengunci kembali ke portal siswa.
+* 📁 **Accordion Terpadu Pengaturan Google:** Menyatukan 4 sub-bagian (Google OAuth, reCAPTCHA, Google Drive Coming Soon, dan Sheets Coming Soon).
+* 📊 **Menu Rekap Nilai:** Penyiapan fondasi menu dan antarmuka untuk fitur auto-sync nilai Google Forms yang direncanakan di v2.0.0.
+* 📱 **Modal QR Code Portal Siswa Fleksibel:** Menghasilkan kode QR instan yang membaca tautan publik aktif secara dinamis.
+* 💾 **Hardening Database Concurrency:** Konfigurasi `PRAGMA busy_timeout = 5000`, WAL mode, dan penanganan atomic commit tanpa database locking.
+
+### Versi 1.2.2 (23 November 2026)
 * 🛠️ **Perbaikan Total Update Sesi Ujian Google Form:** Menerapkan sistem **UPSERT** cerdas pada backend SQLite (`POST /exam-sessions` dan `PUT /exam-sessions/{id}`). Pembaruan URL Google Form, Token Mulai, Token Selesai, Waktu Mulai/Selesai, dan Durasi tersimpan secara persisten tanpa terhambat error *unique constraint*.
 * ⚡ **Penguatan Pembaruan 1-Klik Otomatis dari GitHub:** Penanganan otomatis redirect cURL AWS S3 (`objects.githubusercontent.com`) dan verifikasi SSL bundle yang kompatibel dengan server cPanel berstatus `open_basedir`.
 * 🛡️ **Proteksi Database 100% Anti-Tertimpa:** Sistem pembaruan (baik 1-Klik maupun manual ZIP) secara ketat memblokir dan membatalkan otomatis jika terdapat berkas `.db` di dalam paket, menjamin data siswa dan nilai ujian tetap aman.
@@ -166,9 +178,9 @@ Sistem proctoring ExamGuard membedakan antara pelanggaran sementara (*warning ba
 ---
 
 ### 🛠️ Metode 2: Unggah Berkas ZIP via Panel Admin ExamGuard
-1. Unduh berkas paket rilis kompilasi: [**examguard-v1.2.2-cpanel.zip**](https://github.com/chriz27/examguard/releases/download/v1.2.2/examguard-v1.2.2-cpanel.zip).
+1. Unduh berkas paket rilis kompilasi: [**examguard-v1.3.0-cpanel.zip**](https://github.com/chriz27/examguard/releases/download/v1.3.0/examguard-v1.3.0-cpanel.zip).
 2. Masuk ke **Panel Admin** &rarr; Buka **Pusat Pembaruan Sistem**.
-3. Pada bagian **Offline: Unggah Paket Pembaruan Manual (.ZIP)**, klik **"Pilih Berkas ZIP..."** dan pilih berkas `examguard-v1.2.2-cpanel.zip`.
+3. Pada bagian **Offline: Unggah Paket Pembaruan Manual (.ZIP)**, klik **"Pilih Berkas ZIP..."** dan pilih berkas `examguard-v1.3.0-cpanel.zip`.
 4. Klik tombol **"🚀 Verifikasi & Pasang Pembaruan"**.
 5. Tunggu proses verifikasi manifest dan ekstraksi selesai. Klik Muat Ulang Halaman.
 
@@ -176,10 +188,10 @@ Sistem proctoring ExamGuard membedakan antara pelanggaran sementara (*warning ba
 
 ### 📂 Metode 3: Unggah Manual via File Manager cPanel
 Jika server hosting Anda berada di balik firewall tertutup (*intranet/offline*):
-1. Unduh berkas [**examguard-v1.2.2-cpanel.zip**](https://github.com/chriz27/examguard/releases/download/v1.2.2/examguard-v1.2.2-cpanel.zip).
+1. Unduh berkas [**examguard-v1.3.0-cpanel.zip**](https://github.com/chriz27/examguard/releases/download/v1.3.0/examguard-v1.3.0-cpanel.zip).
 2. Masuk ke **cPanel** &rarr; Buka **File Manager** &rarr; Masuk ke folder web root subdomain Anda (misal `public_html/ujian`).
 3. *(Langkah Pencegahan)*: Unduh berkas database `examguard.db` (atau `api/examguard.db`) ke laptop Anda sebagai cadangan.
-4. Klik tombol **Upload**, unggah berkas `examguard-v1.2.2-cpanel.zip`.
+4. Klik tombol **Upload**, unggah berkas `examguard-v1.3.0-cpanel.zip`.
 5. Klik kanan pada berkas zip &rarr; Pilih **Extract**. Berkas kode frontend (`index.html`, `assets/`, `manifest.json`) dan `api/index.php` akan terperbarui tanpa menimpa database.
 6. Hapus berkas zip dari server dan lakukan hard-refresh di peramban (**Ctrl + F5**).
 
@@ -196,7 +208,7 @@ ExamGuard tidak memerlukan pembuatan database MySQL. Ikuti 3 langkah praktis ber
 
 ### Langkah 2: Unggah & Ekstrak Berkas Rilis
 1. Masuk ke **File Manager** cPanel &rarr; Buka folder `public_html/ujian`.
-2. Klik tombol **Upload**, unggah berkas [**examguard-v1.2.2-cpanel.zip**](https://github.com/chriz27/examguard/releases/download/v1.2.2/examguard-v1.2.2-cpanel.zip).
+2. Klik tombol **Upload**, unggah berkas [**examguard-v1.3.0-cpanel.zip**](https://github.com/chriz27/examguard/releases/download/v1.3.0/examguard-v1.3.0-cpanel.zip).
 3. Ekstrak berkas tersebut langsung di dalam folder subdomain.
 
 ### Langkah 3: Aktifkan Sertifikat SSL (HTTPS)
@@ -266,16 +278,16 @@ powershell -ExecutionPolicy Bypass -File scripts/make_cpanel_zip.ps1
 ## 🛠️ Tanya Jawab & Pemecahan Masalah (FAQ)
 
 ### Q: Mengapa saat mengedit soal GForm perubahan tidak tersimpan?
-> **Solusi:** Di versi v1.2.2, masalah ini telah **diperbaiki secara menyeluruh**. Pastikan Anda telah memperbarui sistem ke v1.2.2 yang menggunakan mekanisme UPSERT SQLite pada endpoint `api/index.php`.
+> **Solusi:** Di versi v1.3.0 (dan v1.2.2+), masalah ini telah **diperbaiki secara menyeluruh**. Pastikan Anda telah memperbarui sistem ke v1.3.0 yang menggunakan mekanisme UPSERT SQLite pada endpoint `api/index.php`.
 
 ### Q: Mengapa siswa mendapat pesan "Geolocation Denied" saat login?
-> **Solusi:** Sensor GPS pada peramban Chrome dan Safari **hanya diizinkan aktif jika website menggunakan protokol aman HTTPS**. Pastikan website dibuka dengan `https://`. Jika sedang simulasi atau di ruangan tanpa sinyal GPS, admin dapat mengaktifkan **Mode Simulasi (Bypass GPS)** di menu pengaturan.
+> **Solusi:** Sensor GPS pada peramban Chrome dan Safari **hanya diizinkan aktif jika website menggunakan protokol aman HTTPS**. Pada v1.3.0, Anda dapat menggunakan fitur **Mode Offline & Online (Ngrok Cloud Tunnel)** untuk mendapatkan koneksi HTTPS instan bagi server lokal/Wi-Fi sekolah.
 
 ### Q: Mengapa muncul halaman 404 Not Found saat menekan tombol refresh di browser?
 > **Solusi:** Pastikan berkas **`.htaccess`** yang disertakan pada paket rilis sudah terunggah di folder root subdomain cPanel Anda untuk merutekan Single Page Application ke `index.html`.
 
 ### Q: Apakah data siswa dan nilai ujian akan hilang saat sistem diperbarui ke versi baru?
-> **Solusi:** **Sama sekali tidak hilang.** Database disimpan secara mandiri di berkas `examguard.db`. Sistem pembaruan ExamGuard v1.2.2 dilengkapi proteksi isolasi data sehingga proses pembaruan hanya memperbarui berkas frontend dan script API tanpa pernah menimpa database yang sudah ada.
+> **Solusi:** **Sama sekali tidak hilang.** Database disimpan secara mandiri di berkas `examguard.db`. Sistem pembaruan ExamGuard v1.3.0 dilengkapi proteksi isolasi data sehingga proses pembaruan hanya memperbarui berkas frontend dan script API tanpa pernah menimpa database yang sudah ada.
 
 ---
 

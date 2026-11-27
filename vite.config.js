@@ -162,8 +162,9 @@ function examGuardSQLitePlugin() {
 
       // ── /api/db/snapshot ─ Full state snapshot ──────────────────────────
       if (url === '/api/db/snapshot' && method === 'GET') {
+        const inst = dbApi.getInstitution();
         return sendJson(res, 200, {
-          institution:       dbApi.getInstitution(),
+          institution:       callerRole === 'admin' ? inst : (inst ? { ...inst, google_client_secret: '', recaptcha_secret_key: '', ngrok_authtoken: '' } : null),
           users:             dbApi.getUsers(),
           examSessions:      dbApi.getExamSessions(),
           attempts:          dbApi.getAttempts(),
@@ -178,9 +179,21 @@ function examGuardSQLitePlugin() {
       // ── /api/db/institution ──────────────────────────────────────────────
       if (url === '/api/db/institution') {
         if (method === 'GET') {
-          return sendJson(res, 200, dbApi.getInstitution());
+          const inst = dbApi.getInstitution();
+          if (callerRole !== 'admin' && inst) {
+            return sendJson(res, 200, {
+              ...inst,
+              google_client_secret: '',
+              recaptcha_secret_key: '',
+              ngrok_authtoken: '',
+            });
+          }
+          return sendJson(res, 200, inst);
         }
         if (method === 'POST' || method === 'PUT') {
+          if (callerRole === 'proctor' || (callerRole !== null && callerRole !== 'admin')) {
+            return sendJson(res, 403, { error: 'Akses Ditolak: Hanya Super Admin yang diizinkan mengubah konfigurasi instansi.' });
+          }
           const updated = dbApi.updateInstitution(body);
           broadcast('institution_updated', { institution: updated });
           return sendJson(res, 200, updated);
@@ -482,6 +495,44 @@ function examGuardSQLitePlugin() {
           const cleared = dbApi.clearBroadcast ? dbApi.clearBroadcast() : { id: 'singleton', message: '', scheduled_at: null, broadcast_id: '' };
           return sendJson(res, 200, { success: true, ...cleared, broadcast: cleared });
         }
+      }
+
+      // ── /api/db/tunnel/status (Ngrok Cloud Tunnel Status) ────────────────
+      if (url === '/api/db/tunnel/status' || url === '/api/db/tunnel' || url === '/api/tunnel/status') {
+        const httpReq = require('http').get('http://127.0.0.1:4040/api/tunnels', { timeout: 1000 }, (tRes) => {
+          let rawData = '';
+          tRes.on('data', chunk => rawData += chunk);
+          tRes.on('end', () => {
+            try {
+              const data = JSON.parse(rawData);
+              const tunnels = data.tunnels || [];
+              let publicUrl = '';
+              let proto = 'https';
+              for (const t of tunnels) {
+                if (t.public_url) {
+                  publicUrl = t.public_url;
+                  proto = t.proto || 'https';
+                  if (publicUrl.startsWith('https://')) break;
+                }
+              }
+              return sendJson(res, 200, {
+                success: true,
+                active: Boolean(publicUrl),
+                public_url: publicUrl || null,
+                proto,
+                tunnels,
+              });
+            } catch {
+              return sendJson(res, 200, { success: true, active: false, public_url: null });
+            }
+          });
+        });
+        httpReq.on('error', () => sendJson(res, 200, { success: true, active: false, public_url: null }));
+        httpReq.on('timeout', () => {
+          httpReq.destroy();
+          sendJson(res, 200, { success: true, active: false, public_url: null });
+        });
+        return;
       }
 
       // ── /api/db/backup ───────────────────────────────────────────────────

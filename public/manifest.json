@@ -1,8 +1,8 @@
 {
   "name": "ExamGuard",
-  "version": "1.2.2",
-  "release_name": "ExamGuard v1.2.2 Production Release",
-  "build_timestamp": "2026-11-23T10:30:00.000000",
+  "version": "1.3.0",
+  "release_name": "ExamGuard v1.3.0 Production Release",
+  "build_timestamp": "2026-11-27T13:30:00.000000",
   "min_php_version": "8.0",
   "author": "Fandi dari Jawa tech",
   "required_files": [
@@ -16,19 +16,19 @@
     "api/examguard.db-shm"
   ],
   "changelog": [
-    "Perbaikan menyeluruh penyimpanan dan pembaruan Sesi Ujian Google Form (Link GForm, Token Mulai, Token Selesai, Waktu Mulai/Selesai, Durasi).",
-    "Penyempurnaan arsitektur UPSERT backend SQLite: memastikan data soal yang diedit tersimpan persisten tanpa error UNIQUE constraint.",
-    "Pembaruan Otomatis 1-Klik GitHub yang lebih tangguh: penanganan otomatis follow-location cURL & redirect S3 AWS untuk server cPanel (open_basedir).",
-    "Pencegahan mutlak penimpaan database examguard.db pada seluruh metode pembaruan (1-Klik maupun unggah manual).",
-    "KETERANGAN KHUSUS CPANEL: Pembaruan versi v1.2.2 di server cPanel dapat menggunakan 1-Klik Otomatis dari GitHub atau mengunggah berkas kompilasi examguard-v1.2.2-cpanel.zip (bukan source-code mentah GitHub).",
-    "Perbaikan re-render dan background refresh 8 detik yang mengganggu form input dan popup modal admin.",
-    "Fitur Form & Modal Lock: mencegah background snapshot menimpa data yang sedang diketik atau diproses di popup.",
-    "Pusat Pembaruan Sistem (OTA Update Hub): 1-Klik Otomatis dari GitHub & Unggah ZIP Offline.",
-    "Fitur Broadcast Siaran Admin/Pengawas real-time dengan pita running text 3x putaran.",
-    "Badge status soal aktif (Berlangsung, Akan Datang, Berakhir) & auto-sort cerdas pengawas.",
-    "Perbaikan alur tombol reset pekerjaan peserta pada kontrol pengawas.",
-    "Penyempurnaan sistem pelanggaran ringan (popup penjelasan) & pelanggaran berat (lockout)",
-    "Identitas nama sekolah & tingkat pada navbar beranda HP dengan animasi marquee continuous loop"
+    "Mode Offline & Online: Deteksi otomatis lingkungan server cPanel, Cloud Ngrok HTTPS, dan Wi-Fi Lokal.",
+    "Integrasi Cloud Tunneling Ngrok: Koneksi HTTPS aman bebas error izin kamera, mikrofon, dan GPS pada ponsel siswa.",
+    "Manajemen Ngrok Authtoken: Form input token dengan fitur sembunyikan/lihat token dan proteksi enkripsi admin.",
+    "Hardening Keamanan Data Rahasia (Masking): Sanitasi kredensial Google Client Secret, reCAPTCHA Secret Key, dan Ngrok Authtoken agar tidak bocor ke browser peserta.",
+    "Perbaikan login proktor: Validasi kata sandi terenkripsi & sinkronisasi multi-role proktor.",
+    "Fitur Reset Password Peserta: Sinkronisasi instan ke database dan cache lokal.",
+    "Akses Form Admin Tersembunyi: 7x ketuk logo sekolah untuk membuka login admin, ketukan ke-8 untuk mengunci kembali ke portal siswa.",
+    "Accordion Terpadu Pengaturan Google: 4 sub-bagian (OAuth, reCAPTCHA, Google Drive Coming Soon, Sheets Coming Soon).",
+    "Dukungan Unggah Berkas JSON Service Account reCAPTCHA langsung dari dashboard.",
+    "Menu Rekap Nilai (Coming Soon untuk rilis v2.0.0 auto-sync nilai Google Forms).",
+    "Pusat Pembaruan Sistem (OTA Update Hub): Panduan 5 langkah & rekomendasi backup data sebelum update.",
+    "Modal QR Code Portal Siswa Otomatis: Menghasilkan barcode instan sesuai URL aktif (Ngrok/Wi-Fi/cPanel).",
+    "SQLite Concurrency Hardening: PRAGMA busy_timeout = 5000, WAL mode, ACID compliance."
   ],
-  "cpanel_update_note": "Khusus pembaruan di server cPanel, wajib mengunggah berkas rilis kompilasi examguard-v1.2.2-cpanel.zip atau menggunakan 1-Klik Otomatis jika paket rilis terhubung di GitHub Releases."
+  "cpanel_update_note": "Khusus pembaruan di server cPanel, wajib mengunggah berkas rilis kompilasi examguard-v1.3.0-cpanel.zip atau menggunakan 1-Klik Otomatis jika paket rilis terhubung di GitHub Releases."
 }

@@ -183,7 +183,7 @@ function _loadInitialCache() {
     if (rawLogs) _cache.systemErrorLogs = JSON.parse(rawLogs);
     const rawBcast = localStorage.getItem('examguard_active_broadcast');
     if (rawBcast) _cache.activeBroadcast = JSON.parse(rawBcast);
-  } catch {}
+  } catch { }
 }
 
 function _applySnapshot(data) {
@@ -191,57 +191,57 @@ function _applySnapshot(data) {
   const bcast = data.activeBroadcast || data.active_broadcast;
   if (bcast) {
     _cache.activeBroadcast = bcast;
-    try { localStorage.setItem('examguard_active_broadcast', JSON.stringify(bcast)); } catch {}
+    try { localStorage.setItem('examguard_active_broadcast', JSON.stringify(bcast)); } catch { }
   }
   const isEditingLocked = typeof window !== 'undefined' && Boolean(window.__examguard_is_editing);
   if (data.institution && !isEditingLocked) {
     if (typeof data.institution.browser_permissions === 'string') {
-      try { data.institution.browser_permissions = JSON.parse(data.institution.browser_permissions); } catch {}
+      try { data.institution.browser_permissions = JSON.parse(data.institution.browser_permissions); } catch { }
     }
     _cache.institution = data.institution;
-    try { localStorage.setItem('examguard_institution', JSON.stringify(data.institution)); } catch {}
+    try { localStorage.setItem('examguard_institution', JSON.stringify(data.institution)); } catch { }
   }
   if (Array.isArray(data.users) && !isEditingLocked) {
     _cache.users = data.users;
-    try { localStorage.setItem('examguard_users', JSON.stringify(data.users)); } catch {}
+    try { localStorage.setItem('examguard_users', JSON.stringify(data.users)); } catch { }
   }
   const examList = Array.isArray(data.examSessions)
     ? data.examSessions
     : (Array.isArray(data.exam_sessions) ? data.exam_sessions : null);
   if (examList && !isEditingLocked) {
     _cache.examSessions = examList;
-    try { localStorage.setItem('examguard_exam_sessions', JSON.stringify(examList)); } catch {}
+    try { localStorage.setItem('examguard_exam_sessions', JSON.stringify(examList)); } catch { }
   }
   const attemptList = Array.isArray(data.attempts)
     ? data.attempts
     : (Array.isArray(data.student_attempts) ? data.student_attempts : null);
   if (attemptList) {
     _cache.attempts = attemptList;
-    try { localStorage.setItem('examguard_attempts', JSON.stringify(attemptList)); } catch {}
+    try { localStorage.setItem('examguard_attempts', JSON.stringify(attemptList)); } catch { }
   }
   const attendanceList = Array.isArray(data.attendance)
     ? data.attendance
     : (Array.isArray(data.exam_attendance) ? data.exam_attendance : null);
   if (attendanceList) {
     _cache.attendance = attendanceList;
-    try { localStorage.setItem('examguard_attendance', JSON.stringify(attendanceList)); } catch {}
+    try { localStorage.setItem('examguard_attendance', JSON.stringify(attendanceList)); } catch { }
   }
   const appMode = data.appModeConfig || data.app_mode_config;
   if (appMode) {
     _cache.appModeConfig = appMode;
-    try { localStorage.setItem('examguard_app_mode', JSON.stringify(appMode)); } catch {}
+    try { localStorage.setItem('examguard_app_mode', JSON.stringify(appMode)); } catch { }
   }
   const beritaAcara = data.beritaAcaraConfig || data.berita_acara_config;
   if (beritaAcara) {
     _cache.beritaAcaraConfig = beritaAcara;
-    try { localStorage.setItem('examguard_berita_acara', JSON.stringify(beritaAcara)); } catch {}
+    try { localStorage.setItem('examguard_berita_acara', JSON.stringify(beritaAcara)); } catch { }
   }
   const errorLogs = Array.isArray(data.systemErrorLogs)
     ? data.systemErrorLogs
     : (Array.isArray(data.system_error_logs) ? data.system_error_logs : null);
   if (errorLogs) {
     _cache.systemErrorLogs = errorLogs;
-    try { localStorage.setItem('examguard_error_logs', JSON.stringify(errorLogs)); } catch {}
+    try { localStorage.setItem('examguard_error_logs', JSON.stringify(errorLogs)); } catch { }
   }
 }
 
@@ -255,31 +255,31 @@ if (typeof window !== 'undefined') {
       try {
         const raw = localStorage.getItem('examguard_institution');
         if (raw) _cache.institution = JSON.parse(raw);
-      } catch {}
+      } catch { }
     }
     if (!e.key || e.key === 'examguard_exam_sessions') {
       try {
         const raw = localStorage.getItem('examguard_exam_sessions');
         if (raw) _cache.examSessions = JSON.parse(raw);
-      } catch {}
+      } catch { }
     }
     if (!e.key || e.key === 'examguard_attempts') {
       try {
         const raw = localStorage.getItem('examguard_attempts');
         if (raw) _cache.attempts = JSON.parse(raw);
-      } catch {}
+      } catch { }
     }
     if (!e.key || e.key === 'examguard_users') {
       try {
         const raw = localStorage.getItem('examguard_users');
         if (raw) _cache.users = JSON.parse(raw);
-      } catch {}
+      } catch { }
     }
     if (!e.key || e.key === 'examguard_app_mode') {
       try {
         const raw = localStorage.getItem('examguard_app_mode');
         if (raw) _cache.appModeConfig = JSON.parse(raw);
-      } catch {}
+      } catch { }
     }
     if (!e.key || e.key === 'examguard_active_broadcast') {
       try {
@@ -287,7 +287,7 @@ if (typeof window !== 'undefined') {
         if (raw) _cache.activeBroadcast = JSON.parse(raw);
         else _cache.activeBroadcast = null;
         window.dispatchEvent(new CustomEvent('examguard_broadcast_updated', { detail: _cache.activeBroadcast }));
-      } catch {}
+      } catch { }
     }
     try {
       window.dispatchEvent(new CustomEvent('examguard_storage_updated', {
@@ -296,7 +296,7 @@ if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('examguard_db_updated', {
         detail: { event: 'cross_tab_storage', key: e.key }
       }));
-    } catch {}
+    } catch { }
   });
 
   // Fetch snapshot mutakhir dari SQLite backend via REST API
@@ -309,7 +309,7 @@ if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('examguard_db_updated', { detail: { event: 'snapshot', data } }));
       }
     })
-    .catch(() => {});
+    .catch(() => { });
 
   // Dengar perubahan real-time dari WebSocket via dbService
   dbService.subscribe((event, data) => {
@@ -320,7 +320,7 @@ if (typeof window !== 'undefined') {
       case 'institution_updated':
         if (data.institution) {
           _cache.institution = data.institution;
-          try { localStorage.setItem('examguard_institution', JSON.stringify(data.institution)); } catch {}
+          try { localStorage.setItem('examguard_institution', JSON.stringify(data.institution)); } catch { }
           if (typeof window !== 'undefined') {
             window.dispatchEvent(new CustomEvent('examguard_storage_updated', { detail: { event: 'institution_updated', institution: data.institution } }));
           }
@@ -332,7 +332,7 @@ if (typeof window !== 'undefined') {
           const idx = _cache.users.findIndex(u => u.id === data.user.id);
           if (idx >= 0) _cache.users[idx] = data.user;
           else _cache.users.push(data.user);
-          try { localStorage.setItem('examguard_users', JSON.stringify(_cache.users)); } catch {}
+          try { localStorage.setItem('examguard_users', JSON.stringify(_cache.users)); } catch { }
         }
         break;
       case 'user_deleted':
@@ -344,7 +344,7 @@ if (typeof window !== 'undefined') {
             localStorage.setItem('examguard_users', JSON.stringify(_cache.users));
             localStorage.setItem('examguard_attempts', JSON.stringify(_cache.attempts));
             localStorage.setItem('examguard_attendance', JSON.stringify(_cache.attendance));
-          } catch {}
+          } catch { }
         }
         break;
       case 'all_students_deleted':
@@ -355,7 +355,7 @@ if (typeof window !== 'undefined') {
           localStorage.setItem('examguard_users', JSON.stringify(_cache.users));
           localStorage.setItem('examguard_attempts', JSON.stringify([]));
           localStorage.setItem('examguard_attendance', JSON.stringify([]));
-        } catch {}
+        } catch { }
         break;
       case 'sessions_updated':
       case 'session_deleted':
@@ -372,7 +372,7 @@ if (typeof window !== 'undefined') {
           localStorage.setItem('examguard_exam_sessions', JSON.stringify(_cache.examSessions));
           localStorage.setItem('examguard_attempts', JSON.stringify(_cache.attempts));
           localStorage.setItem('examguard_attendance', JSON.stringify(_cache.attendance));
-        } catch {}
+        } catch { }
         break;
       case 'attempt_updated':
       case 'attempt_unlocked':
@@ -383,13 +383,13 @@ if (typeof window !== 'undefined') {
           const idx = _cache.attempts.findIndex(a => a.id === data.attempt.id || (a.student_id === data.attempt.student_id && a.exam_session_id === data.attempt.exam_session_id));
           if (idx >= 0) _cache.attempts[idx] = data.attempt;
           else _cache.attempts.unshift(data.attempt);
-          try { localStorage.setItem('examguard_attempts', JSON.stringify(_cache.attempts)); } catch {}
+          try { localStorage.setItem('examguard_attempts', JSON.stringify(_cache.attempts)); } catch { }
         }
         break;
       case 'attempt_removed':
         if (data.studentId && data.examSessionId) {
           _cache.attempts = _cache.attempts.filter(a => !(a.student_id === data.studentId && a.exam_session_id === data.examSessionId));
-          try { localStorage.setItem('examguard_attempts', JSON.stringify(_cache.attempts)); } catch {}
+          try { localStorage.setItem('examguard_attempts', JSON.stringify(_cache.attempts)); } catch { }
         }
         break;
       case 'attendance_updated':
@@ -397,19 +397,19 @@ if (typeof window !== 'undefined') {
           const idx = _cache.attendance.findIndex(a => a.student_id === data.record.student_id && a.exam_session_id === data.record.exam_session_id);
           if (idx >= 0) _cache.attendance[idx] = data.record;
           else _cache.attendance.push(data.record);
-          try { localStorage.setItem('examguard_attendance', JSON.stringify(_cache.attendance)); } catch {}
+          try { localStorage.setItem('examguard_attendance', JSON.stringify(_cache.attendance)); } catch { }
         }
         break;
       case 'app_mode_updated':
         if (data.config) {
           _cache.appModeConfig = data.config;
-          try { localStorage.setItem('examguard_app_mode', JSON.stringify(data.config)); } catch {}
+          try { localStorage.setItem('examguard_app_mode', JSON.stringify(data.config)); } catch { }
         }
         break;
       case 'berita_acara_updated':
         if (data.config) {
           _cache.beritaAcaraConfig = data.config;
-          try { localStorage.setItem('examguard_berita_acara', JSON.stringify(data.config)); } catch {}
+          try { localStorage.setItem('examguard_berita_acara', JSON.stringify(data.config)); } catch { }
         }
         break;
       default:
@@ -420,7 +420,7 @@ if (typeof window !== 'undefined') {
       try {
         window.dispatchEvent(new CustomEvent('examguard_storage_updated', { detail: { event, ...data } }));
         window.dispatchEvent(new CustomEvent('examguard_db_updated', { detail: { event, ...data } }));
-      } catch {}
+      } catch { }
     }
   });
 }
@@ -473,7 +473,7 @@ export const storageService = {
             _cache.institution = parsed;
           }
         }
-      } catch {}
+      } catch { }
     }
     if (_cache.institution) {
       if (_cache.institution.lock_device_enabled === undefined) {
@@ -524,7 +524,7 @@ export const storageService = {
     const current = this.getInstitution();
     const updated = { ...current, ...data, updated_at: new Date().toISOString() };
     _cache.institution = updated;
-    try { localStorage.setItem('examguard_institution', JSON.stringify(updated)); } catch {}
+    try { localStorage.setItem('examguard_institution', JSON.stringify(updated)); } catch { }
     // Kirim async ke SQLite backend
     dbService.updateInstitution(updated).catch(err => console.error('[ExamGuard Storage] Sync error updateInstitution:', err));
     if (typeof window !== 'undefined') {
@@ -532,6 +532,10 @@ export const storageService = {
       window.dispatchEvent(new CustomEvent('examguard_db_updated', { detail: { event: 'institution_updated', institution: updated } }));
     }
     return updated;
+  },
+
+  async getTunnelStatus() {
+    return await dbService.getTunnelStatus();
   },
 
   // ── Users ─────────────────────────────────────────────────────────────────
@@ -585,7 +589,7 @@ export const storageService = {
           return user;
         }
       }
-    } catch {}
+    } catch { }
     return this.getUserByEmail(q);
   },
 
@@ -602,16 +606,16 @@ export const storageService = {
     } else {
       _cache.users.push(updated);
     }
-    try { localStorage.setItem('examguard_users', JSON.stringify(_cache.users)); } catch {}
+    try { localStorage.setItem('examguard_users', JSON.stringify(_cache.users)); } catch { }
 
     if (user.role === 'student') {
       if (existingIdx >= 0) {
-        dbService.updateStudent(user.id, user).catch(() => {});
+        dbService.updateStudent(user.id, user).catch(() => { });
       } else {
-        dbService.addStudent(user).catch(() => {});
+        dbService.addStudent(user).catch(() => { });
       }
     } else {
-      dbService.updateAdminProfile(user.id, user).catch(() => {});
+      dbService.updateAdminProfile(user.id, user).catch(() => { });
     }
     return updated;
   },
@@ -624,7 +628,7 @@ export const storageService = {
       localStorage.setItem('examguard_users', JSON.stringify(_cache.users));
       localStorage.setItem('examguard_attempts', JSON.stringify(_cache.attempts));
       localStorage.setItem('examguard_attendance', JSON.stringify(_cache.attendance));
-    } catch {}
+    } catch { }
     dbService.deleteUser(id).catch(err => console.error('[ExamGuard Storage] Sync error deleteUser:', err));
     return true;
   },
@@ -637,7 +641,7 @@ export const storageService = {
       localStorage.setItem('examguard_users', JSON.stringify(_cache.users));
       localStorage.setItem('examguard_attempts', JSON.stringify([]));
       localStorage.setItem('examguard_attendance', JSON.stringify([]));
-    } catch {}
+    } catch { }
     dbService.deleteAllStudents().catch(err => console.error('[ExamGuard Storage] Sync error deleteAllStudents:', err));
     return true;
   },
@@ -694,7 +698,7 @@ export const storageService = {
     };
 
     _cache.users.push(newStudent);
-    try { localStorage.setItem('examguard_users', JSON.stringify(_cache.users)); } catch {}
+    try { localStorage.setItem('examguard_users', JSON.stringify(_cache.users)); } catch { }
 
     // Async push ke SQLite
     dbService.addStudent(newStudent).catch(err => console.error('[ExamGuard Storage] Sync error addStudent:', err));
@@ -706,17 +710,41 @@ export const storageService = {
     if (idx < 0) return { success: false, message: 'Peserta tidak ditemukan.' };
 
     const current = _cache.users[idx];
+    const newNis = data.nis !== undefined ? String(data.nis || '').trim() : current.nis;
+    const newNisn = data.nisn !== undefined ? String(data.nisn || '').trim() : current.nisn;
+    const newUsername = newNisn || data.nomor_ujian || newNis || current.username;
+
+    // Cek apakah password peserta sebelumnya adalah default (NIS atau NISN lama)
+    const wasDefaultPassword = !current.password ||
+      current.password === current.nis ||
+      current.password === current.nisn ||
+      current.password === '123456' ||
+      current.password === 'password';
+
+    let resolvedPassword = current.password;
+    if (data.password) {
+      resolvedPassword = data.password;
+    } else if (wasDefaultPassword) {
+      resolvedPassword = newNis || newNisn || '123456';
+    }
+
+    const payload = {
+      ...data,
+      username: newUsername,
+      password: resolvedPassword,
+    };
+
     const updated = {
       ...current,
-      ...data,
+      ...payload,
       ruang: data.ruang !== undefined ? String(data.ruang || '').replace(/[^a-zA-Z0-9 ]/g, '').slice(0, 10) : current.ruang,
-      nomor_ujian: data.nomor_ujian !== undefined ? cleanNomorUjian(data.nomor_ujian, current.nisn) : current.nomor_ujian,
+      nomor_ujian: data.nomor_ujian !== undefined ? cleanNomorUjian(data.nomor_ujian, newNisn) : current.nomor_ujian,
       updated_at: new Date().toISOString(),
     };
     _cache.users[idx] = updated;
-    try { localStorage.setItem('examguard_users', JSON.stringify(_cache.users)); } catch {}
+    try { localStorage.setItem('examguard_users', JSON.stringify(_cache.users)); } catch { }
 
-    dbService.updateStudent(id, data).catch(err => console.error('[ExamGuard Storage] Sync error updateStudent:', err));
+    dbService.updateStudent(id, payload).catch(err => console.error('[ExamGuard Storage] Sync error updateStudent:', err));
     return { success: true, user: updated };
   },
 
@@ -725,8 +753,8 @@ export const storageService = {
     if (idx >= 0) {
       _cache.users[idx].is_active = !_cache.users[idx].is_active;
       _cache.users[idx].updated_at = new Date().toISOString();
-      try { localStorage.setItem('examguard_users', JSON.stringify(_cache.users)); } catch {}
-      dbService.toggleUserActive(id).catch(() => {});
+      try { localStorage.setItem('examguard_users', JSON.stringify(_cache.users)); } catch { }
+      dbService.toggleUserActive(id).catch(() => { });
       return { success: true, user: _cache.users[idx] };
     }
     return { success: false };
@@ -737,8 +765,8 @@ export const storageService = {
     if (idx >= 0) {
       _cache.users[idx].is_verified = !_cache.users[idx].is_verified;
       _cache.users[idx].updated_at = new Date().toISOString();
-      try { localStorage.setItem('examguard_users', JSON.stringify(_cache.users)); } catch {}
-      dbService.toggleUserVerified(id).catch(() => {});
+      try { localStorage.setItem('examguard_users', JSON.stringify(_cache.users)); } catch { }
+      dbService.toggleUserVerified(id).catch(() => { });
       return { success: true, user: _cache.users[idx] };
     }
     return { success: false };
@@ -749,12 +777,12 @@ export const storageService = {
     if (idx >= 0) {
       _cache.users[idx].active_device_id = null;
       _cache.users[idx].updated_at = new Date().toISOString();
-      try { localStorage.setItem('examguard_users', JSON.stringify(_cache.users)); } catch {}
+      try { localStorage.setItem('examguard_users', JSON.stringify(_cache.users)); } catch { }
       try {
         if (typeof dbService.resetUserDevice === 'function') {
-          dbService.resetUserDevice(id).catch(() => {});
+          dbService.resetUserDevice(id).catch(() => { });
         }
-      } catch (e) {}
+      } catch (e) { }
       return { success: true, user: _cache.users[idx] };
     }
     return { success: false };
@@ -766,7 +794,7 @@ export const storageService = {
     const user = _cache.users[idx];
     const expected = user.password || user.nis || user.nisn;
     if (oldPassword !== expected) {
-      return { success: false, message: 'Kata sandi saat ini tidak cocok. (Kata sandi default adalah nomor NIS).' };
+      return { success: false, message: 'Kata sandi saat ini tidak cocok. Silakan periksa kembali.' };
     }
     const cleanNew = String(newPassword || '').trim();
     if (cleanNew.length < 4) {
@@ -774,7 +802,7 @@ export const storageService = {
     }
     _cache.users[idx].password = cleanNew;
     _cache.users[idx].updated_at = new Date().toISOString();
-    try { localStorage.setItem('examguard_users', JSON.stringify(_cache.users)); } catch {}
+    try { localStorage.setItem('examguard_users', JSON.stringify(_cache.users)); } catch { }
     dbService.updateStudent(studentId, { password: cleanNew }).catch(err => console.error('[ExamGuard Storage] Sync error changeStudentPassword:', err));
     return { success: true, message: 'Kata sandi berhasil diperbarui.', user: _cache.users[idx] };
   },
@@ -785,8 +813,8 @@ export const storageService = {
       const defPass = _cache.users[idx].nis || _cache.users[idx].nisn;
       _cache.users[idx].password = defPass;
       _cache.users[idx].updated_at = new Date().toISOString();
-      try { localStorage.setItem('examguard_users', JSON.stringify(_cache.users)); } catch {}
-      dbService.resetStudentPassword(studentId).catch(() => {});
+      try { localStorage.setItem('examguard_users', JSON.stringify(_cache.users)); } catch { }
+      dbService.resetStudentPassword(studentId).catch(() => { });
       return { success: true, defaultPassword: defPass };
     }
     return { success: false };
@@ -800,8 +828,8 @@ export const storageService = {
       _cache.users[idx].google_email = null;
       _cache.users[idx].google_linked_at = null;
       _cache.users[idx].updated_at = new Date().toISOString();
-      try { localStorage.setItem('examguard_users', JSON.stringify(_cache.users)); } catch {}
-      dbService.resetStudentSSO(studentId).catch(() => {});
+      try { localStorage.setItem('examguard_users', JSON.stringify(_cache.users)); } catch { }
+      dbService.resetStudentSSO(studentId).catch(() => { });
       return { success: true, user: _cache.users[idx] };
     }
     return { success: false };
@@ -814,8 +842,8 @@ export const storageService = {
       const newToken = generateStudentLoginToken(seed);
       _cache.users[idx].login_token = newToken;
       _cache.users[idx].updated_at = new Date().toISOString();
-      try { localStorage.setItem('examguard_users', JSON.stringify(_cache.users)); } catch {}
-      dbService.resetStudentLoginToken(studentId).catch(() => {});
+      try { localStorage.setItem('examguard_users', JSON.stringify(_cache.users)); } catch { }
+      dbService.resetStudentLoginToken(studentId).catch(() => { });
       return { success: true, token: newToken, user: _cache.users[idx] };
     }
     return { success: false };
@@ -833,14 +861,22 @@ export const storageService = {
   },
 
   updateAdminProfile(userId, data) {
-    const idx = (_cache.users || []).findIndex(u => u.id === userId);
+    let idx = (_cache.users || []).findIndex(u => u.id === userId);
+    if (idx < 0) {
+      if (data.role === 'admin' || userId === 'ADMIN-SUPER-01' || userId === 'admin-1') {
+        idx = (_cache.users || []).findIndex(u => u.role === 'admin');
+      } else if (data.role === 'proctor' || userId === 'PROCTOR-01' || userId === 'proktor-1') {
+        idx = (_cache.users || []).findIndex(u => u.role === 'proctor');
+      }
+    }
     if (idx >= 0) {
-      _cache.users[idx] = { ..._cache.users[idx], ...data, updated_at: new Date().toISOString() };
-      try { localStorage.setItem('examguard_users', JSON.stringify(_cache.users)); } catch {}
-      dbService.updateAdminProfile(userId, data).catch(() => {});
+      const targetUser = _cache.users[idx];
+      _cache.users[idx] = { ...targetUser, ...data, id: targetUser.id, updated_at: new Date().toISOString() };
+      try { localStorage.setItem('examguard_users', JSON.stringify(_cache.users)); } catch { }
+      dbService.updateAdminProfile(targetUser.id, data).catch(() => { });
       return { success: true, user: _cache.users[idx] };
     }
-    return { success: false };
+    return { success: false, message: 'Akun tidak ditemukan.' };
   },
 
   validateImportStudents(students) {
@@ -920,7 +956,7 @@ export const storageService = {
     }));
 
     _cache.users.push(...newOnes);
-    try { localStorage.setItem('examguard_users', JSON.stringify(_cache.users)); } catch {}
+    try { localStorage.setItem('examguard_users', JSON.stringify(_cache.users)); } catch { }
 
     dbService.bulkImportStudents(validList).catch(err => console.error('[ExamGuard Storage] Sync error bulkImportStudents:', err));
     return { success: true, count: newOnes.length };
@@ -969,13 +1005,13 @@ export const storageService = {
     } else {
       _cache.examSessions.unshift(examData);
     }
-    try { localStorage.setItem('examguard_exam_sessions', JSON.stringify(_cache.examSessions)); } catch {}
+    try { localStorage.setItem('examguard_exam_sessions', JSON.stringify(_cache.examSessions)); } catch { }
 
     if (typeof window !== 'undefined') {
       try {
         window.dispatchEvent(new CustomEvent('examguard_storage_updated', { detail: { event: 'sessions_updated', exam: examData } }));
         window.dispatchEvent(new CustomEvent('examguard_db_updated', { detail: { event: 'sessions_updated', exam: examData } }));
-      } catch {}
+      } catch { }
     }
 
     dbService.saveExamSession(examData).catch(err => console.error('[ExamGuard Storage] Sync error saveExamSession:', err));
@@ -990,13 +1026,13 @@ export const storageService = {
       localStorage.setItem('examguard_exam_sessions', JSON.stringify(_cache.examSessions));
       localStorage.setItem('examguard_attempts', JSON.stringify(_cache.attempts));
       localStorage.setItem('examguard_attendance', JSON.stringify(_cache.attendance));
-    } catch {}
+    } catch { }
 
     if (typeof window !== 'undefined') {
       try {
         window.dispatchEvent(new CustomEvent('examguard_storage_updated', { detail: { event: 'session_deleted', deletedId: id } }));
         window.dispatchEvent(new CustomEvent('examguard_db_updated', { detail: { event: 'session_deleted', deletedId: id } }));
-      } catch {}
+      } catch { }
     }
 
     dbService.deleteExamSession(id).catch(err => console.error('[ExamGuard Storage] Sync error deleteExamSession:', err));
@@ -1089,7 +1125,7 @@ export const storageService = {
     } else {
       _cache.attempts.unshift(attempt);
     }
-    try { localStorage.setItem('examguard_attempts', JSON.stringify(_cache.attempts)); } catch {}
+    try { localStorage.setItem('examguard_attempts', JSON.stringify(_cache.attempts)); } catch { }
 
     dbService.saveAttempt(attempt).catch(err => console.error('[ExamGuard Storage] Sync error saveAttempt:', err));
     return attempt;
@@ -1099,12 +1135,12 @@ export const storageService = {
     _cache.attempts = (_cache.attempts || []).filter(
       a => !(String(a.student_id) === String(studentId) && String(a.exam_session_id) === String(examSessionId))
     );
-    try { localStorage.setItem('examguard_attempts', JSON.stringify(_cache.attempts)); } catch {}
+    try { localStorage.setItem('examguard_attempts', JSON.stringify(_cache.attempts)); } catch { }
     try {
       if (typeof dbService.deleteAttempt === 'function') {
-        dbService.deleteAttempt(studentId, examSessionId).catch(() => {});
+        dbService.deleteAttempt(studentId, examSessionId).catch(() => { });
       } else if (typeof dbService.proctorSetAttemptNotStarted === 'function') {
-        dbService.proctorSetAttemptNotStarted(studentId, examSessionId).catch(() => {});
+        dbService.proctorSetAttemptNotStarted(studentId, examSessionId).catch(() => { });
       }
     } catch (e) {
       console.warn('Sync server deleteAttempt error:', e);
@@ -1117,8 +1153,8 @@ export const storageService = {
     if (!attempt) return null;
     attempt.time_spent_seconds = timeSpentSeconds;
     attempt.updated_at = new Date().toISOString();
-    try { localStorage.setItem('examguard_attempts', JSON.stringify(_cache.attempts)); } catch {}
-    dbService.updateAttemptTime(studentId, examSessionId, timeSpentSeconds).catch(() => {});
+    try { localStorage.setItem('examguard_attempts', JSON.stringify(_cache.attempts)); } catch { }
+    dbService.updateAttemptTime(studentId, examSessionId, timeSpentSeconds).catch(() => { });
     return attempt;
   },
 
@@ -1127,8 +1163,8 @@ export const storageService = {
     if (!attempt) return null;
     attempt.ping_latency_ms = Math.round(latencyMs);
     attempt.last_ping_at = new Date().toISOString();
-    try { localStorage.setItem('examguard_attempts', JSON.stringify(_cache.attempts)); } catch {}
-    dbService.updateAttemptPing(attemptId, latencyMs).catch(() => {});
+    try { localStorage.setItem('examguard_attempts', JSON.stringify(_cache.attempts)); } catch { }
+    dbService.updateAttemptPing(attemptId, latencyMs).catch(() => { });
     return attempt;
   },
 
@@ -1140,7 +1176,7 @@ export const storageService = {
       if (latencyMs !== undefined && latencyMs !== null) attempt.ping_latency_ms = Math.round(latencyMs);
       attempt.last_ping_at = now;
       attempt.updated_at = now;
-      try { localStorage.setItem('examguard_attempts', JSON.stringify(_cache.attempts)); } catch {}
+      try { localStorage.setItem('examguard_attempts', JSON.stringify(_cache.attempts)); } catch { }
     }
     return dbService.sendExamHeartbeat(studentId, examSessionId, timeSpentSeconds, latencyMs);
   },
@@ -1152,11 +1188,11 @@ export const storageService = {
         const attempts = await res.json();
         if (Array.isArray(attempts)) {
           _cache.attempts = attempts;
-          try { localStorage.setItem('examguard_attempts', JSON.stringify(attempts)); } catch {}
+          try { localStorage.setItem('examguard_attempts', JSON.stringify(attempts)); } catch { }
           return attempts;
         }
       }
-    } catch {}
+    } catch { }
     return _cache.attempts || [];
   },
 
@@ -1176,7 +1212,7 @@ export const storageService = {
       is_reset_violations: true,
     });
     // Panggil backend API khusus unlock untuk memicu broadcast WebSocket 'attempt_unlocked'
-    dbService.proctorUnlockAttempt(attempt.student_id, attempt.exam_session_id).catch(() => {});
+    dbService.proctorUnlockAttempt(attempt.student_id, attempt.exam_session_id).catch(() => { });
     return updated;
   },
 
@@ -1194,7 +1230,7 @@ export const storageService = {
     }
     const updated = this.saveAttempt(updates);
     // Panggil backend API khusus reset-violations untuk memicu broadcast WebSocket 'violations_reset'
-    dbService.proctorResetViolations(attempt.student_id, attempt.exam_session_id).catch(() => {});
+    dbService.proctorResetViolations(attempt.student_id, attempt.exam_session_id).catch(() => { });
     return updated;
   },
 
@@ -1269,19 +1305,19 @@ export const storageService = {
 
   proctorSetBulkCompleted(studentIds, examSessionId, examTitle = '') {
     studentIds.forEach(id => this.proctorSetAttemptCompleted(id, examSessionId, examTitle));
-    dbService.proctorBulkComplete(studentIds, examSessionId, examTitle).catch(() => {});
+    dbService.proctorBulkComplete(studentIds, examSessionId, examTitle).catch(() => { });
     return studentIds.length;
   },
 
   proctorResetBulkStudentWork(studentIds, examSessionId, examTitle = '') {
     studentIds.forEach(id => this.proctorResetStudentWork(id, examSessionId, examTitle));
-    dbService.proctorBulkReset(studentIds, examSessionId, examTitle).catch(() => {});
+    dbService.proctorBulkReset(studentIds, examSessionId, examTitle).catch(() => { });
     return studentIds.length;
   },
 
   proctorSetBulkNotStarted(studentIds, examSessionId) {
     studentIds.forEach(id => this.proctorSetAttemptNotStarted(id, examSessionId));
-    dbService.proctorBulkNotStarted(studentIds, examSessionId).catch(() => {});
+    dbService.proctorBulkNotStarted(studentIds, examSessionId).catch(() => { });
     return studentIds.length;
   },
 
@@ -1315,9 +1351,9 @@ export const storageService = {
     } else {
       _cache.attendance.push(record);
     }
-    try { localStorage.setItem('examguard_attendance', JSON.stringify(_cache.attendance)); } catch {}
+    try { localStorage.setItem('examguard_attendance', JSON.stringify(_cache.attendance)); } catch { }
 
-    dbService.updateStudentAttendance(examSessionId, studentId, data, record.updated_by).catch(() => {});
+    dbService.updateStudentAttendance(examSessionId, studentId, data, record.updated_by).catch(() => { });
     return record;
   },
 
@@ -1325,8 +1361,8 @@ export const storageService = {
     _cache.attendance = (_cache.attendance || []).filter(
       a => !(a.exam_session_id === examSessionId && a.student_id === studentId)
     );
-    try { localStorage.setItem('examguard_attendance', JSON.stringify(_cache.attendance)); } catch {}
-    dbService.removeExamAttendance(examSessionId, studentId).catch(() => {});
+    try { localStorage.setItem('examguard_attendance', JSON.stringify(_cache.attendance)); } catch { }
+    dbService.removeExamAttendance(examSessionId, studentId).catch(() => { });
     return true;
   },
 
@@ -1356,8 +1392,8 @@ export const storageService = {
     const current = this.getBeritaAcaraConfig();
     const updated = { ...current, ...config, updated_at: new Date().toISOString() };
     _cache.beritaAcaraConfig = updated;
-    try { localStorage.setItem('examguard_berita_acara', JSON.stringify(updated)); } catch {}
-    dbService.saveBeritaAcaraConfig(updated).catch(() => {});
+    try { localStorage.setItem('examguard_berita_acara', JSON.stringify(updated)); } catch { }
+    dbService.saveBeritaAcaraConfig(updated).catch(() => { });
     return updated;
   },
 
@@ -1386,10 +1422,10 @@ export const storageService = {
       if (res.ok) {
         const conf = await res.json();
         _cache.appModeConfig = conf;
-        try { localStorage.setItem('examguard_app_mode', JSON.stringify(conf)); } catch {}
+        try { localStorage.setItem('examguard_app_mode', JSON.stringify(conf)); } catch { }
         return conf;
       }
-    } catch {}
+    } catch { }
     return this.getAppModeConfig();
   },
 
@@ -1425,14 +1461,14 @@ export const storageService = {
     };
 
     _cache.appModeConfig = updated;
-    try { localStorage.setItem('examguard_app_mode', JSON.stringify(updated)); } catch {}
-    dbService.saveAppModeConfig(updated).catch(() => {});
+    try { localStorage.setItem('examguard_app_mode', JSON.stringify(updated)); } catch { }
+    dbService.saveAppModeConfig(updated).catch(() => { });
 
     if (typeof window !== 'undefined') {
       try {
         window.dispatchEvent(new CustomEvent('examguard_storage_updated', { detail: { event: 'app_mode_updated', config: updated } }));
         window.dispatchEvent(new CustomEvent('examguard_db_updated', { detail: { event: 'app_mode_updated', config: updated } }));
-      } catch {}
+      } catch { }
     }
 
     return {
@@ -1460,15 +1496,15 @@ export const storageService = {
     };
     _cache.systemErrorLogs.unshift(item);
     if (_cache.systemErrorLogs.length > 150) _cache.systemErrorLogs.pop();
-    try { localStorage.setItem('examguard_error_logs', JSON.stringify(_cache.systemErrorLogs)); } catch {}
-    dbService.addSystemErrorLog(item).catch(() => {});
+    try { localStorage.setItem('examguard_error_logs', JSON.stringify(_cache.systemErrorLogs)); } catch { }
+    dbService.addSystemErrorLog(item).catch(() => { });
     return item;
   },
 
   clearSystemErrorLogs() {
     _cache.systemErrorLogs = [];
-    try { localStorage.setItem('examguard_error_logs', JSON.stringify([])); } catch {}
-    dbService.clearSystemErrorLogs().catch(() => {});
+    try { localStorage.setItem('examguard_error_logs', JSON.stringify([])); } catch { }
+    dbService.clearSystemErrorLogs().catch(() => { });
     return true;
   },
 
@@ -1581,7 +1617,7 @@ export const storageService = {
       try {
         const raw = localStorage.getItem('examguard_active_broadcast');
         if (raw) _cache.activeBroadcast = JSON.parse(raw);
-      } catch {}
+      } catch { }
     }
     return _cache.activeBroadcast || { message: '', scheduled_at: null, broadcast_id: '' };
   },
@@ -1603,7 +1639,7 @@ export const storageService = {
         localStorage.setItem('examguard_last_broadcast_text', finalMsg);
         localStorage.setItem('examguard_last_broadcast_time', new Date().toISOString());
       }
-    } catch {}
+    } catch { }
 
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('examguard_broadcast_updated', { detail: data }));
@@ -1638,14 +1674,14 @@ export const storageService = {
     _cache.activeBroadcast = empty;
     try {
       localStorage.removeItem('examguard_active_broadcast');
-    } catch {}
+    } catch { }
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('examguard_broadcast_updated', { detail: empty }));
       window.dispatchEvent(new CustomEvent('examguard_storage_updated', { detail: { event: 'broadcast_updated', data: empty } }));
     }
     try {
       await fetch('/api/db/broadcast', { method: 'DELETE' });
-    } catch {}
+    } catch { }
     return empty;
   },
 };

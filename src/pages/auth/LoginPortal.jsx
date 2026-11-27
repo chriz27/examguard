@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import QrScannerModal from '../../components/common/QrScannerModal';
 import { storageService, getOrCreateDeviceId, getDeviceClientInfo } from '../../services/storageService';
+import { APP_VERSION } from '../../constants/appVersion';
 
 export default function LoginPortal({ institution: propInstitution, onLoginSuccess }) {
   const [instState, setInstState] = useState(() => propInstitution || storageService.getInstitution() || {});
@@ -64,16 +65,27 @@ export default function LoginPortal({ institution: propInstitution, onLoginSucce
   const [errorMsg, setErrorMsg] = useState('');
   const [logoError, setLogoError] = useState(false);
 
-  // Handler klik logo 7x untuk membuka form login administrator rahasia
+  // Handler klik logo:
+  // 7x ketuk membuka form login administrator rahasia.
+  // Ketukan ke-8 (atau lebih dari 7x / saat form admin sedang terbuka) akan mengembalikan ke form login siswa.
   const handleLogoClick = () => {
-    if (isAdminUnlocked) return;
+    if (isAdminUnlocked) {
+      if (logoClickTimerRef.current) clearTimeout(logoClickTimerRef.current);
+      setLogoClicks(0);
+      setIsAdminUnlocked(false);
+      setActiveTab('student');
+      setErrorMsg('');
+      setUsername('');
+      setPassword('');
+      return;
+    }
 
     if (logoClickTimerRef.current) {
       clearTimeout(logoClickTimerRef.current);
     }
 
     const nextClicks = logoClicks + 1;
-    if (nextClicks >= 7) {
+    if (nextClicks === 7) {
       setLogoClicks(0);
       setIsAdminUnlocked(true);
       setActiveTab('admin');
@@ -85,6 +97,11 @@ export default function LoginPortal({ institution: propInstitution, onLoginSucce
         setUsername('');
         setPassword('');
       }
+    } else if (nextClicks > 7) {
+      setLogoClicks(0);
+      setIsAdminUnlocked(false);
+      setActiveTab('student');
+      setErrorMsg('');
     } else {
       setLogoClicks(nextClicks);
       logoClickTimerRef.current = setTimeout(() => {
@@ -500,12 +517,20 @@ export default function LoginPortal({ institution: propInstitution, onLoginSucce
       return;
     }
 
-    const expectedPassword = user.role === 'student' ? (user.password || user.nis || user.nisn) : user.password;
-    const isProctorPwMatch = (user.role === 'proctor' || user.username === 'proktor') && (password === 'proktor' || password === 'proktor123' || password === user.password);
-    if (!isProctorPwMatch && password !== expectedPassword && password !== user.password) {
+    let isPwMatch = false;
+    if (user.role === 'admin' || user.username === 'admin') {
+      isPwMatch = (password === (user.password || 'admin'));
+    } else if (user.role === 'proctor' || user.username === 'proktor') {
+      isPwMatch = (password === (user.password || 'proktor'));
+    } else {
+      const expectedStudentPw = user.password || user.nis || user.nisn || '123456';
+      isPwMatch = (password === expectedStudentPw);
+    }
+
+    if (!isPwMatch) {
       setErrorMsg(
         activeTab === 'student'
-          ? 'Password salah. Password default adalah nomor NIS peserta. Jika lupa, silakan lapor ke Admin/Proktor untuk Reset Password.'
+          ? 'Password salah. Silakan periksa kembali atau hubungi proktor/pengawas ujian jika memerlukan bantuan reset kata sandi.'
           : 'Kombinasi Pengguna / Administrator dan Password tidak cocok.'
       );
       return;
@@ -913,8 +938,6 @@ export default function LoginPortal({ institution: propInstitution, onLoginSucce
         <p className="text-xs text-zinc-500 mt-1 flex items-center justify-center gap-1.5">
           <School className="w-3.5 h-3.5 text-zinc-400" />
           <span>NPSN: <span className="font-mono text-zinc-700">{institution?.npsn || '20104829'}</span></span>
-          <span className="text-zinc-300">&bull;</span>
-          <span className="text-emerald-700 font-medium">Exam Guard v1.2</span>
         </p>
       </header>
 
@@ -1328,7 +1351,7 @@ export default function LoginPortal({ institution: propInstitution, onLoginSucce
           </div>
         )}
         <p className="text-[11px] text-zinc-400">
-          ExamGuard v1.2 &copy; {new Date().getFullYear()} &bull; Arsitektur Produksi oleh Fandi dari Jawa tech
+          ExamGuard {APP_VERSION} &copy; {new Date().getFullYear()} &bull; Arsitektur Produksi oleh Fandi dari Jawa tech
         </p>
       </footer>
        {/* ─────────────────────────────────────────────────────────────

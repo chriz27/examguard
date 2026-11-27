@@ -65,6 +65,7 @@ try {
     $pdo->exec('PRAGMA foreign_keys = ON;');
     $pdo->exec('PRAGMA journal_mode = WAL;');
     $pdo->exec('PRAGMA synchronous = NORMAL;');
+    $pdo->exec('PRAGMA busy_timeout = 5000;');
 } catch (PDOException $e) {
     http_response_code(500);
     echo json_encode(['error' => 'Gagal membuka database SQLite: ' . $e->getMessage()]);
@@ -101,6 +102,7 @@ function initDatabaseSchema(PDO $pdo) {
             google_oauth_verified_email TEXT DEFAULT '',
             google_oauth_verified_at TEXT DEFAULT '',
             lock_device_enabled INTEGER NOT NULL DEFAULT 1,
+            ngrok_authtoken TEXT DEFAULT '',
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
 
@@ -270,6 +272,10 @@ function initDatabaseSchema(PDO $pdo) {
         $pdo->exec("INSERT INTO active_broadcast (id, message, broadcast_id) VALUES ('singleton', '', '')");
     }
 
+    try {
+        $pdo->exec("ALTER TABLE institution ADD COLUMN ngrok_authtoken TEXT DEFAULT ''");
+    } catch (Exception $e) {}
+
     // Default admin jika tabel user kosong
     $userCount = $pdo->query("SELECT count(*) as cnt FROM users")->fetch()['cnt'];
     if ($userCount == 0) {
@@ -322,10 +328,10 @@ function rowToInstitution($r) {
         'auth_method' => $r['auth_method'],
         'google_oauth_enabled' => intToBool($r['google_oauth_enabled']),
         'google_client_id' => $r['google_client_id'] ?? '',
-        'google_client_secret' => $r['google_client_secret'] ?? '',
+        'google_client_secret' => (($GLOBALS['callerRole'] ?? null) === 'admin') ? ($r['google_client_secret'] ?? '') : '',
         'recaptcha_enabled' => intToBool($r['recaptcha_enabled']),
         'recaptcha_site_key' => $r['recaptcha_site_key'] ?? '',
-        'recaptcha_secret_key' => $r['recaptcha_secret_key'] ?? '',
+        'recaptcha_secret_key' => (($GLOBALS['callerRole'] ?? null) === 'admin') ? ($r['recaptcha_secret_key'] ?? '') : '',
         'recaptcha_version' => $r['recaptcha_version'] ?? 'v2',
         'finish_token_lead_minutes' => (int)$r['finish_token_lead_minutes'],
         'browser_permissions' => parseJsonArray($r['browser_permissions'], []),
@@ -333,6 +339,7 @@ function rowToInstitution($r) {
         'google_oauth_verified_email' => $r['google_oauth_verified_email'] ?? '',
         'google_oauth_verified_at' => $r['google_oauth_verified_at'] ?? '',
         'lock_device_enabled' => intToBool($r['lock_device_enabled'] ?? 1),
+        'ngrok_authtoken' => (($GLOBALS['callerRole'] ?? null) === 'admin') ? ($r['ngrok_authtoken'] ?? '') : '',
         'updated_at' => $r['updated_at']
     ];
 }
@@ -539,6 +546,7 @@ try {
                 google_oauth_verified_email = COALESCE(:google_oauth_verified_email, google_oauth_verified_email),
                 google_oauth_verified_at = COALESCE(:google_oauth_verified_at, google_oauth_verified_at),
                 lock_device_enabled = COALESCE(:lock_device_enabled, lock_device_enabled),
+                ngrok_authtoken = COALESCE(:ngrok_authtoken, ngrok_authtoken),
                 updated_at = datetime('now')
             WHERE id = 'singleton'";
 
@@ -558,10 +566,10 @@ try {
                 ':auth_method' => $body['auth_method'] ?? null,
                 ':google_oauth_enabled' => isset($body['google_oauth_enabled']) ? ($body['google_oauth_enabled'] ? 1 : 0) : null,
                 ':google_client_id' => $body['google_client_id'] ?? null,
-                ':google_client_secret' => $body['google_client_secret'] ?? null,
+                ':google_client_secret' => !empty($body['google_client_secret']) ? $body['google_client_secret'] : null,
                 ':recaptcha_enabled' => isset($body['recaptcha_enabled']) ? ($body['recaptcha_enabled'] ? 1 : 0) : null,
                 ':recaptcha_site_key' => $body['recaptcha_site_key'] ?? null,
-                ':recaptcha_secret_key' => $body['recaptcha_secret_key'] ?? null,
+                ':recaptcha_secret_key' => !empty($body['recaptcha_secret_key']) ? $body['recaptcha_secret_key'] : null,
                 ':recaptcha_version' => $body['recaptcha_version'] ?? null,
                 ':finish_token_lead_minutes' => isset($body['finish_token_lead_minutes']) ? (int)$body['finish_token_lead_minutes'] : null,
                 ':browser_permissions' => $browserPerms,
@@ -569,6 +577,7 @@ try {
                 ':google_oauth_verified_email' => $body['google_oauth_verified_email'] ?? null,
                 ':google_oauth_verified_at' => $body['google_oauth_verified_at'] ?? null,
                 ':lock_device_enabled' => isset($body['lock_device_enabled']) ? ($body['lock_device_enabled'] ? 1 : 0) : null,
+                ':ngrok_authtoken' => isset($body['ngrok_authtoken']) ? $body['ngrok_authtoken'] : null,
             ]);
 
             $row = $pdo->query("SELECT * FROM institution WHERE id = 'singleton'")->fetch();
@@ -732,7 +741,7 @@ try {
             }
 
             if ($sub === 'reset-password') {
-                $stmt = $pdo->prepare("UPDATE users SET password = 'password', updated_at = datetime('now') WHERE id = ?");
+                $stmt = $pdo->prepare("UPDATE users SET password = CASE WHEN nis IS NOT NULL AND TRIM(nis) != '' THEN TRIM(nis) WHEN nisn IS NOT NULL AND TRIM(nisn) != '' THEN TRIM(nisn) ELSE '123456' END, updated_at = datetime('now') WHERE id = ?");
                 $stmt->execute([$userId]);
                 $u = $pdo->query("SELECT * FROM users WHERE id = " . $pdo->quote($userId))->fetch();
                 sendJson(['success' => true, 'user' => rowToUser($u)]);
@@ -756,22 +765,41 @@ try {
                 if ($callerRole === 'proctor' || ($callerRole !== null && $callerRole !== 'admin')) {
                     sendJson(['error' => 'Akses Ditolak: Proktor tidak diizinkan mengubah akun administrator.'], 403);
                 }
+                $targetId = $userId;
+                $stmtCheck = $pdo->prepare("SELECT id FROM users WHERE id = ?");
+                $stmtCheck->execute([$userId]);
+                if (!$stmtCheck->fetch()) {
+                    if ($userId === 'PROCTOR-01' || ($body['username'] ?? '') === 'proktor') {
+                        $pRow = $pdo->query("SELECT id FROM users WHERE role = 'proctor' LIMIT 1")->fetch();
+                        if ($pRow) $targetId = $pRow['id'];
+                    } else if ($userId === 'ADMIN-SUPER-01' || ($body['username'] ?? '') === 'admin') {
+                        $aRow = $pdo->query("SELECT id FROM users WHERE role = 'admin' LIMIT 1")->fetch();
+                        if ($aRow) $targetId = $aRow['id'];
+                    }
+                }
+
                 $sql = "UPDATE users SET nama = COALESCE(:nama, nama), username = COALESCE(:username, username), updated_at = datetime('now')";
                 if (!empty($body['password'])) {
                     $sql .= ", password = :password";
                 }
+                if (!empty($body['email'])) {
+                    $sql .= ", email = :email";
+                }
                 $sql .= " WHERE id = :id";
                 $stmt = $pdo->prepare($sql);
                 $params = [
-                    ':id' => $userId,
+                    ':id' => $targetId,
                     ':nama' => $body['nama'] ?? null,
                     ':username' => $body['username'] ?? null
                 ];
                 if (!empty($body['password'])) {
                     $params[':password'] = $body['password'];
                 }
+                if (!empty($body['email'])) {
+                    $params[':email'] = $body['email'];
+                }
                 $stmt->execute($params);
-                $u = $pdo->query("SELECT * FROM users WHERE id = " . $pdo->quote($userId))->fetch();
+                $u = $pdo->query("SELECT * FROM users WHERE id = " . $pdo->quote($targetId))->fetch();
                 sendJson(['success' => true, 'user' => rowToUser($u)]);
             }
 
@@ -779,6 +807,7 @@ try {
             if (empty($sub)) {
                 $stmt = $pdo->prepare("UPDATE users SET 
                     nama = COALESCE(:nama, nama),
+                    username = COALESCE(:username, username),
                     password = COALESCE(:password, password),
                     email = COALESCE(:email, email),
                     nisn = COALESCE(:nisn, nisn),
@@ -801,6 +830,7 @@ try {
                 $stmt->execute([
                     ':id' => $userId,
                     ':nama' => $body['nama'] ?? null,
+                    ':username' => $body['username'] ?? null,
                     ':password' => $body['password'] ?? null,
                     ':email' => $body['email'] ?? null,
                     ':nisn' => $body['nisn'] ?? null,
@@ -1337,6 +1367,46 @@ try {
         }
     }
 
+    // ── /tunnel/status (Ngrok Cloud Tunnel Status) ─────────────
+    if ($endpoint === 'tunnel/status' || $endpoint === 'tunnel') {
+        $publicUrl = null;
+        $proto = 'https';
+        $tunnels = [];
+        
+        if (function_exists('curl_init')) {
+            $ch = curl_init('http://127.0.0.1:4040/api/tunnels');
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 1);
+            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 1);
+            $response = @curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+
+            if ($httpCode === 200 && !empty($response)) {
+                $data = json_decode($response, true);
+                $tunnels = $data['tunnels'] ?? [];
+                foreach ($tunnels as $t) {
+                    if (!empty($t['public_url'])) {
+                        $publicUrl = $t['public_url'];
+                        $proto = $t['proto'] ?? 'https';
+                        if (str_starts_with($publicUrl, 'https://')) {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        sendJson([
+            'success' => true,
+            'active' => !empty($publicUrl),
+            'public_url' => $publicUrl,
+            'proto' => $proto,
+            'tunnels' => $tunnels,
+            'message' => !empty($publicUrl) ? 'Ngrok tunnel aktif.' : 'Ngrok tunnel tidak terdeteksi atau tidak aktif di port 4040.'
+        ]);
+    }
+
     // ── /backup & /restore ─────────────────────────────────────
     if ($endpoint === 'backup' && $method === 'GET') {
         if ($callerRole === 'proctor' || ($callerRole !== null && $callerRole !== 'admin')) {
@@ -1411,7 +1481,7 @@ try {
                     curl_setopt($ch, CURLOPT_HEADER, 0);
                     curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
                     curl_setopt($ch, CURLOPT_MAXREDIRS, 5);
-                    curl_setopt($ch, CURLOPT_USERAGENT, 'ExamGuard-AutoUpdater/1.2.2');
+                    curl_setopt($ch, CURLOPT_USERAGENT, 'ExamGuard-AutoUpdater/1.3.0');
                     curl_setopt($ch, CURLOPT_TIMEOUT, 300);
                     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
                     curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
@@ -1425,7 +1495,7 @@ try {
                         $ch = curl_init($currUrl);
                         curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
                         curl_setopt($ch, CURLOPT_HEADER, 1);
-                        curl_setopt($ch, CURLOPT_USERAGENT, 'ExamGuard-AutoUpdater/1.2.2');
+                        curl_setopt($ch, CURLOPT_USERAGENT, 'ExamGuard-AutoUpdater/1.3.0');
                         curl_setopt($ch, CURLOPT_TIMEOUT, 300);
                         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
                         curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
@@ -1459,7 +1529,7 @@ try {
                 $opts = [
                     'http' => [
                         'method' => 'GET',
-                        'header' => "User-Agent: ExamGuard-AutoUpdater/1.2.2\r\n",
+                        'header' => "User-Agent: ExamGuard-AutoUpdater/1.3.0\r\n",
                         'follow_location' => 1,
                         'timeout' => 300
                     ],
@@ -1532,7 +1602,7 @@ try {
             @unlink($zipFilePath);
             @rmdir($tmpDir);
             sendJson([
-                'error' => 'Verifikasi Gagal: Paket ZIP ini tidak memuat kompilasi frontend (index.html dan folder assets tidak ditemukan). Berkas yang diunggah tampaknya adalah source code mentah GitHub, bukan berkas rilis kompilasi cPanel. Harap gunakan paket rilis ZIP kompilasi (examguard-v1.2.2-cpanel.zip) yang memuat berkas dist/.'
+                'error' => 'Verifikasi Gagal: Paket ZIP ini tidak memuat kompilasi frontend (index.html dan folder assets tidak ditemukan). Berkas yang diunggah tampaknya adalah source code mentah GitHub, bukan berkas rilis kompilasi cPanel. Harap gunakan paket rilis ZIP kompilasi (examguard-v1.3.0-cpanel.zip) yang memuat berkas dist/.'
             ], 400);
         }
 
@@ -1544,7 +1614,7 @@ try {
             sendJson(['error' => 'Verifikasi Gagal: Meta file menunjukkan paket ini bukan rilis resmi ExamGuard.'], 400);
         }
 
-        $newVersion = $manifest['version'] ?? '1.2.2';
+        $newVersion = $manifest['version'] ?? '1.3.0';
 
         // 5. Ekstraksi Berkas ke Root Aplikasi (Tangani flat zip maupun folder wrapper seperti dist/ atau ExamGuard/)
         $prefix = '';
